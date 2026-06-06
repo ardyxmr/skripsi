@@ -1,0 +1,81 @@
+:root {
+  /* Backgrounds */
+  --bg-page: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-surface: #f1f5f9;
+  
+  /* Borders */
+  --border-theme: #e5e7eb;
+  
+  /* Typography */
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+
+  /* Radius */
+  --radius-card: 16px;
+  --radius-input: 12px;
+  --radius-modal: 20px;
+
+  /* Shadow */
+  --shadow-card: 0 2px 10px rgba(0,0,0,0.02);
+  --shadow-modal: 0 12px 40px rgba(0,0,0,0.15);
+}
+
+.dark {
+  /* Backgrounds */
+  --bg-page: #08132B;
+  --bg-card: #17243E;
+  --bg-surface: #24324D;
+  
+  /* Borders */
+  --border-theme: rgba(255,255,255,0.03);
+  
+  /* Typography */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+
+  /* Shadow */
+  --shadow-card: 0 8px 30px rgba(0,0,0,0.25);
+  --shadow-modal: 0 20px 50px rgba(0,0,0,0.5);
+}
+
+@layer base {
+  :root {
+    --table-header-bg: #f8fafc;
+    --table-header-border: #e2e8f0;
+    --table-header-text: #64748b;
+    --table-row-hover: rgb(248 250 252 / 0.8);
+    --table-row-border: #f1f5f9;
+  }
+  
+  .dark {
+    --table-header-bg: var(--bg-surface);
+    --table-header-border: var(--border-theme);
+    --table-header-text: #94a3b8;
+    --table-row-hover: #334155;
+    --table-row-border: var(--border-theme);
+  }
+}
+
+@layer components {
+  /* 
+   * Optimized Table Theme Classes 
+   * Uses CSS variables directly to avoid JS/Tailwind re-render staggering.
+   * Scopes transitions specifically to hover effects, avoiding theme-switch lag.
+   */
+  .table-header-optimized {
+    background-color: var(--table-header-bg);
+    border-color: var(--table-header-border);
+    color: var(--table-header-text);
+  }
+
+  .table-row-optimized {
+    border-color: var(--table-row-border);
+    /* Only transition background color for hover, avoid transitioning border/text on theme switch */
+    transition: background-color 150ms ease-in-out;
+  }
+  
+  .table-row-optimized:hover {
+    background-color: var(--table-row-hover);
+  }
+}

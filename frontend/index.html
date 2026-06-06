@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proxmox Self-Service Portal</title>
+    <!-- Tailwind CSS CDN for prototyping -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              page: 'var(--bg-page)',
+              card: 'var(--bg-card)',
+              surface: 'var(--bg-surface)',
+              brand: {
+                50: '#f0fdfa',
+                100: '#ccfbf1',
+                500: '#14b8a6', // GCP/AWS modern teal/blue
+                600: '#0d9488',
+                900: '#134e4a',
+              }
+            },
+            borderColor: {
+              theme: 'var(--border-theme)',
+            },
+            textColor: {
+              primary: 'var(--text-primary)',
+              secondary: 'var(--text-secondary)',
+            },
+            borderRadius: {
+              card: 'var(--radius-card)',
+              input: 'var(--radius-input)',
+              modal: 'var(--radius-modal)',
+            },
+            boxShadow: {
+              card: 'var(--shadow-card)',
+              modal: 'var(--shadow-modal)',
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-page text-primary transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

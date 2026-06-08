@@ -38,8 +38,8 @@ export default function ProviderForm({ isOpen, mode, data, onSubmit, onClose, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-card rounded-modal shadow-modal border border-gray-200 dark:border-theme w-full max-w-[720px] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme">
+      <div className="bg-white dark:bg-card rounded-modal shadow-modal border border-gray-200 dark:border-theme w-full max-w-[720px] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 max-h-[90vh]">
+        <div className="shrink-0 flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme">
           <div>
             <h3 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               {mode === 'add' ? '➕ Add Provider' : '✏️ Edit Provider'}
@@ -51,13 +51,14 @@ export default function ProviderForm({ isOpen, mode, data, onSubmit, onClose, on
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 self-start"><X size={18} /></button>
         </div>
         
-        <form onSubmit={handleSubmit} onChange={onChange} className="p-5 flex flex-col gap-4">
+        <form onSubmit={handleSubmit} onChange={onChange} className="flex flex-col overflow-hidden min-h-0">
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-5 flex flex-col gap-4">
                 {/* PROVIDER FIELDS */}
                 <div className="flex flex-col gap-5">
                     
                     {/* Basic Information */}
-                    <div>
-                      <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-gray-100 dark:border-theme pb-1">Basic Information</h4>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                      <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 block">Basic Information</label>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="flex flex-col gap-1.5">
                           <label className="text-[12px] font-medium text-slate-700 dark:text-slate-300">Provider Name <span className="text-rose-500">*</span></label>
@@ -85,9 +86,9 @@ export default function ProviderForm({ isOpen, mode, data, onSubmit, onClose, on
                     </div>
 
                     {/* Discovery Credential (Read Only) */}
-                    <div>
-                      <div className="mb-3 border-b border-gray-100 dark:border-theme pb-1">
-                        <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-200">Discovery Credential (Read Only)</h4>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                      <div className="mb-4">
+                        <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Discovery Credential (Read Only)</label>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Read-only credential used for resource discovery.</p>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -112,9 +113,9 @@ export default function ProviderForm({ isOpen, mode, data, onSubmit, onClose, on
                       </div>
 
                       {/* Provisioning Credential (Terraform) */}
-                      <div>
-                        <div className="mb-3 border-b border-gray-100 dark:border-theme pb-1">
-                          <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-200">Provisioning Credential (Terraform)</h4>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                        <div className="mb-4">
+                          <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Provisioning Credential (Terraform)</label>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Credential used for VM lifecycle operations.</p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -139,8 +140,8 @@ export default function ProviderForm({ isOpen, mode, data, onSubmit, onClose, on
                       </div>
 
                     {/* Discovery Configuration */}
-                    <div>
-                      <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-200 mb-3 border-b border-gray-100 dark:border-theme pb-1">Discovery Configuration</h4>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                      <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 block">Discovery Configuration</label>
                       
                       <div className="flex gap-6 mt-3 mb-4">
                         <label className="flex items-center gap-2 text-[13px] font-medium text-slate-700 dark:text-slate-300">
@@ -174,8 +175,9 @@ export default function ProviderForm({ isOpen, mode, data, onSubmit, onClose, on
                       </div>
                     </div>
                   </div>
+          </div>
 
-          <div className="p-4 bg-transparent dark:bg-transparent/50 border-t border-gray-100 dark:border-theme flex items-center justify-between mt-2 -mx-5 -mb-5">
+          <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-between gap-3 bg-white dark:bg-card">
             <div className="flex items-center gap-3">
               <button type="button" onClick={handleTestConnection} disabled={isTestingConnection} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium bg-slate-100 hover:bg-slate-200 dark:bg-surface dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-input transition-colors disabled:opacity-50">
                 {isTestingConnection ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} 

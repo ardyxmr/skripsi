@@ -574,25 +574,28 @@ export default function Inventory() {
       {/* Delete Modal */}
       {deleteModalVm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-card w-[400px] rounded-modal shadow-modal overflow-hidden border border-gray-100 dark:border-theme animate-in zoom-in-95 duration-200">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-theme">
-              <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+          <div className="bg-white dark:bg-card w-full max-w-[450px] rounded-modal shadow-modal overflow-hidden border border-gray-200 dark:border-theme animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme">
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <AlertCircle size={18} className="text-rose-500" />
                 Delete VM Confirmation
               </h3>
+              <button onClick={() => handleCancelModal('delete')} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700">
+                <X size={18} />
+              </button>
             </div>
-            <div className="p-5">
-              <p className="text-[13px] text-gray-600 dark:text-gray-300 mb-4">
+            <div className="p-5 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-4">
+              <p className="text-[13px] text-gray-600 dark:text-gray-300">
                 You are about to delete the following Virtual Machine:
               </p>
-              <div className="bg-transparent dark:bg-transparent border border-gray-100 dark:border-theme rounded-input p-3 mb-4 flex justify-center">
+              <div className="bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-theme rounded-md p-3 flex justify-center">
                 <span className="font-mono font-bold text-[15px] text-gray-800 dark:text-gray-100">{deleteModalVm.name}</span>
               </div>
-              <p className="text-[13px] text-rose-600 dark:text-rose-400 font-semibold bg-rose-50 dark:bg-rose-900/20 p-3 rounded-card border border-rose-100 dark:border-rose-900/30">
+              <p className="text-[13px] text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-900/20 p-3 rounded-md border border-rose-100 dark:border-rose-900/30">
                 This action cannot be undone. All data and Terraform state will be destroyed.
               </p>
-              <div className="bg-rose-50/50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-900/30 rounded-xl p-4 mt-4">
-                <label className="block text-[12px] font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">
                   To confirm deletion, please type <strong className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1.5 py-0.5 rounded text-rose-700 dark:text-rose-400 select-all">{deleteModalVm.name}</strong> below:
                 </label>
                 <input 
@@ -600,48 +603,49 @@ export default function Inventory() {
                   value={deleteConfirmName}
                   onChange={(e) => setDeleteConfirmName(e.target.value)}
                   placeholder={deleteModalVm.name}
-                  className="w-full p-2.5 border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400 bg-white dark:bg-surface dark:text-gray-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500 transition-colors"
                 />
               </div>
             </div>
-            <div className="px-5 py-4 bg-transparent dark:bg-transparent/50 border-t border-gray-100 dark:border-theme flex justify-end gap-3">
+            <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-end gap-3 bg-white dark:bg-card">
               <button 
                 onClick={() => handleCancelModal('delete')}
-                className="px-4 py-2 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-input hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-opacity"
+                className="px-4 py-2 text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-input transition-colors"
               >
                 Cancel
               </button>
               <button 
                 onClick={executeDelete}
                 disabled={deleteConfirmName !== deleteModalVm.name}
-                className="px-4 py-2 text-[13px] font-medium text-white bg-rose-500 border border-rose-600 rounded-input hover:bg-rose-600 transition-opacity shadow-sm shadow-rose-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-[13px] font-medium bg-rose-600 hover:bg-rose-700 text-white rounded-input transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Delete
               </button>
             </div>
           </div>
         </div>
-      )}
-
-      {/* Extend Modal / Renew VM */}
+      )}      {/* Extend Modal / Renew VM */}
       {extendModalVm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-card w-[450px] rounded-modal shadow-modal overflow-hidden border border-gray-100 dark:border-theme animate-in zoom-in-95 duration-200">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-theme">
-              <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+          <div className="bg-white dark:bg-card w-full max-w-[450px] rounded-modal shadow-modal overflow-hidden border border-gray-200 dark:border-theme animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme">
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Calendar size={18} className="text-teal-500" />
                 Renew VM Request
               </h3>
+              <button onClick={() => handleCancelModal('renew')} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700">
+                <X size={18} />
+              </button>
             </div>
-            <div className="p-5">
-              <p className="text-[13px] text-gray-600 dark:text-gray-300 mb-4">
+            <div className="p-5 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-4">
+              <p className="text-[13px] text-gray-600 dark:text-gray-300">
                 Request an extension for <strong className="font-mono text-gray-800 dark:text-gray-200">{extendModalVm.name}</strong>.
               </p>
               
-              <div className="space-y-4">
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4 space-y-4">
                 {/* Reason Field */}
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-700 dark:text-gray-200 mb-1.5">
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                     Reason / Business Justification <span className="text-rose-500">*</span>
                   </label>
                   <textarea 
@@ -651,7 +655,7 @@ export default function Inventory() {
                       if (renewError) setRenewError('');
                     }}
                     placeholder="Explain why this VM needs extension or permanent retention..."
-                    className={`w-full px-3 py-2 border rounded-input text-[13px] bg-white dark:bg-surface dark:text-gray-100 outline-none focus:ring-1 min-h-[80px] resize-none ${renewError ? 'border-rose-400 focus:border-rose-400 focus:ring-rose-400' : 'border-gray-200 dark:border-theme focus:border-teal-400 focus:ring-teal-400'}`}
+                    className={`w-full px-3 py-2 border rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:ring-2 transition-colors min-h-[80px] resize-none ${renewError ? 'border-rose-300 dark:border-rose-900/50 focus:ring-rose-500/50 focus:border-rose-500' : 'border-slate-300 dark:border-theme focus:ring-blue-500/50 focus:border-blue-500'}`}
                   ></textarea>
                   {renewError && (
                     <div className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium animate-in fade-in slide-in-from-top-1">
@@ -663,12 +667,12 @@ export default function Inventory() {
 
                 {/* Extension Period Dropdown */}
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-700 dark:text-gray-200 mb-1.5">Extension Period</label>
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Extension Period</label>
                   <select 
                     value={renewExtension}
                     onChange={(e) => setRenewExtension(e.target.value)}
                     disabled={isPermanentRequest || extendModalVm.environment === 'Production'}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-theme rounded-input text-[13px] bg-white dark:bg-surface dark:text-gray-100 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="N/A">N/A</option>
                     <option value="7 Days">7 Days</option>
@@ -691,19 +695,18 @@ export default function Inventory() {
                     id="req-perm" 
                     checked={isPermanentRequest}
                     onChange={(e) => setIsPermanentRequest(e.target.checked)}
-                    className="w-4 h-4 text-teal-500 border-gray-300 rounded focus:ring-teal-500 cursor-pointer"
+                    className="w-4 h-4 text-blue-600 border-slate-300 dark:border-theme bg-transparent rounded focus:ring-blue-500 cursor-pointer"
                   />
-                  <label htmlFor="req-perm" className="text-[13px] font-medium text-gray-700 dark:text-gray-200 cursor-pointer select-none">
+                  <label htmlFor="req-perm" className="text-[13px] font-medium text-slate-700 dark:text-slate-200 cursor-pointer select-none">
                     Request Permanent VM
                   </label>
                 </div>
-                
               </div>
             </div>
-            <div className="px-5 py-4 bg-transparent dark:bg-transparent/50 border-t border-gray-100 dark:border-theme flex justify-end gap-3">
+            <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-end gap-3 bg-white dark:bg-card">
               <button 
                 onClick={() => handleCancelModal('renew')}
-                className="px-4 py-2 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-input hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-opacity"
+                className="px-4 py-2 text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-input transition-colors"
               >
                 Cancel
               </button>
@@ -723,7 +726,7 @@ export default function Inventory() {
                   setVms(vms.map(v => v.id === extendModalVm.id ? { ...v, pendingRenewApproval: true } : v));
                   setExtendModalVm(null);
                 }}
-                className="px-4 py-2 text-[13px] font-medium text-white bg-teal-500 border border-teal-600 rounded-input hover:bg-teal-600 transition-opacity shadow-sm shadow-teal-500/20"
+                className="px-4 py-2 text-[13px] font-medium bg-teal-600 hover:bg-teal-700 text-white rounded-input transition-colors shadow-sm"
               >
                 Submit Request
               </button>
@@ -735,59 +738,62 @@ export default function Inventory() {
       {/* Edit Resources Modal */}
       {editModalVm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-card w-[550px] rounded-modal shadow-modal overflow-hidden border border-gray-100 dark:border-theme animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-theme shrink-0">
-              <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+          <div className="bg-white dark:bg-card w-full max-w-[550px] rounded-modal shadow-modal overflow-hidden border border-gray-200 dark:border-theme animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme">
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Settings size={18} className="text-teal-500" />
                 Edit VM Resources
               </h3>
+              <button onClick={() => handleCancelModal('edit')} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700">
+                <X size={18} />
+              </button>
             </div>
             
-            <div className="p-5 overflow-y-auto">
-              <p className="text-[13px] text-gray-600 dark:text-gray-300 mb-5">
+            <div className="p-5 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-4">
+              <p className="text-[13px] text-gray-600 dark:text-gray-300">
                 Modify hardware resources for <strong className="font-mono text-gray-800 dark:text-gray-200">{editModalVm.name}</strong>.
               </p>
 
-              {/* Resource Configuration Container similar to VmRequest.jsx */}
-              <div className="bg-gray-50 dark:bg-blue-900/10 border border-gray-200 dark:border-blue-900/30 rounded-xl p-4 mb-4">
-                <div className="text-[11px] font-bold text-gray-500 dark:text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              {/* Resource Configuration Container */}
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
                   <Cpu size={14} />
                   Compute Resources
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4 mb-2">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">CPU Cores (vCPU)</label>
+                    <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">CPU Cores (vCPU)</label>
                     <input 
                       type="number" 
                       min="1" max="64"
                       value={editCpu}
                       onChange={(e) => setEditCpu(parseInt(e.target.value) || 1)}
-                      className="w-full p-2.5 border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-surface dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Memory / RAM (GB)</label>
+                    <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">Memory / RAM (GB)</label>
                     <input 
                       type="number" 
                       min="1" max="256"
                       value={editRam}
                       onChange={(e) => setEditRam(parseInt(e.target.value) || 1)}
-                      className="w-full p-2.5 border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-surface dark:text-gray-100"
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-colors"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-theme rounded-xl p-4">
-                <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center justify-between">
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <HardDrive size={14} />
                     Storage Disks
                   </div>
                   <button 
                     onClick={() => setIsAddingDisk(true)}
-                    className="text-teal-600 dark:text-teal-400 hover:text-teal-700 hover:underline flex items-center gap-1 normal-case tracking-normal"
+                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:underline flex items-center gap-1 normal-case tracking-normal"
                   >
                     <Plus size={12} /> Add new blank disk
                   </button>
@@ -795,7 +801,7 @@ export default function Inventory() {
                 
                 <div className="space-y-3">
                   {/* Existing Disk (Grayed Out) */}
-                  <div className="flex items-center justify-between bg-white dark:bg-card border border-gray-200 dark:border-theme p-3 rounded-lg opacity-70 cursor-not-allowed">
+                  <div className="flex items-center justify-between bg-white dark:bg-card border border-gray-200 dark:border-theme p-3 rounded-md opacity-70 cursor-not-allowed">
                     <div className="flex items-center gap-3">
                       <div className="bg-gray-100 dark:bg-slate-700 p-2 rounded text-gray-500">
                         <HardDrive size={16} />
@@ -812,14 +818,14 @@ export default function Inventory() {
 
                   {/* Added Disks */}
                   {newDisks.map((disk, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-white dark:bg-card border border-teal-200 dark:border-teal-900/50 p-3 rounded-lg">
+                    <div key={idx} className="flex items-center justify-between bg-white dark:bg-card border border-blue-200 dark:border-blue-900/50 p-3 rounded-md">
                       <div className="flex items-center gap-3">
-                        <div className="bg-teal-50 dark:bg-teal-900/30 p-2 rounded text-teal-600 dark:text-teal-400">
+                        <div className="bg-blue-50 dark:bg-blue-900/30 p-2 rounded text-blue-600 dark:text-blue-400">
                           <HardDrive size={16} />
                         </div>
                         <div>
                           <div className="text-[13px] font-bold text-gray-800 dark:text-gray-200">Disk {idx + 1} (Additional)</div>
-                          <div className="text-[11px] text-teal-600 dark:text-teal-400">New Volume</div>
+                          <div className="text-[11px] text-blue-600 dark:text-blue-400">New Volume</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -828,7 +834,7 @@ export default function Inventory() {
                         </div>
                         <button 
                           onClick={() => setNewDisks(newDisks.filter((_, i) => i !== idx))}
-                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/30 p-1.5 rounded-lg transition-colors"
+                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/30 p-1.5 rounded-md transition-colors"
                         >
                           <X size={14} />
                         </button>
@@ -838,20 +844,20 @@ export default function Inventory() {
 
                   {/* Add New Disk Input Form */}
                   {isAddingDisk && (
-                    <div className="bg-teal-50/50 dark:bg-teal-900/10 border border-teal-200 dark:border-teal-900/50 p-3 rounded-lg flex items-center gap-3 animate-in fade-in zoom-in duration-200">
+                    <div className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-900/50 p-3 rounded-md flex items-center gap-3 animate-in fade-in zoom-in duration-200">
                        <input 
                          type="number"
                          min="1"
                          value={newDiskSize}
                          onChange={(e) => setNewDiskSize(parseInt(e.target.value) || 1)}
-                         className="w-24 p-2 border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 bg-white dark:bg-surface dark:text-gray-100"
+                         className="w-24 px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-colors"
                        />
-                       <span className="text-[13px] font-medium text-gray-600 dark:text-gray-400">GB</span>
+                       <span className="text-[13px] font-medium text-slate-600 dark:text-slate-400">GB</span>
                        
                        <div className="ml-auto flex items-center gap-2">
                          <button 
                            onClick={() => setIsAddingDisk(false)}
-                           className="text-[12px] font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2 py-1"
+                           className="text-[12px] font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-2 py-1"
                          >
                            Cancel
                          </button>
@@ -863,7 +869,7 @@ export default function Inventory() {
                                setNewDiskSize(50);
                              }
                            }}
-                           className="text-[12px] font-medium bg-teal-500 text-white px-3 py-1.5 rounded-lg hover:bg-teal-600 shadow-sm transition-opacity"
+                           className="text-[12px] font-medium bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 shadow-sm transition-opacity"
                          >
                            Add Disk
                          </button>
@@ -875,8 +881,8 @@ export default function Inventory() {
               </div>
 
               {/* Security Confirmation */}
-              <div className="bg-rose-50/50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-900/30 rounded-xl p-4 mt-4">
-                <label className="block text-[12px] font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">
                   To confirm changes, please type <strong className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1.5 py-0.5 rounded text-rose-700 dark:text-rose-400 select-all">{editModalVm.name}</strong> below:
                 </label>
                 <input 
@@ -884,15 +890,15 @@ export default function Inventory() {
                   value={editConfirmName}
                   onChange={(e) => setEditConfirmName(e.target.value)}
                   placeholder={editModalVm.name}
-                  className="w-full p-2.5 border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-400 bg-white dark:bg-surface dark:text-gray-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/50 transition-colors"
                 />
               </div>
             </div>
 
-            <div className="px-5 py-4 bg-transparent dark:bg-transparent/50 border-t border-gray-100 dark:border-theme flex justify-end gap-3 shrink-0">
+            <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-end gap-3 bg-white dark:bg-card">
               <button 
                 onClick={() => handleCancelModal('edit')}
-                className="px-4 py-2 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-input hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-opacity"
+                className="px-4 py-2 text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-input transition-colors"
               >
                 Cancel
               </button>
@@ -906,7 +912,7 @@ export default function Inventory() {
                   editConfirmName !== editModalVm.name || 
                   (editCpu === (editModalVm.cpu || 1) && editRam === (editModalVm.ram || 1) && newDisks.length === 0)
                 }
-                className="px-4 py-2 text-[13px] font-medium text-white bg-teal-500 border border-teal-600 rounded-input hover:bg-teal-600 transition-opacity shadow-sm shadow-teal-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-[13px] font-medium bg-teal-600 hover:bg-teal-700 text-white rounded-input transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Submit Request
               </button>
@@ -1051,7 +1057,7 @@ export default function Inventory() {
                   
                   return (
                     <React.Fragment key={vm.id}>
-                      <tr className={`group hover:bg-gray-50/50 dark:hover:bg-slate-700/50 ${isExpanded ? 'bg-gray-50/80 dark:bg-surface/30' : ''}`}>
+                      <tr className={`group hover:bg-gray-50/50 dark:hover:bg-slate-700/50`}>
                         <td className="px-3 py-4 text-center">
                           <button 
                             onClick={() => toggleExpand(vm.id)}
@@ -1126,9 +1132,9 @@ export default function Inventory() {
                       </tr>
 
                       {/* Expanded Row Content */}
-                      <tr className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'table-row opacity-100' : 'hidden opacity-0'}`}>
-                        <td colSpan="11" className="p-0 border-b border-gray-100 dark:border-theme">
-                          <div className="bg-blue-50/30 dark:bg-surface/30 p-4 pl-12 flex flex-col md:flex-row gap-8 shadow-inner">
+                      <tr className={`bg-gray-50/50 dark:bg-page border-b border-gray-100 dark:border-theme overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'table-row opacity-100' : 'hidden opacity-0'}`}>
+                        <td colSpan="11" className="p-0">
+                          <div className="p-6 ml-14 mr-6 my-2 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-xl shadow-sm flex flex-col md:flex-row gap-8">
                             
                             {/* Left Panel */}
                             <div className="w-full md:w-[250px] shrink-0 border-l-2 border-teal-400 pl-4">
@@ -1176,8 +1182,8 @@ export default function Inventory() {
                             
                             {/* Right Panel - Description */}
                             <div className="flex-1 min-w-[250px]">
-                               <div className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400 mb-1">Description / Notes</div>
-                               <div className="text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed bg-white dark:bg-card p-3 rounded-card border border-gray-100 dark:border-theme overflow-y-auto max-h-[140px]">
+                               <div className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Description / Notes</div>
+                               <div className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed bg-gray-50 dark:bg-page p-3 rounded-lg border border-gray-100 dark:border-theme overflow-y-auto max-h-[140px]">
                                  {vm.description || <span className="italic text-gray-400">No Description Provided</span>}
                                </div>
                             </div>

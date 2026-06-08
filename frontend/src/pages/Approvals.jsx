@@ -308,36 +308,45 @@ export default function Approvals() {
       {/* Action Modal */}
       {actionModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-card w-[400px] rounded-modal shadow-modal overflow-hidden border border-gray-100 dark:border-theme animate-in zoom-in-95 duration-200">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-theme">
-              <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100">{actionType} Request</h3>
+          <div className="bg-white dark:bg-card w-full max-w-[450px] rounded-modal shadow-modal overflow-hidden border border-gray-200 dark:border-theme animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme">
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                {actionType === 'Approve' ? <Check size={18} className="text-emerald-500" /> : 
+                 actionType === 'Reject' ? <X size={18} className="text-rose-500" /> : 
+                 <RotateCcw size={18} className="text-orange-500" />}
+                {actionType} Request
+              </h3>
+              <button onClick={handleCancelModal} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700">
+                <X size={18} />
+              </button>
             </div>
-            <div className="p-5">
-              <label className="block text-[12px] font-semibold text-gray-600 dark:text-gray-300 mb-2">Reason for {actionType.toLowerCase()} <span className="text-rose-500">*</span></label>
-              <textarea 
-                className={`w-full p-3 border border-gray-200 dark:border-theme rounded-input text-[13px] bg-white dark:bg-surface dark:text-gray-100 outline-none focus:ring-1 
-                  ${actionType === 'Approve' ? 'focus:border-emerald-400 focus:ring-emerald-500/20' : 
-                    actionType === 'Reject' ? 'focus:border-rose-400 focus:ring-rose-500/20' : 
-                    'focus:border-orange-400 focus:ring-orange-500/20'}`}
-                rows="4"
-                placeholder={`Please provide a clear reason for the ${actionType.toLowerCase()}...`}
-                value={actionReason}
-                onChange={e => setActionReason(e.target.value)}
-              />
+            <div className="p-5 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-4">
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">Reason for {actionType.toLowerCase()} <span className="text-rose-500">*</span></label>
+                <textarea 
+                  className={`w-full px-3 py-2 border rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:ring-2 transition-colors min-h-[100px] resize-none
+                    ${actionType === 'Approve' ? 'border-slate-300 dark:border-theme focus:border-emerald-500 focus:ring-emerald-500/50' : 
+                      actionType === 'Reject' ? 'border-slate-300 dark:border-theme focus:border-rose-500 focus:ring-rose-500/50' : 
+                      'border-slate-300 dark:border-theme focus:border-orange-500 focus:ring-orange-500/50'}`}
+                  placeholder={`Please provide a clear reason for the ${actionType.toLowerCase()}...`}
+                  value={actionReason}
+                  onChange={e => setActionReason(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="px-5 py-4 bg-transparent dark:bg-transparent/50 border-t border-gray-100 dark:border-theme flex justify-end gap-3">
+            <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-end gap-3 bg-white dark:bg-card">
               <button 
                 onClick={handleCancelModal}
-                className="px-4 py-2 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-input hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-opacity"
+                className="px-4 py-2 text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-input transition-colors"
               >
                 Cancel
               </button>
               <button 
                 onClick={executeWorkflowAction}
-                className={`px-4 py-2 text-[13px] font-medium text-white rounded-input transition-opacity shadow-sm
-                  ${actionType === 'Approve' ? 'bg-emerald-500 hover:bg-emerald-600 border border-emerald-600 shadow-emerald-500/20' : 
-                    actionType === 'Reject' ? 'bg-rose-500 hover:bg-rose-600 border border-rose-600 shadow-rose-500/20' : 
-                    'bg-orange-500 hover:bg-orange-600 border border-orange-600 shadow-orange-500/20'}`}
+                className={`px-4 py-2 text-[13px] font-medium text-white rounded-input transition-colors shadow-sm
+                  ${actionType === 'Approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 
+                    actionType === 'Reject' ? 'bg-rose-600 hover:bg-rose-700' : 
+                    'bg-orange-600 hover:bg-orange-700'}`}
               >
                 Confirm {actionType}
               </button>

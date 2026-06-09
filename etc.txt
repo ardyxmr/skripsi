@@ -1,0 +1,39 @@
+There are several things that need to be fixed.
+
+1. Remove tier & environment columns from Catalog Management, Network Management, Datastore Management. (tier is only a resource blueprint not bound to a provider)
+2. Then remove Tier Assignments in Catalog explorer, Network explorer, Datastore explorer, leaving only Environment Assignments
+3. 
+489
+Previously, I decided to bound the catalog, network, and datastore to the node because these three items essentially belong to each node. In the future, if I have a Proxmox cluster with multiple nodes, the template, datastore, and network might be on each node. This maintains the consistency of the health status of these three items. 
+If the node goes down but the cluster remains active, the provider status will remain active, but the catalog, network, and datastore will follow the node status. 
+And later in the provisioning menu, if the node goes down, the node data drop-down will not appear. Only this node has raw data that appears in provisioning but is retrieved from the DB.
+So "Allowed Resources" in add & edit Environment, which should be made as a dropdown menu + checklist in the provider section. 1 env can select multiple providers (this provider is auto-discovered from the published provider Name) and after the provider is selected, you can provide a mini table to display published data like Node.
+
+example if 1 provider is selected, the node data published by the admin will appear and can be selected.
+Tier
+provider 
+proxmox DC jakarta [check]
+proxmox DC Lampung [uncheck]
+
+###############Node################
+Proxmox DC jakarta
+pve (this will get data from DB backend) 
+
+example 2 if 2 providers are selected, then the nodes data published by the admin will appear and can be selected, so the mini table will be:
+
+provider 
+proxmox DC jakarta [check]
+proxmox DC Lampung [check]
+
+###############Node################
+Proxmox DC jakarta                                          |       proxmox DC Lampung
+pve (this will get data from DB backend)                    |         pve (this will get data from DB backend)
+
+
+
+4. Then in Catalog explorer, Network explorer, Datastore explorer, the Environment Assignments section will automatically be filled with data updated from this environment management.
+5. And data on Cross-Module Usage environment explorer tab Associated catalog, Associated Network, Associated datastore you can delete it and change with Associated Provider and Associated Provider at the bottom of Environment Domain, and this data will also appear automatically later.
+6. For status 0 Active in the Associated section, it will follow the number of read items (active). If provider or Node is disconnected, where status of Provider and Node will also be disconnected, then items will decrease following that status.
+7. This will be the reference during VM provisioning later
+
+but i think in future we need to add Node Management, the purpose is to make our architecture still aligned and make it easier to maintain. the menu same like the datastore management. 

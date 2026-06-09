@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\NetworkController;
 use App\Http\Controllers\Api\ProviderController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\TierController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +25,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('catalogs', [CatalogController::class, 'index']);
     Route::get('networks', [NetworkController::class, 'index']);
     Route::get('datastores', [DatastoreController::class, 'index']);
+    Route::get('tiers', [TierController::class, 'index']);
+    Route::get('tiers/stats', [TierController::class, 'stats']);
 
     // Admin-only IAM CRUD (07-api-contract §10).
     Route::middleware('role:Administrator')->group(function () {
@@ -40,6 +43,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('datastores', [DatastoreController::class, 'store']);
         Route::put('datastores/{datastore}', [DatastoreController::class, 'update']);
         Route::delete('datastores/{datastore}', [DatastoreController::class, 'destroy']);
+
+        // Tier policy (write).
+        Route::post('tiers', [TierController::class, 'store']);
+        Route::put('tiers/{tier}', [TierController::class, 'update']);
+        Route::delete('tiers/{tier}', [TierController::class, 'destroy']);
 
         Route::apiResource('users', UserController::class)->except('show');
         Route::apiResource('roles', RoleController::class)->except('show');

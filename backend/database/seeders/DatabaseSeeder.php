@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Group;
 use App\Models\Role;
+use App\Models\Tier;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -41,6 +42,18 @@ class DatabaseSeeder extends Seeder
         // Backfill the group manager now that the admin user exists.
         if ($group->manager_user_id === null) {
             $group->update(['manager_user_id' => $adminUser->id]);
+        }
+
+        // Authoritative default tiers (architecture-v2). Platinum is admin-creatable.
+        foreach ([
+            ['Bronze', 2, 4096, 40, 'Small development workload'],
+            ['Silver', 4, 8192, 80, 'Medium application workload'],
+            ['Gold', 8, 16384, 160, 'Heavy database workload'],
+        ] as [$name, $cpu, $ram, $disk, $desc]) {
+            Tier::firstOrCreate(
+                ['tier_name' => $name],
+                ['cpu' => $cpu, 'ram_mb' => $ram, 'disk_gb' => $disk, 'status' => 'Active', 'description' => $desc, 'created_by' => $adminUser->id],
+            );
         }
     }
 }

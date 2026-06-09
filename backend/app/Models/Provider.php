@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'provider_name', 'provider_type', 'endpoint', 'description',
@@ -27,5 +28,30 @@ class Provider extends Model
             'last_discovery_at' => 'datetime',
             'last_sync_at' => 'datetime',
         ];
+    }
+
+    public function nodes(): HasMany
+    {
+        return $this->hasMany(ProviderNode::class);
+    }
+
+    public function templates(): HasMany
+    {
+        return $this->hasMany(ProviderTemplate::class);
+    }
+
+    public function networks(): HasMany
+    {
+        return $this->hasMany(ProviderNetwork::class);
+    }
+
+    public function datastores(): HasMany
+    {
+        return $this->hasMany(ProviderDatastore::class);
+    }
+
+    public function vms(): HasMany
+    {
+        return $this->hasMany(ProviderVm::class);
     }
 }

@@ -4,7 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Provider;
+use App\Models\ProviderDatastore;
+use App\Models\ProviderNetwork;
+use App\Models\ProviderNode;
+use App\Models\ProviderTemplate;
+use App\Models\ProviderVm;
 use App\Services\AuditService;
+use App\Services\Discovery\DiscoveryService;
 use App\Services\Discovery\ProviderFactory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,8 +22,18 @@ class ProviderController extends Controller
 
     public function index(): JsonResponse
     {
-        // Secrets are hidden by the model.
-        return response()->json(Provider::orderBy('id')->get());
+        // Per-provider Active counts → nodes_count/templates_count/… for the widgets.
+        $active = fn ($q) => $q->where('discovered_status', 'Active');
+
+        return response()->json(
+            Provider::withCount([
+                'nodes as nodes_count' => $active,
+                'templates as templates_count' => $active,
+                'networks as networks_count' => $active,
+                'datastores as datastores_count' => $active,
+                'vms as vms_count' => $active,
+            ])->orderBy('id')->get()
+        );
     }
 
     public function store(Request $request): JsonResponse
@@ -73,18 +89,46 @@ class ProviderController extends Controller
         ]);
     }
 
+    // Run discovery now (full sync via the driver → provider_* tables).
+    public function discover(Request $request, Provider $provider, DiscoveryService $discovery): JsonResponse
+    {
+        $counts = $discovery->discover($provider);
+
+        return response()->json([
+            'discovery_status' => $provider->fresh()->discovery_status,
+            'counts' => $counts,
+        ]);
+    }
+
+    // Read-only Discovery Explorer: discovered resources + health (from the DB).
+    public function explorer(Provider $provider): JsonResponse
+    {
+        return response()->json([
+            'connection_status' => $provider->status,
+            'discovery_status' => $provider->discovery_status,
+            'last_discovery_at' => $provider->last_discovery_at,
+            'next_discovery_at' => null,
+            'nodes' => ProviderNode::where('provider_id', $provider->id)->get(),
+            'templates' => ProviderTemplate::where('provider_id', $provider->id)->get(),
+            'networks' => ProviderNetwork::where('provider_id', $provider->id)->get(),
+            'datastores' => ProviderDatastore::where('provider_id', $provider->id)->get(),
+            'vms' => ProviderVm::where('provider_id', $provider->id)->get(),
+        ]);
+    }
+
     // Statistics widgets — all from the DB, never live API calls (07-api-contract §2).
     public function stats(): JsonResponse
     {
+        $active = fn (string $model) => $model::where('discovered_status', 'Active')->count();
+
         return response()->json([
             'providers' => Provider::count(),
             'connected' => Provider::where('status', 'Connected')->count(),
             'discovery_success' => Provider::where('discovery_status', 'success')->count(),
-            // Discovered-resource counts are wired in Stage 2c.
-            'templates' => 0,
-            'networks' => 0,
-            'datastores' => 0,
-            'vms' => 0,
+            'templates' => $active(ProviderTemplate::class),
+            'networks' => $active(ProviderNetwork::class),
+            'datastores' => $active(ProviderDatastore::class),
+            'vms' => $active(ProviderVm::class),
         ]);
     }
 

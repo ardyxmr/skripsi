@@ -27,6 +27,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // captured as {provider}. test-connection/discover/explorer added in 2b/2c.
         Route::get('providers/stats', [ProviderController::class, 'stats']);
         Route::post('providers/{provider}/test-connection', [ProviderController::class, 'testConnection']);
+        Route::post('providers/{provider}/discover', [ProviderController::class, 'discover']);
+        Route::get('providers/{provider}/explorer', [ProviderController::class, 'explorer']);
         Route::apiResource('providers', ProviderController::class)->except('show');
     });
 });

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\DatastoreController;
+use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\NetworkController;
 use App\Http\Controllers\Api\ProviderController;
@@ -27,6 +28,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('datastores', [DatastoreController::class, 'index']);
     Route::get('tiers', [TierController::class, 'index']);
     Route::get('tiers/stats', [TierController::class, 'stats']);
+    Route::get('environments', [EnvironmentController::class, 'index']);
+    Route::get('environments/{environment}/allowed-resources', [EnvironmentController::class, 'allowedResources']);
 
     // Admin-only IAM CRUD (07-api-contract §10).
     Route::middleware('role:Administrator')->group(function () {
@@ -48,6 +51,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('tiers', [TierController::class, 'store']);
         Route::put('tiers/{tier}', [TierController::class, 'update']);
         Route::delete('tiers/{tier}', [TierController::class, 'destroy']);
+
+        // Environment policy (write).
+        Route::post('environments', [EnvironmentController::class, 'store']);
+        Route::put('environments/{environment}', [EnvironmentController::class, 'update']);
+        Route::delete('environments/{environment}', [EnvironmentController::class, 'destroy']);
 
         Route::apiResource('users', UserController::class)->except('show');
         Route::apiResource('roles', RoleController::class)->except('show');

@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Box, X, Save, Shield, Clock } from 'lucide-react';
 
-export default function EnvironmentForm({ 
-  isOpen, 
-  onClose, 
-  onSave, 
-  initialData = null, 
+export default function EnvironmentForm({
+  isOpen,
+  onClose,
+  onSave,
+  initialData = null,
   title = "Create Environment",
-  onChange
+  onChange,
+  lists = { providers: [], tiers: [], networks: [], datastores: [] },
 }) {
-  const [formData, setFormData] = useState({
+  const EMPTY = {
     name: '',
     description: '',
     expiryType: 'days',
@@ -17,32 +18,32 @@ export default function EnvironmentForm({
     approvalRequired: true,
     allowDataDisk: false,
     status: 'Active',
-    type: 'Custom'
-  });
+    type: 'Custom',
+    allowedProviderIds: [],
+    allowedTierIds: [],
+    allowedNetworkIds: [],
+    allowedDatastoreIds: [],
+  };
+  const [formData, setFormData] = useState(EMPTY);
 
   // Keep track if it's a default environment since name cannot be changed
   const isDefault = initialData?.type === 'Default';
 
   useEffect(() => {
     if (initialData && isOpen) {
-      setFormData({
-        ...initialData
-      });
+      setFormData({ ...EMPTY, ...initialData });
     } else if (isOpen) {
-      // Reset form on new open
-      setFormData({
-        name: '',
-        description: '',
-        expiryType: 'days',
-        expiryValue: 30,
-        approvalRequired: true,
-        status: 'Active',
-        type: 'Custom'
-      });
+      setFormData(EMPTY);
     }
   }, [initialData, isOpen]);
 
   if (!isOpen) return null;
+
+  // Toggle an id within one of the four allow-list arrays.
+  const toggleAllow = (key, id) => setFormData((f) => {
+    const arr = f[key] || [];
+    return { ...f, [key]: arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id] };
+  });
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -181,6 +182,41 @@ export default function EnvironmentForm({
                   </label>
                 </div>
 
+              </div>
+            </div>
+
+            {/* Allow-lists — only these resources appear in the provision wizard. */}
+            <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+              <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">Allowed Resources</label>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">Only the selected resources are offered when provisioning in this environment.</p>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  ['Providers', 'allowedProviderIds', lists.providers, (p) => p.providerName ?? p.name],
+                  ['Tiers', 'allowedTierIds', lists.tiers, (t) => t.tierName ?? t.name],
+                  ['Networks', 'allowedNetworkIds', lists.networks, (n) => n.networkName ?? n.name],
+                  ['Datastores', 'allowedDatastoreIds', lists.datastores, (d) => d.datastoreName ?? d.name],
+                ].map(([label, key, items, labelFn]) => (
+                  <div key={key}>
+                    <div className="text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">{label}</div>
+                    <div className="flex flex-col gap-1.5 max-h-[130px] overflow-y-auto custom-scrollbar pr-1">
+                      {(items || []).length === 0 ? (
+                        <span className="text-[11px] text-slate-400 italic">None available</span>
+                      ) : (
+                        (items || []).map((it) => (
+                          <label key={it.id} className="flex items-center gap-2 text-[12px] text-slate-700 dark:text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={(formData[key] || []).includes(it.id)}
+                              onChange={() => toggleAllow(key, it.id)}
+                              className="rounded border-slate-300 dark:border-theme text-blue-600 focus:ring-blue-500"
+                            />
+                            {labelFn(it)}
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

@@ -6,6 +6,8 @@ import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
 import { useCatalogContext } from '../../../contexts/CatalogContext';
 import { useNetworkContext } from '../../../contexts/NetworkContext';
 import { useDatastoreContext } from '../../../contexts/DatastoreContext';
+import { useProviderContext } from '../../../contexts/ProviderContext';
+import { useTierContext } from '../../../contexts/TierContext';
 import ResizableTh from '../../../components/ResizableTh';
 import EnvironmentForm from './EnvironmentForm';
 import EnvironmentExplorer from './EnvironmentExplorer';
@@ -17,6 +19,8 @@ export default function EnvironmentManagement() {
   const { catalogs } = useCatalogContext();
   const { networks } = useNetworkContext();
   const { datastores } = useDatastoreContext();
+  const { providers } = useProviderContext();
+  const { tiers } = useTierContext();
   
   // Searching & Filtering
   const [searchQuery, setSearchQuery] = useState('');
@@ -133,6 +137,10 @@ export default function EnvironmentManagement() {
       approvalRequired: envData.approvalRequired,
       allowDataDisk: envData.allowDataDisk,
       status: envData.status,
+      allowedProviderIds: envData.allowedProviderIds ?? [],
+      allowedTierIds: envData.allowedTierIds ?? [],
+      allowedNetworkIds: envData.allowedNetworkIds ?? [],
+      allowedDatastoreIds: envData.allowedDatastoreIds ?? [],
     };
     try {
       if (formMode === 'create') {
@@ -416,13 +424,14 @@ export default function EnvironmentManagement() {
 
 
       {/* Forms */}
-      <EnvironmentForm 
-        isOpen={isFormOpen} 
-        onClose={() => closeForm()} 
+      <EnvironmentForm
+        isOpen={isFormOpen}
+        onClose={() => closeForm()}
         onSave={handleSave}
         initialData={editingEnv}
         title={formMode === 'create' ? "Create Environment" : "Edit Environment"}
         onChange={() => setHasUnsavedChanges(true)}
+        lists={{ providers, tiers, networks, datastores }}
       />
 
       {/* Unified Action Modal */}

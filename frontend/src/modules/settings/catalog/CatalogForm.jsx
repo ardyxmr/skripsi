@@ -95,12 +95,7 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
           </div>
             
           {/* Form Actions */}
-          <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-between gap-3 bg-white dark:bg-card">
-            <div className="flex items-center gap-3">
-                <button type="button" className="px-3 py-2 text-[13px] font-medium bg-slate-100 hover:bg-slate-200 dark:bg-surface dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-input transition-colors">
-                  Preview Catalog
-                </button>
-              </div>
+          <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-end gap-3 bg-white dark:bg-card">
               <div className="flex gap-3">
                 <button type="button" onClick={() => setModal({ isOpen: false, type: null, mode: null, data: null })} className="px-4 py-2 text-[13px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-input transition-colors">Cancel</button>
                 <button type="submit" className="px-4 py-2 text-[13px] font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-input transition-colors shadow-sm">

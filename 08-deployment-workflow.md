@@ -1,0 +1,175 @@
+# Deployment Workflow
+## Proxmox Self-Service VM Provisioning Portal
+
+Two senses of "deployment" matter here:
+- **A. Application deployment** — how to stand up the portal (backend, frontend, queue, Terraform).
+- **B. Provisioning workflow** — how a single VM request flows from submission to a running VM via Terraform.
+
+Both are specified below.
+
+---
+
+## Part A — Application deployment
+
+### A.1 Components
+
+| Component | Role |
+|---|---|
+| Backend API (Laravel) | HTTP API, services, scheduler |
+| Queue worker | Runs `ProvisionVmJob` and lifecycle jobs |
+| Scheduler (cron) | Auto-discovery + expiry/lifecycle engine |
+| Frontend (React/Vite build) | Static SPA served by web server/CDN |
+| Database | PostgreSQL |
+| Terraform CLI | Invoked by the queue worker per workspace |
+| Ansible | Invoked by the queue worker for post-provision hardening |
+| Object/file storage | `storage/app/...` for workspaces, catalog images, terraform templates |
+| Proxmox VE | Target hypervisor (reachable from the worker host) |
+
+### A.2 Prerequisites on the worker host
+- Terraform CLI installed and on `PATH`.
+- The required Terraform provider downloadable (e.g. `Telmate/proxmox` at the version stored on each provider).
+- **Ansible installed and on `PATH`** (for the post-provision hardening step), with the hardening playbook present under `storage/app/master-provisioning/ansible/`.
+- **OS templates prepared for self-service:** cloud-init (Linux) / cloudbase-init (Windows) installed (hostname + boot-disk growth on first boot); **virtio-scsi** controller with **disk hotplug enabled** (so data disks attach without reboot); **virtio drivers** installed in Windows templates.
+- Network reachability + TLS trust to each Proxmox endpoint (e.g. `https://<host>:8006`).
+- Write access to `storage/app/provisioning/` and `storage/app/master-provisioning/terraform/`.
+
+### A.3 Environment configuration
+- `VITE_API_BASE_URL` (frontend) → backend API base.
+- Backend `.env`: DB connection, app key (used by `CredentialCipher` to encrypt provider secrets), queue driver, session/token settings.
+- **Important:** the legacy Vite `apiSimulationPlugin` that read a root `.env` for `PROXMOX_*` and generated workspaces in dev is **removed** for production. Provider credentials now live encrypted in the `providers` table; the real `ProvisionVmJob` generates workspaces. No Proxmox credentials belong in any `.env` in production.
+
+### A.4 First-time bring-up sequence
+1. Run DB migrations.
+2. Run the **bootstrap seeder**: System Administrators group (manager null) → roles (Administrator/Manager/User) → admin user → set group manager. Seed default tiers (Bronze/Silver/Gold, authoritative values).
+3. Place Terraform templates `main.tf.stub` / `variables.tf.stub` in `storage/app/master-provisioning/terraform/`.
+4. Build and deploy the frontend; deploy the backend API.
+5. Start the queue worker and the scheduler.
+6. Admin logs in and configures the first provider (both credential pairs) → Test Connection → Run Discovery Now.
+7. Admin publishes catalog/networks/datastores, defines tiers/environments.
+8. Smoke test (Part B end-to-end).
+
+### A.5 Ongoing operations
+- **Auto-discovery** runs per provider on its interval; "Run Discovery Now" forces a sync.
+- **Lifecycle engine** runs on schedule: expiry warnings → Expired → grace → auto-destroy.
+- **Backups:** database + `storage/app/provisioning/` (workspaces/state) + `storage/app/catalog-images/`. Terraform state lives only on disk, so workspace backup is essential for destroy/recovery.
+
+---
+
+## Part B — Provisioning workflow (per request)
+
+### B.1 Submission & governance
+```
+User completes wizard (Environment → Configuration → Review)
+        │
+        ▼
+POST /api/provision-requests   (stores IDs only, validated vs environment policy)
+        │
+        ▼
+environment.approval_required ?
+   ├── false ──────────────► Terraform Queue (enqueue ProvisionVmJob)
+   └── true  ──► approval_requests(PROVISION, Pending)
+                     │  approver = user → group → group manager
+                     ▼
+                Manager acts (reason required)
+                   ├── Approve ─► Terraform Queue
+                   ├── Reject  ─► closed, no VM
+                   └── Revert  ─► Need Modification ─► user edits ─► resubmit ─► Pending
+```
+
+### B.2 Terraform execution (`ProvisionVmJob`)
+```
+1. Create workspace:  storage/app/provisioning/{username}/date_pr{DDMMYYYY_His}/
+2. Resolve resources (IDs → provider values):
+      provider_node_id → target_node
+      catalog_id       → template
+      network_id       → network (bridge)
+      datastore_id     → storage
+      tier_id          → cpu, memory(MB), disk_size(GB)  # boot disk floor; request boot_disk_gb may raise it
+3. Load provider config (uses PROVISIONING credential)
+4. Render provider.tf  (from terraform_provider_source + version)
+5. Render terraform.tfvars  (resolved values; e.g. vm_name, cpu, memory, disk list,
+                              target_node, network, storage, template, cloud-init params)
+                              # vm_name → provider VM name AND cloud-init hostname
+                              # cloud-init/cloudbase-init sets hostname + grows boot disk on first boot
+6. Copy main.tf / variables.tf from master-provisioning stubs
+7. Write deployment.json (request metadata)
+8. terraform init → validate → plan → apply
+```
+Terraform receives **only resolved values** — never any `*_id`.
+
+### B.3 Outcomes
+```
+apply success
+   ├─► Inventory record created (lifecycle status Active; stores workspace_path + terraform_state_path; captures external_vmid)
+   ├─► Scoped VM discovery (discovery layer → provider_vms), then VmFactSyncService maps observed power/IP/
+   │     allocation/utilization into inventory by external_vmid, retry until guest-agent IP available  (no direct provider call here)
+   ├─► if security_hardening: render playbook + inventory into the SAME workspace →
+   │     run Ansible against the discovered IP → set hardening_status (Success/Failed) → audit HARDEN_VM
+   │     (hardening failure leaves the VM lifecycle Active, flagged; it does NOT destroy the VM)
+   └─► audit CREATE_VM
+
+apply failure
+   ├─► Deployment status Failed; error message captured
+   ├─► Workspace RETAINED (provider.tf, main.tf, variables.tf, terraform.tfvars,
+   │     terraform.tfstate(.backup), deployment.json, logs)
+   └─► Retry available (reuses SAME workspace + state; no new workspace, no new request)
+```
+
+### B.4 Lifecycle actions (post-provision)
+```
+Renew      → approval(RENEWAL)   → on approve: extend expiry_date
+Permanent  → approval(PERMANENT) → on approve: is_permanent=true, expiry_date=null
+Resize     → approval(RESIZE)    → on approve: terraform reconfigure CPU/RAM in existing workspace
+              (CPU/RAM only; auto-applied, no admin step; VM-name confirmation required)
+Add disk   → approval(ADD_DISK)  → on approve: terraform attaches RAW disk → status Pending Disk Setup
+              → admin formats/mounts in-guest (hotplug rescan; reboot only as fallback) → mark Ready
+              (only if environment.allow_data_disk; existing disks never shrunk; VM-name confirmation required;
+               full automation via guest-agent exec / Ansible = future work)
+Delete     → approval/queue → terraform destroy (uses workspace state) → status Deleted (row + workspace retained)
+Re-harden  → re-run Ansible playbook in existing workspace (only when hardening_status == Failed); no Terraform re-run
+Provider Sync → scoped VM discovery (provider_vms) → sync IP/status into inventory by external_vmid
+Expiry     → warning → Expired → grace_period_until → auto destroy → Deleted
+```
+
+### B.5 Workspace contents (reference)
+```
+storage/app/provisioning/user01/date_pr19062026_154501/
+├── provider.tf            # generated from provider source/version
+├── main.tf                # copied from stub
+├── variables.tf           # copied from stub
+├── terraform.tfvars       # generated from resolved values
+├── terraform.tfstate      # state (NEVER in DB)
+├── terraform.tfstate.backup
+├── deployment.json        # local metadata (DB remains source of truth)
+├── hardening.yml          # Ansible playbook (only when security_hardening is on)
+├── ansible-inventory.ini  # generated; targets the discovered IP
+├── ansible-hardening.log  # hardening run log (retained)
+└── terraform / apply logs
+```
+
+---
+
+## Part C — Release & rollback notes
+
+- **Schema migrations** are forward-only in normal operation; pair each with a tested down-migration for rollback in staging.
+- **Frontend** is a static build; rollback = redeploy the previous build artifact.
+- **Workspaces are immutable history** — never delete on failure or destroy; they are the recovery and audit substrate.
+- **Credential rotation:** update a provider's discovery/provisioning credentials via `PUT /api/providers/{id}` (secrets re-encrypted on write); re-run Test Connection. Existing workspaces are unaffected; new deployments use the new provisioning credential.
+- **Adding a provider type** (OpenStack/OLVM/etc.): add a Provider Driver + endpoint config (+ Terraform provider source/version). No changes to catalog, network, datastore, environment, tier, approval, provisioning flow, or inventory.
+
+---
+
+## Part D — Pre-go-live checklist
+
+- [ ] Migrations + bootstrap seeder run; admin can log in.
+- [ ] Default tiers seeded with authoritative values; frontend mock reconciled.
+- [ ] First provider configured; Test Connection = Connected; discovery populated all four `provider_*` tables.
+- [ ] No credential field appears in any API response (verified against API contract §13).
+- [ ] Catalog/network/datastore published; environment + tier policies defined.
+- [ ] End-to-end: request (with approval) → approve → ProvisionVmJob → Active VM + discovered IP + observed power synced.
+- [ ] Failure path: forced failure retains workspace and is retryable.
+- [ ] Resize path: CPU/RAM only, auto-applied on approval, VM-name confirmation.
+- [ ] Add-disk path: env allow_data_disk gated, Terraform attaches raw, admin format/mount → Ready, VM-name confirmation.
+- [ ] Delete path: terraform destroy, status Deleted, workspace retained.
+- [ ] Audit rows present for every mutating action; CSV export respects filters + visibility.
+- [ ] Queue worker + scheduler running; lifecycle/expiry engine verified.

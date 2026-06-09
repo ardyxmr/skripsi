@@ -103,6 +103,7 @@ export default function TierManagement() {
   };
 
   const handleCreate = () => {
+    setActiveMenuId(null); // close any open row action menu
     setFormMode('create');
     setEditingTier(null);
     setIsFormOpen(true);

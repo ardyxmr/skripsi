@@ -43,9 +43,21 @@ export default function ProviderManagement() {
   }, [showUnsavedWarning, modal.isOpen, hasUnsavedChanges]);
 
   const openModal = (mode, data = null) => {
+    setOpenDropdownId(null); // close any open row action menu
     setModal({ isOpen: true, mode, data });
     setHasUnsavedChanges(false);
   };
+
+  // Close the action dropdown on any outside click (the menu portals to body).
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.action-dropdown-container') && !e.target.closest('.action-dropdown-portal')) {
+        setOpenDropdownId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const closeModal = (force = false) => {
     if (hasUnsavedChanges && !force) {

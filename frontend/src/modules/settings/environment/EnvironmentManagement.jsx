@@ -114,6 +114,7 @@ export default function EnvironmentManagement() {
   };
 
   const handleCreate = () => {
+    setActiveMenuId(null); // close any open row action menu
     setFormMode('create');
     setEditingEnv(null);
     setIsFormOpen(true);

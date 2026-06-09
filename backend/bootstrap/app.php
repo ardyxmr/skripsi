@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ForceJsonAccept;
 use App\Http\Middleware\RoleMiddleware;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -19,6 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Every /api/* request is treated as JSON.
+        $middleware->api(prepend: [ForceJsonAccept::class]);
+
         // Route-level RBAC gate: ->middleware('role:Administrator')
         $middleware->alias([
             'role' => RoleMiddleware::class,

@@ -10,7 +10,7 @@ import { useNetworkContext } from '../../../contexts/NetworkContext';
 
 export default function NetworkManagement() {
   const { providers } = useProviderContext();
-  const { networks, setNetworks } = useNetworkContext();
+  const { networks, refetch, create, update, remove } = useNetworkContext();
   
   // Search & Filters
   const [networkSearch, setNetworkSearch] = useState('');
@@ -73,13 +73,17 @@ export default function NetworkManagement() {
     setTimeout(() => setNetworkToastMsg(''), 3000);
   };
 
-  const handleRefreshNetworks = () => {
+  const handleRefreshNetworks = async () => {
     if (isRefreshingNetwork) return;
     setIsRefreshingNetwork(true);
-    setTimeout(() => {
-      setIsRefreshingNetwork(false);
+    try {
+      await refetch();
       showNetworkToast('Network data refreshed successfully.');
-    }, 1500);
+    } catch (e) {
+      showNetworkToast(e.message || 'Refresh failed.');
+    } finally {
+      setIsRefreshingNetwork(false);
+    }
   };
 
   const handleNetworkSort = (key) => {
@@ -110,32 +114,32 @@ export default function NetworkManagement() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleAddEditNetworkSubmit = (e) => {
+  const handleAddEditNetworkSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const newNetwork = {
-      id: modal.mode === 'edit' ? modal.data.id : networks.length + 1,
-      name: formData.get('name'),
+    const payload = {
+      networkName: formData.get('networkName'),
       description: formData.get('description'),
       provider: formData.get('provider'),
       node: formData.get('node'),
       providerNetwork: formData.get('providerNetwork'),
-      cidr: formData.get('providerNetwork') === 'vmbr0' ? '192.168.10.0/24' : '10.0.0.0/24',
       environment: formData.getAll('environment'),
       tiers: formData.getAll('tiers'),
       status: formData.get('status'),
-      lastUpdated: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' }),
-      activeVMs: modal.mode === 'edit' ? modal.data.activeVMs : 0
     };
 
-    if (modal.mode === 'edit') {
-      setNetworks(networks.map(n => n.id === modal.data.id ? newNetwork : n));
-      showNetworkToast(`Network "${newNetwork.name}" updated successfully.`);
-    } else {
-      setNetworks([...networks, newNetwork]);
-      showNetworkToast(`Network "${newNetwork.name}" created successfully.`);
+    try {
+      if (modal.mode === 'edit') {
+        await update(modal.data.id, payload);
+        showNetworkToast(`Network "${payload.networkName}" updated successfully.`);
+      } else {
+        await create(payload);
+        showNetworkToast(`Network "${payload.networkName}" created successfully.`);
+      }
+      closeModal(true);
+    } catch (err) {
+      showNetworkToast(err.message || 'Save failed.');
     }
-    closeModal(true);
   };
 
   const handleNetworkActionClick = (action, network) => {
@@ -147,17 +151,18 @@ export default function NetworkManagement() {
     }
   };
 
-  const handleConfirmNetworkAction = () => {
+  const handleConfirmNetworkAction = async () => {
+    const target = networkActionModal.network;
+    try {
     if (networkActionModal.action === 'Delete') {
-      setNetworks(networks.filter(n => n.id !== networkActionModal.network.id));
-      showNetworkToast(`Network "${networkActionModal.network.name}" deleted successfully.`);
+      await remove(target.id);
+      showNetworkToast(`Network "${target.name}" deleted successfully.`);
     } else if (networkActionModal.action === 'Enable' || networkActionModal.action === 'Disable') {
-      setNetworks(networks.map(n => 
-        n.id === networkActionModal.network.id 
-          ? { ...n, status: networkActionModal.action === 'Enable' ? 'Active' : 'Disabled' } 
-          : n
-      ));
-      showNetworkToast(`Network "${networkActionModal.network.name}" ${networkActionModal.action === 'Enable' ? 'enabled' : 'disabled'} successfully.`);
+      await update(target.id, { status: networkActionModal.action === 'Enable' ? 'Active' : 'Disabled' });
+      showNetworkToast(`Network "${target.name}" ${networkActionModal.action === 'Enable' ? 'enabled' : 'disabled'} successfully.`);
+    }
+    } catch (e) {
+      showNetworkToast(e.message || 'Action failed.');
     }
     setNetworkActionModal({ isOpen: false, action: null, network: null, isBlocking: false });
   };

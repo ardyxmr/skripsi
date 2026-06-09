@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
-export default function DatastoreExplorer({ datastoreDrawer, setDatastoreDrawer }) {
+export default function DatastoreDiscovery({ datastoreDrawer, setDatastoreDrawer }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && datastoreDrawer.isOpen) {

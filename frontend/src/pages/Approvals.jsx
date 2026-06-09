@@ -1,94 +1,62 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, RefreshCw, Check, X, ChevronRight, ChevronDown, CheckSquare, Square, Filter, RotateCcw, FileEdit, AlertCircle } from 'lucide-react';
+import api from '../lib/api';
+import { useUI } from '../stores/uiStore';
 
-// Mock Data
-const MOCK_REQUESTS = [
-  {
-    id: 'req-101',
-    type: 'Create New VM',
-    vmName: 'APP-WEB-01',
-    os: 'Ubuntu 22.04 LTS',
-    environment: 'Development',
-    tier: 'Silver',
-    cpu: 2,
-    ram: 2,
-    disk: 50,
-    provider: 'Proxmox',
-    status: 'Pending',
-    expiry: '30 Days',
-    requestDate: '2026-06-01T14:25:00',
-    actionDate: null,
-    description: 'Application server for Payroll System testing.',
-    requestedBy: 'johndoe',
-    department: 'Finance',
-    manager: 'Manager01',
-    actionBy: null,
-    actionHistory: []
-  },
-  {
-    id: 'req-102',
-    type: 'Extend Period',
-    vmName: 'DB-PROD-01',
-    os: 'Rocky Linux 9',
-    environment: 'Production',
-    tier: 'Gold',
-    cpu: 4,
-    ram: 8,
-    disk: 200,
-    provider: 'VMware',
-    status: 'Approved',
-    expiry: 'Permanent',
-    requestDate: '2026-05-28T09:10:00',
-    actionDate: '2026-05-28T10:05:00',
-    description: 'Primary database for E-commerce platform.',
-    requestedBy: 'alice.smith',
-    department: 'Engineering',
-    manager: 'Director01',
-    actionBy: 'Director01',
-    actionHistory: [
-      {
-        action_type: 'Approve',
-        reason: 'Approved for development testing.',
-        action_by: 'Director01',
-        action_date: '2026-05-28T10:05:00'
-      }
-    ]
-  },
-  {
-    id: 'req-103',
-    type: 'Edit Resources',
-    vmName: 'TEST-ENV-01',
-    os: 'Debian 12',
-    environment: 'Staging',
-    tier: 'Bronze',
-    cpu: 1,
-    ram: 1,
-    disk: 20,
-    provider: 'Proxmox',
-    status: 'Rejected',
-    expiry: '60 Days',
-    requestDate: '2026-05-29T16:40:00',
-    actionDate: '2026-05-30T08:15:00',
-    description: 'Temporary instance for load testing.',
-    requestedBy: 'bob.jones',
-    department: 'QA',
-    manager: 'Manager02',
-    actionBy: 'Manager02',
-    actionHistory: [
-      {
-        action_type: 'Reject',
-        reason: 'Resource quota exceeded for QA department this month. Please request again next week.',
-        action_by: 'Manager02',
-        action_date: '2026-05-30T08:15:00'
-      }
-    ]
-  }
-];
+const REQUEST_TYPE_LABEL = {
+  PROVISION: 'Create New VM',
+  RENEWAL: 'Extend Period',
+  PERMANENT: 'Make Permanent',
+  RESIZE: 'Edit Resources',
+  ADD_DISK: 'Add Data Disk',
+  DESTROY: 'Delete VM',
+};
+
+// Map an API approval row onto the field names this page renders.
+function normalizeRequest(row) {
+  const history = (row.actionType && row.actionDate)
+    ? [{ action_type: row.actionType, reason: row.actionReason, action_by: row.approverName, action_date: row.actionDate }]
+    : (row.actionHistory || []);
+  return {
+    ...row,
+    type: REQUEST_TYPE_LABEL[row.requestType] || row.type || row.requestType,
+    vmName: row.vmName ?? '—',
+    os: row.catalogName ?? row.os ?? '—',
+    environment: row.environmentName ?? row.environment ?? '—',
+    tier: row.tierName ?? row.tier ?? '—',
+    provider: row.providerName ?? row.provider ?? '—',
+    status: row.status,
+    expiry: row.requestedExpiry ?? row.expiry ?? '—',
+    requestDate: row.createdAt ?? row.requestDate,
+    actionDate: row.actionDate ?? null,
+    requestedBy: row.requesterName ?? row.requestedBy ?? '—',
+    department: row.groupName ?? row.department ?? '—',
+    actionBy: row.approverName ?? row.actionBy ?? null,
+    description: row.description ?? '',
+    actionHistory: history,
+  };
+}
 
 export default function Approvals() {
   const navigate = useNavigate();
-  const [requests, setRequests] = useState(MOCK_REQUESTS);
+  const pushToast = useUI((s) => s.pushToast);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadApprovals = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await api.get('/approvals');
+      setRequests((rows || []).map(normalizeRequest));
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Failed to load approvals.' });
+    } finally {
+      setLoading(false);
+    }
+  }, [pushToast]);
+
+  useEffect(() => { loadApprovals(); }, [loadApprovals]);
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -178,7 +146,7 @@ export default function Approvals() {
   const pendingRequests = requests.filter(r => r.status === 'Pending').length;
   const approvedRequests = requests.filter(r => r.status === 'Approved').length;
   const rejectedRequests = requests.filter(r => r.status === 'Rejected').length;
-  const needActionRequests = requests.filter(r => r.status === 'Need Action').length;
+  const needActionRequests = requests.filter(r => r.status === 'Reverted').length;
 
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
@@ -213,9 +181,10 @@ export default function Approvals() {
     }
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 800);
+    await loadApprovals();
+    setIsRefreshing(false);
   };
 
   const openActionModal = (type, ids = null) => {
@@ -225,65 +194,46 @@ export default function Approvals() {
     setActionModalOpen(true);
   };
 
-  const executeWorkflowAction = () => {
+  const executeWorkflowAction = async () => {
     if (!actionReason.trim()) {
-      return alert('Reason is required.');
+      return pushToast({ kind: 'error', message: 'Reason is required.' });
     }
-    
-    const statusMap = {
-      'Approve': 'Approved',
-      'Reject': 'Rejected',
-      'Revert': 'Need Action'
-    };
 
-    const newStatus = statusMap[actionType];
-    const actionDate = new Date().toISOString();
-    const actionBy = 'AdminUser'; // Mock active user
+    const endpoint = { Approve: 'approve', Reject: 'reject', Revert: 'revert' }[actionType];
+    const targets = requests.filter((r) => actionTargetIds.includes(r.id) && r.status === 'Pending');
 
-    setRequests(prev => prev.map(req => {
-      if (actionTargetIds.includes(req.id) && req.status === 'Pending') {
-        const newLog = {
-          action_type: actionType,
-          reason: actionReason,
-          action_by: actionBy,
-          action_date: actionDate
-        };
-        
-        return { 
-          ...req, 
-          status: newStatus, 
-          actionDate: actionDate,
-          actionBy: actionBy,
-          actionHistory: [newLog, ...(req.actionHistory || [])]
-        };
-      }
-      return req;
-    }));
-    
-    setActionModalOpen(false);
-    setActionReason('');
-    setActionTargetIds([]);
-    setSelectedRows([]);
+    try {
+      await Promise.all(
+        targets.map((req) => api.post(`/approvals/${req.id}/${endpoint}`, { actionReason }))
+      );
+      pushToast({ kind: 'success', message: `${actionType} submitted.` });
+      setActionModalOpen(false);
+      setActionReason('');
+      setActionTargetIds([]);
+      setSelectedRows([]);
+      await loadApprovals();
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Action failed.' });
+    }
   };
 
   const executeEdit = (id) => {
     const req = requests.find(r => r.id === id);
     if (!req) return;
-    
-    const mappedState = {
-      env: req.environment.toLowerCase(),
-      provider: req.provider,
-      node: '',
-      catalogId: req.os === 'Ubuntu 22.04 LTS' ? 'ubuntu-22.04' : (req.os === 'Debian 12' ? 'debian-12' : (req.os === 'Rocky Linux 9' ? 'centos-9' : '')),
-      tierId: req.tier.toLowerCase(),
-      network: 'vlan-prod-01',
-      datastore: 'vmdata',
-      vmCount: 1,
-      vmPrefix: req.vmName.split('-')[0] || 'APP',
-      description: req.description
-    };
-    
-    navigate('/request-vm', { state: mappedState });
+
+    // Reverted PROVISION requests carry the original IDs; pre-fill the wizard with them.
+    navigate('/request-vm', {
+      state: {
+        environmentId: req.environmentId,
+        providerId: req.providerId,
+        catalogId: req.catalogId,
+        tierId: req.tierId,
+        networkId: req.networkId,
+        datastoreId: req.datastoreId,
+        vmPrefix: req.vmName,
+        description: req.description,
+      },
+    });
   };
 
   // Format Date helper
@@ -428,8 +378,8 @@ export default function Approvals() {
         </div>
 
         <div 
-          onClick={() => setStatusFilter('Need Action')}
-          className={`bg-white dark:bg-card rounded-card p-5 border shadow-sm cursor-pointer transition-[transform,box-shadow] hover:-translate-y-0.5 ${statusFilter === 'Need Action' ? 'border-orange-400 dark:border-orange-500 shadow-md shadow-orange-500/10 ring-1 ring-orange-400/30' : 'border-gray-100 dark:border-theme hover:shadow-md'}`}
+          onClick={() => setStatusFilter('Reverted')}
+          className={`bg-white dark:bg-card rounded-card p-5 border shadow-sm cursor-pointer transition-[transform,box-shadow] hover:-translate-y-0.5 ${statusFilter === 'Reverted' ? 'border-orange-400 dark:border-orange-500 shadow-md shadow-orange-500/10 ring-1 ring-orange-400/30' : 'border-gray-100 dark:border-theme hover:shadow-md'}`}
         >
           <div className="text-[11px] font-bold text-orange-500 dark:text-orange-400 uppercase tracking-wider mb-2">Need Action</div>
           <div className="text-[28px] font-bold text-gray-800 dark:text-gray-100">{needActionRequests}</div>
@@ -511,7 +461,7 @@ export default function Approvals() {
               <option value="Pending">Pending</option>
               <option value="Approved">Approved</option>
               <option value="Rejected">Rejected</option>
-              <option value="Need Action">Need Action</option>
+              <option value="Reverted">Need Action</option>
             </select>
 
             <button 
@@ -652,10 +602,10 @@ export default function Approvals() {
                           <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold shadow-sm
                             ${req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 
                               req.status === 'Rejected' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400' : 
-                              req.status === 'Need Action' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400' :
+                              req.status === 'Reverted' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400' :
                               'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}
                           >
-                            <span className={`w-1.5 h-1.5 rounded-full ${req.status === 'Approved' ? 'bg-emerald-500' : req.status === 'Rejected' ? 'bg-rose-500' : req.status === 'Need Action' ? 'bg-orange-500' : 'bg-amber-500'}`}></span>
+                            <span className={`w-1.5 h-1.5 rounded-full ${req.status === 'Approved' ? 'bg-emerald-500' : req.status === 'Rejected' ? 'bg-rose-500' : req.status === 'Reverted' ? 'bg-orange-500' : 'bg-amber-500'}`}></span>
                             {req.status}
                           </div>
                         </td>
@@ -690,7 +640,7 @@ export default function Approvals() {
                                 <RotateCcw size={14} />
                               </button>
                             </div>
-                          ) : req.status === 'Need Action' ? (
+                          ) : req.status === 'Reverted' ? (
                             <div className="flex items-center justify-end">
                               <button 
                                 onClick={() => executeEdit(req.id)}

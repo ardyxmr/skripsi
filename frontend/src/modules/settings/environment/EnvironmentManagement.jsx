@@ -9,9 +9,11 @@ import { useDatastoreContext } from '../../../contexts/DatastoreContext';
 import ResizableTh from '../../../components/ResizableTh';
 import EnvironmentForm from './EnvironmentForm';
 import EnvironmentExplorer from './EnvironmentExplorer';
+import { useUI } from '../../../stores/uiStore';
 
 export default function EnvironmentManagement() {
-  const { environments, setEnvironments } = useEnvironmentContext();
+  const { environments, create, update, remove } = useEnvironmentContext();
+  const pushToast = useUI((s) => s.pushToast);
   const { catalogs } = useCatalogContext();
   const { networks } = useNetworkContext();
   const { datastores } = useDatastoreContext();
@@ -122,28 +124,26 @@ export default function EnvironmentManagement() {
     setHasUnsavedChanges(false);
   };
 
-  const handleSave = (envData) => {
-    if (formMode === 'create') {
-      const newEnv = {
-        ...envData,
-        id: Math.max(...environments.map(e => e.id), 0) + 1,
-        type: 'Custom', // Newly created environments are always Custom
-        lastUpdated: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-      };
-      setEnvironments([...environments, newEnv]);
-    } else {
-      setEnvironments(environments.map(e => {
-        if (e.id === editingEnv.id) {
-          return {
-            ...e,
-            ...envData,
-            lastUpdated: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-          };
-        }
-        return e;
-      }));
+  const handleSave = async (envData) => {
+    const payload = {
+      environmentName: envData.name,
+      description: envData.description,
+      expiryType: envData.expiryType,
+      expiryValue: envData.expiryType === 'lifetime' ? null : envData.expiryValue,
+      approvalRequired: envData.approvalRequired,
+      allowDataDisk: envData.allowDataDisk,
+      status: envData.status,
+    };
+    try {
+      if (formMode === 'create') {
+        await create(payload);
+      } else {
+        await update(editingEnv.id, payload);
+      }
+      closeForm(true);
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Save failed.' });
     }
-    closeForm(true);
   };
 
   const handleActionClick = (action, env) => {
@@ -193,17 +193,19 @@ export default function EnvironmentManagement() {
     });
   };
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
     const { action, environment } = envActionModal;
-    
-    if (action === 'Delete') {
-      setEnvironments(environments.filter(e => e.id !== environment.id));
-    } else if (action === 'Enable') {
-      setEnvironments(environments.map(e => e.id === environment.id ? { ...e, status: 'Active' } : e));
-    } else if (action === 'Disable') {
-      setEnvironments(environments.map(e => e.id === environment.id ? { ...e, status: 'Inactive' } : e));
+    try {
+      if (action === 'Delete') {
+        await remove(environment.id);
+      } else if (action === 'Enable') {
+        await update(environment.id, { status: 'Active' });
+      } else if (action === 'Disable') {
+        await update(environment.id, { status: 'Inactive' });
+      }
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Action failed.' });
     }
-    
     setEnvActionModal({ isOpen: false, action: null, environment: null, isBlocking: false, blockReasons: [] });
   };
 

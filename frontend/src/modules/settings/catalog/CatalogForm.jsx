@@ -1,8 +1,73 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Play, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
+
+const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+const REQUIRED_DIM = 512; // 512x512
 
 export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmit, providers, onChange }) {
+  const fileInputRef = useRef(null);
+  const [preview, setPreview] = useState(null);
+  const [imgError, setImgError] = useState('');
+
+  // Reset image state whenever the modal opens (or switches add/edit target).
+  useEffect(() => {
+    if (modal.isOpen && modal.type === 'catalog') {
+      setPreview(modal.data?.catalogImage || modal.data?.catalog_image || null);
+      setImgError('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [modal.isOpen, modal.type, modal.data]);
+
+  const resetToExisting = () => setPreview(modal.data?.catalogImage || modal.data?.catalog_image || null);
+
+  // Validate type, size, and exact 512x512 dimensions per the catalog spec.
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    setImgError('');
+    if (!file) { resetToExisting(); return; }
+
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setImgError('Use a PNG, JPG/JPEG, or WEBP image.');
+      e.target.value = '';
+      resetToExisting();
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      setImgError('Image must be 2 MB or smaller.');
+      e.target.value = '';
+      resetToExisting();
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      if (img.naturalWidth !== REQUIRED_DIM || img.naturalHeight !== REQUIRED_DIM) {
+        setImgError(`Image must be exactly ${REQUIRED_DIM}×${REQUIRED_DIM}px (got ${img.naturalWidth}×${img.naturalHeight}).`);
+        URL.revokeObjectURL(url);
+        e.target.value = '';
+        resetToExisting();
+      } else {
+        setPreview(url);
+      }
+    };
+    img.onerror = () => {
+      setImgError('Could not read that image file.');
+      URL.revokeObjectURL(url);
+      e.target.value = '';
+      resetToExisting();
+    };
+    img.src = url;
+  };
+
+  const handleRemoveImage = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setPreview(null);
+    setImgError('');
+  };
+
   if (!modal.isOpen || modal.type !== 'catalog') return null;
 
   return createPortal(
@@ -31,18 +96,18 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Catalog Name <span className="text-rose-500">*</span></label>
-                    <input type="text" name="name" defaultValue={modal.data?.name} required placeholder="e.g. Ubuntu Production" className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm" />
+                    <input type="text" name="catalogName" defaultValue={modal.data?.catalogName ?? modal.data?.name} required placeholder="e.g. Ubuntu Production" className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm" />
                   </div>
                   <div className="col-span-2">
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Description</label>
-                    <input type="text" name="description" defaultValue={modal.data?.description} placeholder="Optional details..." className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm" />
+                    <input type="text" name="catalogDescription" defaultValue={modal.data?.catalogDescription ?? modal.data?.description} placeholder="Optional details..." className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm" />
                   </div>
                   <div>
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Provider <span className="text-rose-500">*</span></label>
                     <select name="provider" defaultValue={modal.data?.provider || ''} required className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer">
                       <option value="" disabled>Select provider</option>
                       {providers.map(p => (
-                        <option key={p.id} value={p.name}>{p.name}</option>
+                        <option key={p.id} value={p.providerName ?? p.name}>{p.providerName ?? p.name}</option>
                       ))}
                     </select>
                   </div>
@@ -61,6 +126,51 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
                       <option value="Active">Active</option>
                       <option value="Disabled">Disabled</option>
                     </select>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 block">Catalog Image</label>
+                <div className="flex items-start gap-4">
+                  {/* Preview */}
+                  <div className="w-20 h-20 shrink-0 rounded-md border border-slate-300 dark:border-theme bg-white dark:bg-page overflow-hidden flex items-center justify-center">
+                    {preview ? (
+                      <img src={preview} alt="Catalog preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <ImageIcon size={24} className="text-slate-300 dark:text-slate-600" />
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    {/* Hidden real file input — captured by FormData as `catalogImage`. */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      name="catalogImage"
+                      accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium bg-white dark:bg-page border border-slate-300 dark:border-theme text-slate-700 dark:text-slate-200 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
+                      >
+                        <Upload size={14} /> {preview ? 'Change Image' : 'Upload Image'}
+                      </button>
+                      {preview && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-md transition-colors"
+                        >
+                          <Trash2 size={14} /> Remove
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">PNG, JPG/JPEG or WEBP · exactly 512×512px · max 2 MB.</p>
+                    {imgError && <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{imgError}</p>}
                   </div>
                 </div>
               </div>

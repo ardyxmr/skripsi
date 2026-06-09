@@ -15,6 +15,7 @@ export default function EnvironmentForm({
     expiryType: 'days',
     expiryValue: 30,
     approvalRequired: true,
+    allowDataDisk: false,
     status: 'Active',
     type: 'Custom'
   });
@@ -155,7 +156,7 @@ export default function EnvironmentForm({
 
                 <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Environment Status</label>
-                  <select 
+                  <select
                     value={formData.status}
                     onChange={(e) => setFormData({...formData, status: e.target.value})}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors cursor-pointer"
@@ -163,6 +164,21 @@ export default function EnvironmentForm({
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                   </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="flex items-start gap-3 cursor-pointer p-3 rounded-md border border-slate-200 dark:border-theme bg-white dark:bg-page">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.allowDataDisk}
+                      onChange={(e) => setFormData({ ...formData, allowDataDisk: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-theme text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      <span className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300">Allow data disks</span>
+                      <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Permit adding extra data disks to VMs in this environment (Inventory → Edit Resources). Default off.</span>
+                    </span>
+                  </label>
                 </div>
 
               </div>

@@ -8,13 +8,20 @@ import UserForm from './UserForm';
 import RoleForm from './RoleForm';
 import GroupForm from './GroupForm';
 import UserActionModal from './UserActionModal';
+import { useUI } from '../../../stores/uiStore';
 
 export default function UserManagement() {
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
   const dropdownRef = useRef(null);
 
-  const { roles, setRoles, groups, setGroups, users, setUsers } = useUserContext();
+  const {
+    roles, groups, users,
+    createUser, updateUser, deleteUser,
+    createRole, updateRole, deleteRole,
+    createGroup, updateGroup, deleteGroup,
+  } = useUserContext();
+  const pushToast = useUI((s) => s.pushToast);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [userSearch, setUserSearch] = useState('');
@@ -115,57 +122,62 @@ export default function UserManagement() {
     setDeleteModal({ isOpen: true, type, data, isWarning: false, assignedUsers: [] });
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     const { type, data } = deleteModal;
-    if (type === 'role') {
-      setRoles(roles.map(r => r.id === data.id ? { ...r, deletedAt: new Date().toISOString() } : r));
-    } else if (type === 'group') {
-      setGroups(groups.map(g => g.id === data.id ? { ...g, deletedAt: new Date().toISOString() } : g));
-    } else if (type === 'user') {
-      setUsers(users.map(u => u.id === data.id ? { ...u, deletedAt: new Date().toISOString(), status: 'Deleted' } : u));
-      setRoles(roles.map(r => r.id === data.roleId ? { ...r, userCount: r.userCount - 1 } : r));
-      setGroups(groups.map(g => g.id === data.groupId ? { ...g, memberCount: g.memberCount - 1 } : g));
+    try {
+      if (type === 'role') await deleteRole(data.id);
+      else if (type === 'group') await deleteGroup(data.id);
+      else if (type === 'user') await deleteUser(data.id);
+    } catch (e) {
+      // Surface 409 delete-protection (e.g. user manages a group) inline.
+      pushToast({ kind: 'error', message: e.message || 'Delete failed.' });
     }
     setDeleteModal({ isOpen: false, type: null, data: null, isWarning: false, assignedUsers: [] });
   };
 
-  const handleRoleSubmit = (data) => {
-    if (modal.mode === 'add') {
-      setRoles([...roles, { id: Date.now(), name: data.name, description: data.description, permissions: data.permissions || [], createdAt: new Date().toISOString().split('T')[0], userCount: 0, status: 'Active' }]);
-    } else {
-      setRoles(roles.map(r => r.id === modal.data.id ? { ...r, name: data.name, description: data.description, permissions: data.permissions || [] } : r));
+  const handleRoleSubmit = async (data) => {
+    const payload = { roleName: data.name, description: data.description, permissions: data.permissions || [] };
+    try {
+      if (modal.mode === 'add') await createRole(payload);
+      else await updateRole(modal.data.id, payload);
+      closeModal(true);
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Save failed.' });
     }
-    closeModal(true);
   };
 
-  const handleGroupSubmit = (data) => {
-    const managerId = data.managerId ? Number(data.managerId) : null;
-    if (modal.mode === 'add') {
-      setGroups([...groups, { id: Date.now(), name: data.name, room: data.room, managerId, description: data.description, createdAt: new Date().toISOString().split('T')[0], memberCount: 0 }]);
-    } else {
-      setGroups(groups.map(g => g.id === modal.data.id ? { ...g, name: data.name, room: data.room, managerId, description: data.description } : g));
+  const handleGroupSubmit = async (data) => {
+    const payload = {
+      groupName: data.name,
+      roomFloor: data.room,
+      managerUserId: data.managerId ? Number(data.managerId) : null,
+      description: data.description,
+    };
+    try {
+      if (modal.mode === 'add') await createGroup(payload);
+      else await updateGroup(modal.data.id, payload);
+      closeModal(true);
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Save failed.' });
     }
-    closeModal(true);
   };
 
-  const handleUserSubmit = (data) => {
-    if (modal.mode === 'add') {
-      setUsers([...users, { id: Date.now(), name: data.name, email: data.email, roleId: parseInt(data.roleId), groupId: parseInt(data.groupId), status: data.status, createdAt: new Date().toISOString().split('T')[0], lastLogin: '-' }]);
-      setRoles(roles.map(r => r.id === parseInt(data.roleId) ? { ...r, userCount: r.userCount + 1 } : r));
-      setGroups(groups.map(g => g.id === parseInt(data.groupId) ? { ...g, memberCount: g.memberCount + 1 } : g));
-    } else {
-      const oldRole = modal.data.roleId;
-      const oldGroup = modal.data.groupId;
-      setUsers(users.map(u => u.id === modal.data.id ? { ...u, name: data.name, email: data.email, roleId: parseInt(data.roleId), groupId: parseInt(data.groupId), status: data.status } : u));
-      
-      if (oldRole !== parseInt(data.roleId)) {
-        setRoles(roles.map(r => r.id === oldRole ? { ...r, userCount: r.userCount - 1 } : r.id === parseInt(data.roleId) ? { ...r, userCount: r.userCount + 1 } : r));
-      }
-      if (oldGroup !== parseInt(data.groupId)) {
-        setGroups(groups.map(g => g.id === oldGroup ? { ...g, memberCount: g.memberCount - 1 } : g.id === parseInt(data.groupId) ? { ...g, memberCount: g.memberCount + 1 } : g));
-      }
+  const handleUserSubmit = async (data) => {
+    const payload = {
+      name: data.name,
+      email: data.email,
+      roleId: parseInt(data.roleId, 10),
+      groupId: parseInt(data.groupId, 10),
+      status: data.status,
+    };
+    if (modal.mode === 'add' && data.password) payload.password = data.password;
+    try {
+      if (modal.mode === 'add') await createUser(payload);
+      else await updateUser(modal.data.id, payload);
+      closeModal(true);
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Save failed.' });
     }
-    closeModal(true);
   };
 
   const sortedRoles = [...roles].filter(r => !r.deletedAt).sort((a, b) => {
@@ -600,7 +612,8 @@ export default function UserManagement() {
           users={users.filter(u => {
             if (u.deletedAt) return false;
             const role = roles.find(r => r.id === u.roleId);
-            return role && (role.permissions?.includes('Approval') || role.permissions?.includes('Settings') || role.name === 'Admin' || role.name === 'Manager');
+            const rn = role?.roleName ?? role?.name;
+            return rn === 'Administrator' || rn === 'Manager';
           })} 
         />
       )}

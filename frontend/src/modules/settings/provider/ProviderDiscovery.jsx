@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Layers, Box, Play, Database, Network, Grid, Search, CheckCircle2, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
-import { mockDiscoveredNodes, mockDiscoveredTemplates, mockDiscoveredNetworks, mockDiscoveredDatastores } from './providerData';
+import { X, Layers, Box, Play, Database, Network, Grid, Server, Search, CheckCircle2, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
+import api from '../../../lib/api';
 
+const EMPTY = { nodes: [], templates: [], networks: [], datastores: [], vms: [] };
 
 export default function ProviderDiscovery({ isOpen, provider, onClose }) {
   const [resourceNavSelection, setResourceNavSelection] = useState('nodes');
   const [resourceSearch, setResourceSearch] = useState('');
+  const [explorer, setExplorer] = useState(EMPTY);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -15,6 +18,48 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  // Load discovered resources for this provider from the discovery layer.
+  useEffect(() => {
+    if (!isOpen || !provider?.id) return;
+    let active = true;
+    setLoading(true);
+    api
+      .get(`/providers/${provider.id}/explorer`)
+      .then((data) => {
+        if (active) setExplorer({ ...EMPTY, ...data });
+      })
+      .catch(() => active && setExplorer(EMPTY))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [isOpen, provider?.id]);
+
+  const nodes = explorer.nodes || [];
+  const templates = explorer.templates || [];
+  const networks = explorer.networks || [];
+  const datastores = explorer.datastores || [];
+  const vms = explorer.vms || [];
+
+  // Discovery health — driven by the live /explorer response (falls back to the
+  // provider row). discoveryStatus from the API is lowercase (success|failed|…).
+  const connectionStatus = explorer.connectionStatus ?? provider?.status ?? 'Disconnected';
+  const ds = String(explorer.discoveryStatus ?? provider?.discoveryStatus ?? 'never_run').toLowerCase();
+  const dsLabel = { success: 'Success', failed: 'Failed', running: 'Running', partial: 'Partial', never_run: 'Never Run' }[ds] || ds;
+  const lastDiscoveryAt = explorer.lastDiscoveryAt ?? provider?.lastDiscoveryAt ?? null;
+  const nextDiscoveryAt = explorer.nextDiscoveryAt ?? null;
+  const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : 'Never');
+  // Synthesize the "Last Discovery Result" lines from the discovered counts.
+  const discoveryResult = lastDiscoveryAt
+    ? [
+        `✓ Nodes Synced: ${nodes.length}`,
+        `✓ Templates Synced: ${templates.length}`,
+        `✓ Networks Synced: ${networks.length}`,
+        `✓ Datastores Synced: ${datastores.length}`,
+        `✓ VMs Synced: ${vms.length}`,
+      ]
+    : [];
 
   const discoveryDrawer = { isOpen, provider };
 
@@ -28,7 +73,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
               <h3 className="font-bold text-slate-800 dark:text-slate-100 text-[16px] flex items-center gap-2">
                 <Layers size={18} className="text-blue-600 dark:text-blue-400" /> Discovery Explorer
               </h3>
-              <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-1">Interactive view of synced resources from {discoveryDrawer.provider?.name || 'Provider'}</p>
+              <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-1">Interactive view of synced resources from {discoveryDrawer.provider?.providerName || discoveryDrawer.provider?.name || 'Provider'}</p>
             </div>
             <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
               <X size={18} />
@@ -45,48 +90,48 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Provider</div>
-                    <div className="text-[13px] font-bold text-slate-800 dark:text-slate-200">{discoveryDrawer.provider.name}</div>
+                    <div className="text-[13px] font-bold text-slate-800 dark:text-slate-200">{discoveryDrawer.provider.providerName || discoveryDrawer.provider.name}</div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Connection Status</div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${discoveryDrawer.provider.connectionStatus === 'Connected' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400'}`}>
-                      {discoveryDrawer.provider.connectionStatus}
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${connectionStatus === 'Connected' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400'}`}>
+                      {connectionStatus}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Discovery Status</div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${discoveryDrawer.provider.discoveryStatus === 'Success' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400' : discoveryDrawer.provider.discoveryStatus === 'Failed' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400' : discoveryDrawer.provider.discoveryStatus === 'Running' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-slate-100 text-slate-700 dark:bg-surface dark:text-slate-400'}`}>
-                      {discoveryDrawer.provider.discoveryStatus}
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${ds === 'success' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400' : ds === 'failed' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400' : ds === 'running' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-slate-100 text-slate-700 dark:bg-surface dark:text-slate-400'}`}>
+                      {dsLabel}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Last Discovery</div>
-                    <div className="text-[13px] text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><Clock size={14} className="text-slate-400"/> {discoveryDrawer.provider.lastDiscovery || 'Never'}</div>
+                    <div className="text-[13px] text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><Clock size={14} className="text-slate-400"/> {fmtDate(lastDiscoveryAt)}</div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Next Discovery</div>
-                    <div className="text-[13px] text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><Clock size={14} className="text-slate-400"/> {discoveryDrawer.provider.nextDiscovery ? discoveryDrawer.provider.nextDiscovery : 'Manual Only'}</div>
+                    <div className="text-[13px] text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><Clock size={14} className="text-slate-400"/> {nextDiscoveryAt ? new Date(nextDiscoveryAt).toLocaleString() : 'Manual Only'}</div>
                   </div>
                 </div>
 
                 {/* Discovery Health */}
                 <div className="flex flex-col gap-2">
                   <h3 className="text-[13px] font-bold text-slate-800 dark:text-slate-200 border-b border-slate-100 dark:border-theme pb-1">Discovery Health</h3>
-                  <div className={`p-3 border rounded-card flex items-start gap-3 ${discoveryDrawer.provider.discoveryStatus === 'Success' ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300' : discoveryDrawer.provider.discoveryStatus === 'Failed' ? 'bg-rose-50 border-rose-200 dark:bg-rose-500/10 dark:border-rose-500/20 text-rose-800 dark:text-rose-300' : discoveryDrawer.provider.discoveryStatus === 'Running' ? 'bg-amber-50 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/20 text-amber-800 dark:text-amber-300' : discoveryDrawer.provider.discoveryStatus === 'Partial' ? 'bg-amber-50 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/20 text-amber-800 dark:text-amber-300' : 'bg-slate-50 border-slate-200 dark:bg-surface dark:border-theme text-slate-800 dark:text-slate-300'}`}>
+                  <div className={`p-3 border rounded-card flex items-start gap-3 ${ds === 'success' ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300' : ds === 'failed' ? 'bg-rose-50 border-rose-200 dark:bg-rose-500/10 dark:border-rose-500/20 text-rose-800 dark:text-rose-300' : ds === 'running' || ds === 'partial' ? 'bg-amber-50 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/20 text-amber-800 dark:text-amber-300' : 'bg-slate-50 border-slate-200 dark:bg-surface dark:border-theme text-slate-800 dark:text-slate-300'}`}>
                     <div className="mt-0.5">
-                      {discoveryDrawer.provider.discoveryStatus === 'Success' && <CheckCircle2 size={16} />}
-                      {discoveryDrawer.provider.discoveryStatus === 'Running' && <RefreshCw size={16} className="animate-spin" />}
-                      {(discoveryDrawer.provider.discoveryStatus === 'Failed' || discoveryDrawer.provider.discoveryStatus === 'Partial') && <AlertTriangle size={16} />}
-                      {(discoveryDrawer.provider.discoveryStatus === 'Never Run' || !discoveryDrawer.provider.discoveryStatus) && <Box size={16} />}
+                      {ds === 'success' && <CheckCircle2 size={16} />}
+                      {ds === 'running' && <RefreshCw size={16} className="animate-spin" />}
+                      {(ds === 'failed' || ds === 'partial') && <AlertTriangle size={16} />}
+                      {(ds === 'never_run') && <Box size={16} />}
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[12px] font-bold uppercase tracking-wider">{discoveryDrawer.provider.discoveryStatus || 'Never Run'}</span>
+                      <span className="text-[12px] font-bold uppercase tracking-wider">{dsLabel}</span>
                       <span className="text-[13px] opacity-90 mt-0.5">
-                        {discoveryDrawer.provider.discoveryStatus === 'Success' && '✓ Discovery completed successfully'}
-                        {discoveryDrawer.provider.discoveryStatus === 'Running' && '⟳ Discovery currently running'}
-                        {discoveryDrawer.provider.discoveryStatus === 'Failed' && '⚠ Discovery failed during last execution'}
-                        {discoveryDrawer.provider.discoveryStatus === 'Partial' && '⚠ Discovery partially completed'}
-                        {(discoveryDrawer.provider.discoveryStatus === 'Never Run' || !discoveryDrawer.provider.discoveryStatus) && 'No discovery has been executed yet'}
+                        {ds === 'success' && '✓ Discovery completed successfully'}
+                        {ds === 'running' && '⟳ Discovery currently running'}
+                        {ds === 'failed' && '⚠ Discovery failed during last execution'}
+                        {ds === 'partial' && '⚠ Discovery partially completed'}
+                        {ds === 'never_run' && 'No discovery has been executed yet'}
                       </span>
                     </div>
                   </div>
@@ -96,8 +141,8 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                 <div className="flex flex-col gap-2">
                   <h3 className="text-[13px] font-bold text-slate-800 dark:text-slate-200 border-b border-slate-100 dark:border-theme pb-1">Last Discovery Result</h3>
                   <div className="bg-slate-50 dark:bg-surface border border-slate-200 dark:border-theme rounded-card p-3 flex flex-col gap-2">
-                    {discoveryDrawer.provider.discoveryResult && discoveryDrawer.provider.discoveryResult.length > 0 ? (
-                      discoveryDrawer.provider.discoveryResult.map((result, idx) => (
+                    {discoveryResult.length > 0 ? (
+                      discoveryResult.map((result, idx) => (
                         <div key={idx} className={`text-[12px] font-medium flex items-center gap-2 ${result.includes('✓') ? 'text-emerald-600 dark:text-emerald-400' : result.includes('⚠') ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
                           {result}
                         </div>
@@ -120,7 +165,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                         <Box size={16} className={resourceNavSelection === 'nodes' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'} /> 
                         <span className={resourceNavSelection === 'nodes' ? 'font-bold' : ''}>Nodes</span>
                       </div>
-                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{discoveryDrawer.provider.nodes}</span>
+                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{nodes.length}</span>
                     </button>
                     <button 
                       onClick={() => { setResourceNavSelection('templates'); setResourceSearch(''); }}
@@ -130,7 +175,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                         <Database size={16} className={resourceNavSelection === 'templates' ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'} /> 
                         <span className={resourceNavSelection === 'templates' ? 'font-bold' : ''}>Templates</span>
                       </div>
-                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{discoveryDrawer.provider.templates}</span>
+                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{templates.length}</span>
                     </button>
                     <button 
                       onClick={() => { setResourceNavSelection('networks'); setResourceSearch(''); }}
@@ -140,7 +185,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                         <Network size={16} className={resourceNavSelection === 'networks' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'} /> 
                         <span className={resourceNavSelection === 'networks' ? 'font-bold' : ''}>Networks</span>
                       </div>
-                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{discoveryDrawer.provider.networks}</span>
+                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{networks.length}</span>
                     </button>
                     <button 
                       onClick={() => { setResourceNavSelection('datastores'); setResourceSearch(''); }}
@@ -150,7 +195,17 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                         <Grid size={16} className={resourceNavSelection === 'datastores' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'} /> 
                         <span className={resourceNavSelection === 'datastores' ? 'font-bold' : ''}>Datastores</span>
                       </div>
-                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{discoveryDrawer.provider.datastores}</span>
+                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{datastores.length}</span>
+                    </button>
+                    <button
+                      onClick={() => { setResourceNavSelection('vms'); setResourceSearch(''); }}
+                      className={`w-full text-left px-3 py-2.5 rounded-md flex items-center justify-between text-[13px] font-medium transition-colors ${resourceNavSelection === 'vms' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                      <div className="flex items-center gap-2.5">
+                        <Play size={10} className={`transition-all ${resourceNavSelection === 'vms' ? 'fill-current text-emerald-500 dark:text-emerald-400 opacity-100' : 'opacity-0 w-0'}`} />
+                        <Server size={16} className={resourceNavSelection === 'vms' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
+                        <span className={resourceNavSelection === 'vms' ? 'font-bold' : ''}>VMs</span>
+                      </div>
+                      <span className="text-[12px] bg-white dark:bg-card px-2 py-0.5 rounded-full border border-slate-200 dark:border-theme shadow-sm">{vms.length}</span>
                     </button>
                   </div>
                 </div>
@@ -165,15 +220,18 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                       <div className="flex items-center justify-between bg-white dark:bg-card p-4 rounded-card border border-slate-200 dark:border-theme shadow-sm">
                   <div className="flex flex-col">
                     <span className="text-[16px] font-bold text-slate-800 dark:text-slate-200 capitalize">
-                      {resourceNavSelection === 'nodes' ? 'Discovered Nodes' : 
-                       resourceNavSelection === 'templates' ? 'Discovered Templates' : 
-                       resourceNavSelection === 'networks' ? 'Discovered Networks' : 'Discovered Datastores'}
+                      {resourceNavSelection === 'nodes' ? 'Discovered Nodes' :
+                       resourceNavSelection === 'templates' ? 'Discovered Templates' :
+                       resourceNavSelection === 'networks' ? 'Discovered Networks' :
+                       resourceNavSelection === 'vms' ? 'Discovered VMs' : 'Discovered Datastores'}
                     </span>
                     <span className="text-[12px] text-slate-500 mt-0.5">
-                      {resourceNavSelection === 'nodes' ? mockDiscoveredNodes.length : 
-                       resourceNavSelection === 'templates' ? mockDiscoveredTemplates.length : 
-                       resourceNavSelection === 'networks' ? mockDiscoveredNetworks.length : 
-                       mockDiscoveredDatastores.length} Resources
+                      {loading ? 'Loading…' : `${
+                        resourceNavSelection === 'nodes' ? nodes.length :
+                        resourceNavSelection === 'templates' ? templates.length :
+                        resourceNavSelection === 'networks' ? networks.length :
+                        resourceNavSelection === 'vms' ? vms.length :
+                        datastores.length} Resources`}
                     </span>
                   </div>
                   <div className="relative w-[280px]">
@@ -224,51 +282,72 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                             <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">Status</th>
                           </>
                         )}
+                        {resourceNavSelection === 'vms' && (
+                          <>
+                            <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">VM Name</th>
+                            <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">VMID</th>
+                            <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">Node</th>
+                            <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">Power</th>
+                            <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">IP Address</th>
+                            <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">Status</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
-                      {resourceNavSelection === 'nodes' && mockDiscoveredNodes.filter(item => item.name.toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
+                      {resourceNavSelection === 'nodes' && nodes.filter(item => (item.nodeName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
                         <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.name}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.status === 'Online' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400'}`}>{item.status}</span></td>
-                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.cpu}</td>
-                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.memory}</td>
+                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.nodeName}</td>
+                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.status === 'online' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400'}`}>{item.status}</span></td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.cpuCount != null ? `${item.cpuCount} vCPU` : '—'}</td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.totalMemory != null ? `${Math.round(item.totalMemory / 1024 / 1024 / 1024)} GB` : '—'}</td>
                         </tr>
                       ))}
-                      {resourceNavSelection === 'templates' && mockDiscoveredTemplates.filter(item => item.name.toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
+                      {resourceNavSelection === 'templates' && templates.filter(item => (item.templateName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
                         <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.name}</td>
-                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.node}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.status === 'Available' ? 'bg-blue-50 border border-blue-200 text-blue-700 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-blue-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400'}`}>{item.status}</span></td>
+                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.templateName}</td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.nodeName}</td>
+                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.discoveredStatus === 'Active' ? 'bg-blue-50 border border-blue-200 text-blue-700 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-blue-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400'}`}>{item.discoveredStatus}</span></td>
                         </tr>
                       ))}
-                      {resourceNavSelection === 'networks' && mockDiscoveredNetworks.filter(item => item.name.toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
+                      {resourceNavSelection === 'networks' && networks.filter(item => (item.networkName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
                         <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.name}</td>
-                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.providerNetwork}</td>
-                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.cidr}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.status === 'Available' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400'}`}>{item.status}</span></td>
+                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.networkName}</td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.networkName}</td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.cidr || '—'}</td>
+                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.discoveredStatus === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400'}`}>{item.discoveredStatus}</span></td>
                         </tr>
                       ))}
-                      {resourceNavSelection === 'datastores' && mockDiscoveredDatastores.filter(item => item.name.toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
+                      {resourceNavSelection === 'datastores' && datastores.filter(item => (item.datastoreName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
                         <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.name}</td>
-                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.type}</td>
-                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.capacity} <span className="text-slate-400 mx-1">/</span> {item.usage}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.status === 'Available' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : item.status === 'Warning' ? 'bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400' : 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400'}`}>{item.status}</span></td>
+                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.datastoreName}</td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.datastoreType || '—'}</td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.totalSpace != null ? `${Math.round((item.totalSpace - (item.availableSpace || 0)) / 1024 / 1024 / 1024)} GB / ${Math.round(item.totalSpace / 1024 / 1024 / 1024)} GB` : '—'}</td>
+                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.discoveredStatus === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400'}`}>{item.discoveredStatus}</span></td>
+                        </tr>
+                      ))}
+                      {resourceNavSelection === 'vms' && vms.filter(item => (item.vmName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
+                        <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
+                          <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.vmName}</td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400 font-mono">{item.externalVmid}</td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.nodeName}</td>
+                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.powerState === 'running' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : item.powerState === 'stopped' ? 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400' : 'bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400'}`}>{item.powerState || 'unknown'}</span></td>
+                          <td className="px-5 py-3 text-slate-600 dark:text-slate-400 font-mono">{item.ipAddress || '—'}</td>
+                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.discoveredStatus === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400'}`}>{item.discoveredStatus}</span></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                   
                   {/* Empty State / Not Found */}
-                  {((resourceNavSelection === 'nodes' && mockDiscoveredNodes.filter(i => i.name.toLowerCase().includes(resourceSearch.toLowerCase())).length === 0) ||
-                    (resourceNavSelection === 'templates' && mockDiscoveredTemplates.filter(i => i.name.toLowerCase().includes(resourceSearch.toLowerCase())).length === 0) ||
-                    (resourceNavSelection === 'networks' && mockDiscoveredNetworks.filter(i => i.name.toLowerCase().includes(resourceSearch.toLowerCase())).length === 0) ||
-                    (resourceNavSelection === 'datastores' && mockDiscoveredDatastores.filter(i => i.name.toLowerCase().includes(resourceSearch.toLowerCase())).length === 0)) && (
+                  {!loading && ((resourceNavSelection === 'nodes' && nodes.filter(i => (i.nodeName || '').toLowerCase().includes(resourceSearch.toLowerCase())).length === 0) ||
+                    (resourceNavSelection === 'templates' && templates.filter(i => (i.templateName || '').toLowerCase().includes(resourceSearch.toLowerCase())).length === 0) ||
+                    (resourceNavSelection === 'networks' && networks.filter(i => (i.networkName || '').toLowerCase().includes(resourceSearch.toLowerCase())).length === 0) ||
+                    (resourceNavSelection === 'datastores' && datastores.filter(i => (i.datastoreName || '').toLowerCase().includes(resourceSearch.toLowerCase())).length === 0) ||
+                    (resourceNavSelection === 'vms' && vms.filter(i => (i.vmName || '').toLowerCase().includes(resourceSearch.toLowerCase())).length === 0)) && (
                     <div className="py-12 flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 bg-slate-50/30 dark:bg-surface/20">
                       <Search size={32} className="opacity-30 mb-3" />
-                      <p className="text-[14px]">No resources found matching "{resourceSearch}"</p>
+                      <p className="text-[14px]">{resourceSearch ? `No resources found matching "${resourceSearch}"` : 'No resources discovered yet.'}</p>
                     </div>
                   )}
                 </div>

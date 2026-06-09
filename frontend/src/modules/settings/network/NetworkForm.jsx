@@ -37,7 +37,7 @@ export default function NetworkForm({ modal, setModal, handleAddEditNetworkSubmi
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Network Name <span className="text-rose-500">*</span></label>
-                    <input type="text" name="name" defaultValue={modal.data?.name} required placeholder="e.g. Production VM Network" className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors" />
+                    <input type="text" name="networkName" defaultValue={modal.data?.networkName ?? modal.data?.name} required placeholder="e.g. Production VM Network" className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors" />
                   </div>
                   <div className="col-span-2">
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Description</label>
@@ -47,8 +47,8 @@ export default function NetworkForm({ modal, setModal, handleAddEditNetworkSubmi
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Provider <span className="text-rose-500">*</span></label>
                     <select name="provider" value={selectedNetworkProvider} onChange={(e) => { setSelectedNetworkProvider(e.target.value); setSelectedNetworkNode(''); }} required className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors">
                       <option value="" disabled>Select provider</option>
-                      {providers.filter(p => p.connectionStatus === 'Connected').map(p => (
-                        <option key={p.id} value={p.name}>{p.name}</option>
+                      {providers.filter(p => (p.status ?? p.connectionStatus) === 'Connected').map(p => (
+                        <option key={p.id} value={p.providerName ?? p.name}>{p.providerName ?? p.name}</option>
                       ))}
                     </select>
                   </div>

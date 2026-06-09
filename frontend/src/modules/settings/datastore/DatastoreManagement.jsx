@@ -8,13 +8,13 @@ import ResizableTh from '../../../components/ResizableTh';
 
 // Extracted Components
 import DatastoreForm from './DatastoreForm';
-import DatastoreExplorer from './DatastoreExplorer';
+import DatastoreDiscovery from './DatastoreDiscovery';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useDatastoreContext } from '../../../contexts/DatastoreContext';
 
 export default function DatastoreManagement() {
   const { providers } = useProviderContext();
-  const { datastores, setDatastores } = useDatastoreContext();
+  const { datastores, refetch, create, update, remove } = useDatastoreContext();
   const [datastoreSearchQuery, setDatastoreSearchQuery] = useState('');
   const [datastoreProviderFilter, setDatastoreProviderFilter] = useState('All Providers');
   const [datastoreEnvironmentFilter, setDatastoreEnvironmentFilter] = useState('All Environments');
@@ -99,53 +99,62 @@ export default function DatastoreManagement() {
     setDatastoreActionModal({ isOpen: true, action, datastore, isBlocking: false });
   };
 
-  const handleConfirmDatastoreAction = () => {
+  const handleConfirmDatastoreAction = async () => {
     const { action, datastore } = datastoreActionModal;
-    if (action === 'Delete') {
-      setDatastores(datastores.filter(d => d.id !== datastore.id));
-    } else if (action === 'Enable') {
-      setDatastores(datastores.map(d => d.id === datastore.id ? { ...d, status: 'Active' } : d));
-    } else if (action === 'Disable') {
-      setDatastores(datastores.map(d => d.id === datastore.id ? { ...d, status: 'Disabled' } : d));
+    try {
+      if (action === 'Delete') {
+        await remove(datastore.id);
+      } else if (action === 'Enable') {
+        await update(datastore.id, { status: 'Active' });
+      } else if (action === 'Disable') {
+        await update(datastore.id, { status: 'Disabled' });
+      }
+    } catch (e) {
+      setDatastoreToastMsg(e.message || 'Action failed.');
+      setTimeout(() => setDatastoreToastMsg(''), 3000);
     }
     setDatastoreActionModal({ isOpen: false, action: null, datastore: null, isBlocking: false });
     setDatastoreActionConfirmText('');
   };
 
-  const handleRefreshDatastores = () => {
+  const handleRefreshDatastores = async () => {
     setIsRefreshingDatastore(true);
-    setTimeout(() => {
-      setIsRefreshingDatastore(false);
+    try {
+      await refetch();
       setDatastoreToastMsg('Datastore data refreshed successfully.');
+    } catch (e) {
+      setDatastoreToastMsg(e.message || 'Refresh failed.');
+    } finally {
+      setIsRefreshingDatastore(false);
       setTimeout(() => setDatastoreToastMsg(''), 3000);
-    }, 1500);
+    }
   };
 
-  const handleAddEditDatastoreSubmit = (e) => {
+  const handleAddEditDatastoreSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const newDatastore = {
-      id: modal.mode === 'add' ? Date.now() : modal.data.id,
-      name: formData.get('name'),
+    const payload = {
+      datastoreName: formData.get('datastoreName'),
       description: formData.get('description'),
       provider: formData.get('provider'),
       node: formData.get('node'),
       providerDatastore: formData.get('providerDatastore'),
-      type: 'Local',
-      capacity: { total: '2 TB', used: '0 GB', available: '2 TB', percentage: 0 },
       environment: formData.getAll('environment'),
       tiers: formData.getAll('tiers'),
       status: formData.get('status'),
-      lastUpdated: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', ''),
-      activeVMs: 0
     };
 
-    if (modal.mode === 'add') {
-      setDatastores([newDatastore, ...datastores]);
-    } else {
-      setDatastores(datastores.map(d => d.id === newDatastore.id ? newDatastore : d));
+    try {
+      if (modal.mode === 'add') {
+        await create(payload);
+      } else {
+        await update(modal.data.id, payload);
+      }
+      closeModal(true);
+    } catch (err) {
+      setDatastoreToastMsg(err.message || 'Save failed.');
+      setTimeout(() => setDatastoreToastMsg(''), 3000);
     }
-    closeModal(true);
   };
 
   const handleDatastoreSort = (key) => {
@@ -562,7 +571,7 @@ export default function DatastoreManagement() {
       />
       
       {/* We pass the whole datastoreDrawer state and setter to the explorer */}
-      <DatastoreExplorer 
+      <DatastoreDiscovery
         datastoreDrawer={datastoreDrawer} 
         setDatastoreDrawer={setDatastoreDrawer} 
       />

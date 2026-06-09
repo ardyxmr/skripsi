@@ -10,7 +10,7 @@ import { useCatalogContext } from '../../../contexts/CatalogContext';
 
 export default function CatalogManagement() {
   const { providers } = useProviderContext();
-  const { catalogs, setCatalogs } = useCatalogContext();
+  const { catalogs, refetch, create, update, remove } = useCatalogContext();
   
   // Search & Filters
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -73,13 +73,17 @@ export default function CatalogManagement() {
     setTimeout(() => setCatalogToastMsg(''), 3000);
   };
 
-  const handleRefreshCatalogs = () => {
+  const handleRefreshCatalogs = async () => {
     if (isRefreshingCatalog) return;
     setIsRefreshingCatalog(true);
-    setTimeout(() => {
-      setIsRefreshingCatalog(false);
+    try {
+      await refetch();
       showCatalogToast('Catalog data refreshed successfully.');
-    }, 1500);
+    } catch (e) {
+      showCatalogToast(e.message || 'Refresh failed.');
+    } finally {
+      setIsRefreshingCatalog(false);
+    }
   };
 
   const handleCatalogSort = (key) => {
@@ -112,31 +116,46 @@ export default function CatalogManagement() {
 
 
 
-  const handleAddEditCatalogSubmit = (e) => {
+  const handleAddEditCatalogSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const newCatalog = {
-      id: modal.mode === 'edit' ? modal.data.id : catalogs.length + 1,
-      name: formData.get('name'),
-      description: formData.get('description'),
+
+    // Catalog image: a real File from the form's hidden input. With a backend,
+    // upload it to POST /api/catalogs/{id}/image (multipart) after the catalog
+    // is created/updated, then store the returned path. Until then, keep a local
+    // object-URL preview so the chosen image is visible in the UI.
+    const imageFile = formData.get('catalogImage');
+    const hasNewImage = imageFile && typeof imageFile === 'object' && imageFile.size > 0;
+    const catalogImage = hasNewImage
+      ? URL.createObjectURL(imageFile)
+      : (modal.mode === 'edit' ? (modal.data?.catalogImage ?? null) : null);
+
+    // Payload uses API field names (axios decamelizes camelCase → snake_case).
+    const payload = {
+      catalogName: formData.get('catalogName'),
+      catalogDescription: formData.get('catalogDescription'),
       provider: formData.get('provider'),
       node: formData.get('node'),
       template: formData.get('template'),
       environments: formData.getAll('environment'),
       tiers: formData.getAll('tiers'),
       status: formData.get('status'),
-      lastUpdated: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' }),
-      activeVMs: modal.mode === 'edit' ? modal.data.activeVMs : 0
+      catalogImage,
     };
 
-    if (modal.mode === 'edit') {
-      setCatalogs(catalogs.map(c => c.id === modal.data.id ? newCatalog : c));
-      showCatalogToast(`Catalog "${newCatalog.name}" updated successfully.`);
-    } else {
-      setCatalogs([...catalogs, newCatalog]);
-      showCatalogToast(`Catalog "${newCatalog.name}" created successfully.`);
+    try {
+      if (modal.mode === 'edit') {
+        await update(modal.data.id, payload);
+        showCatalogToast(`Catalog "${payload.catalogName}" updated successfully.`);
+      } else {
+        await create(payload);
+        showCatalogToast(`Catalog "${payload.catalogName}" created successfully.`);
+      }
+      closeModal(true);
+      // With a backend: upload the image to POST /catalogs/{id}/image after save.
+    } catch (err) {
+      showCatalogToast(err.message || 'Save failed.');
     }
-    closeModal(true);
   };
 
   const handleCatalogActionClick = (action, catalog) => {
@@ -148,17 +167,19 @@ export default function CatalogManagement() {
     }
   };
 
-  const handleConfirmCatalogAction = () => {
-    if (catalogActionModal.action === 'Delete') {
-      setCatalogs(catalogs.filter(c => c.id !== catalogActionModal.catalog.id));
-      showCatalogToast(`Catalog "${catalogActionModal.catalog.name}" deleted successfully.`);
-    } else if (catalogActionModal.action === 'Enable' || catalogActionModal.action === 'Disable') {
-      setCatalogs(catalogs.map(c => 
-        c.id === catalogActionModal.catalog.id 
-          ? { ...c, status: catalogActionModal.action === 'Enable' ? 'Active' : 'Disabled' } 
-          : c
-      ));
-      showCatalogToast(`Catalog "${catalogActionModal.catalog.name}" ${catalogActionModal.action === 'Enable' ? 'enabled' : 'disabled'} successfully.`);
+  const handleConfirmCatalogAction = async () => {
+    const target = catalogActionModal.catalog;
+    try {
+      if (catalogActionModal.action === 'Delete') {
+        await remove(target.id);
+        showCatalogToast(`Catalog "${target.name}" deleted successfully.`);
+      } else if (catalogActionModal.action === 'Enable' || catalogActionModal.action === 'Disable') {
+        const status = catalogActionModal.action === 'Enable' ? 'Active' : 'Disabled';
+        await update(target.id, { status });
+        showCatalogToast(`Catalog "${target.name}" ${catalogActionModal.action === 'Enable' ? 'enabled' : 'disabled'} successfully.`);
+      }
+    } catch (e) {
+      showCatalogToast(e.message || 'Action failed.');
     }
     setCatalogActionModal({ isOpen: false, action: null, catalog: null, isBlocking: false });
   };

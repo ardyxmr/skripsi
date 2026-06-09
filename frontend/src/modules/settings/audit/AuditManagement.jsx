@@ -1,22 +1,51 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { FileText, Search, Filter, Calendar, Download, X, AlertCircle } from 'lucide-react';
 import ResizableTh from '../../../components/ResizableTh';
+import api from '../../../lib/api';
+import { getToken } from '../../../lib/auth';
+import { useUI } from '../../../stores/uiStore';
 
-const MOCK_AUDIT_LOGS = [
-  { id: 1001, user_id: 1, user_name: "admin", action_type: "APPROVE_RENEWAL", target_resource: "VM-App-Prod", status: "SUCCESS", description: "Approved renewal for VM-App-Prod", created_at: "2026-06-06T19:00:00Z" },
-  { id: 1002, user_id: 2, user_name: "johndoe", action_type: "REQUEST_RENEWAL", target_resource: "VM-App-Prod", status: "SUCCESS", description: "Requested renewal for VM-App-Prod", created_at: "2026-06-06T18:45:00Z" },
-  { id: 1003, user_id: 4, user_name: "system", action_type: "RETRY_PROVISIONING", target_resource: "VM-DB-02", status: "FAILED", description: "Retried provisioning for VM-DB-02", created_at: "2026-06-06T18:20:00Z" },
-  { id: 1004, user_id: 3, user_name: "janedoe", action_type: "CREATE_USER", target_resource: "developer_01", status: "SUCCESS", description: "Created new user 'developer_01'", created_at: "2026-06-06T16:00:00Z" },
-  { id: 1005, user_id: 1, user_name: "admin", action_type: "DELETE_VM", target_resource: "VM-Test-05", status: "SUCCESS", description: "Deleted legacy VM-Test-05", created_at: "2026-06-06T15:15:00Z" },
-  { id: 1006, user_id: 2, user_name: "johndoe", action_type: "APPROVE_VM", target_resource: "VM-Dev-01", status: "SUCCESS", description: "Approved provision for VM-Dev-01", created_at: "2026-06-05T17:30:00Z" },
-  { id: 1007, user_id: 1, user_name: "admin", action_type: "CREATE_VM", target_resource: "VM-Dev-01", status: "PENDING", description: "Requested provision for VM-Dev-01", created_at: "2026-06-05T17:00:00Z" },
-  { id: 1008, user_id: 4, user_name: "system", action_type: "SYNC_DATASTORE", target_resource: "DS-Cluster-01", status: "SUCCESS", description: "Automated datastore synchronization completed", created_at: "2026-06-05T14:00:00Z" },
-  { id: 1009, user_id: 3, user_name: "janedoe", action_type: "EDIT_NETWORK", target_resource: "VLAN-200", status: "SUCCESS", description: "Updated VLAN-200 description", created_at: "2026-06-05T10:15:00Z" },
-];
+// API rows arrive camelCased; alias to the snake_case fields this table renders.
+function normalizeLog(row) {
+  return {
+    ...row,
+    user_id: row.userId ?? row.user_id,
+    user_name: row.userName ?? row.user_name ?? '—',
+    action_type: row.actionType ?? row.action_type ?? '—',
+    target_resource: row.targetResource ?? row.target_resource ?? '',
+    status: row.status ?? '',
+    description: row.description ?? '',
+    ip_address: row.ipAddress ?? row.ip_address ?? '',
+    created_at: row.createdAt ?? row.created_at,
+  };
+}
 
 export default function AuditManagement() {
+  const pushToast = useUI((s) => s.pushToast);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionFilter, setActionFilter] = useState('All Actions');
+
+  const loadLogs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = {};
+      if (searchQuery) params.search = searchQuery;
+      if (actionFilter !== 'All Actions') params.actionType = actionFilter;
+      const rows = await api.get('/audit-logs', { params });
+      setLogs((rows || []).map(normalizeLog));
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Failed to load audit logs.' });
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery, actionFilter, pushToast]);
+
+  useEffect(() => {
+    const t = setTimeout(loadLogs, 250); // debounce search typing
+    return () => clearTimeout(t);
+  }, [loadLogs]);
 
   // Download State
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
@@ -91,13 +120,13 @@ export default function AuditManagement() {
   };
 
   const actionTypes = useMemo(() => {
-    const types = new Set(MOCK_AUDIT_LOGS.map(log => log.action_type));
+    const types = new Set(logs.map(log => log.action_type));
     return ['All Actions', ...Array.from(types).sort()];
-  }, []);
+  }, [logs]);
 
   const filteredLogs = useMemo(() => {
-    let filtered = MOCK_AUDIT_LOGS;
-    
+    let filtered = logs;
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(log => 
@@ -113,7 +142,7 @@ export default function AuditManagement() {
     
     // Sort by Date Descending
     return filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [searchQuery, actionFilter]);
+  }, [logs, searchQuery, actionFilter]);
 
   const formatDate = (dateString) => {
     const d = new Date(dateString);
@@ -130,40 +159,36 @@ export default function AuditManagement() {
     return 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20';
   };
 
-  const handleDownloadSubmit = () => {
+  // Server-side CSV export — respects the active filters + RBAC visibility.
+  const handleDownloadSubmit = async () => {
     if (!downloadDates.start || !downloadDates.end) return;
-    
-    const start = new Date(downloadDates.start);
-    const end = new Date(downloadDates.end);
-    end.setHours(23, 59, 59, 999);
 
-    const logsToDownload = filteredLogs.filter(log => {
-      const logDate = new Date(log.created_at);
-      return logDate >= start && logDate <= end;
-    });
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('search', searchQuery);
+    if (actionFilter !== 'All Actions') params.set('action_type', actionFilter);
+    params.set('date_start', downloadDates.start);
+    params.set('date_end', downloadDates.end);
 
-    if (logsToDownload.length === 0) {
-      alert("No logs found in this date range.");
-      return;
+    const base = import.meta.env.VITE_API_BASE_URL || '/api';
+    const token = getToken();
+    try {
+      const resp = await fetch(`${base}/audit-logs/export?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!resp.ok) throw new Error('Export failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `audit_trail_${downloadDates.start}_to_${downloadDates.end}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Export failed.' });
     }
-
-    const headers = ["ID", "User ID", "Username", "Action Type", "Target Resource", "Status", "Description", "Created At"];
-    const csvContent = [
-      headers.join(","),
-      ...logsToDownload.map(log => 
-        [log.id, log.user_id, log.user_name, log.action_type, log.target_resource, log.status, `"${log.description}"`, log.created_at].join(",")
-      )
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `audit_trail_${downloadDates.start}_to_${downloadDates.end}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
 
     setDownloadModalOpen(false);
     setDownloadDates({ start: '', end: '' });
@@ -307,7 +332,7 @@ export default function AuditManagement() {
         {/* Footer / Pagination Stub */}
         <div className="p-3 border-t border-gray-100 dark:border-theme flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20 shrink-0">
           <span className="text-[12px] text-slate-500 dark:text-slate-400 font-medium">
-            Showing {filteredLogs.length} of {MOCK_AUDIT_LOGS.length} records
+            Showing {filteredLogs.length} of {logs.length} records
           </span>
           <div className="flex items-center gap-1">
             <button className="px-3 py-1.5 text-[12px] font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded hover:bg-slate-50 dark:hover:bg-slate-700 transition-opacity disabled:opacity-50" disabled>

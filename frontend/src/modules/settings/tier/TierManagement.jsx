@@ -6,10 +6,12 @@ import { useTierContext } from '../../../contexts/TierContext';
 import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
 import ResizableTh from '../../../components/ResizableTh';
 import TierForm from './TierForm';
+import { useUI } from '../../../stores/uiStore';
 
 export default function TierManagement() {
-  const { tiers, setTiers } = useTierContext();
+  const { tiers, create, update, remove } = useTierContext();
   const { environments } = useEnvironmentContext();
+  const pushToast = useUI((s) => s.pushToast);
   
   // Searching & Filtering
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,27 +117,26 @@ export default function TierManagement() {
     setHasUnsavedChanges(false);
   };
 
-  const handleSave = (tierData) => {
-    if (formMode === 'create') {
-      const newTier = {
-        ...tierData,
-        id: Math.max(...tiers.map(t => t.id), 0) + 1,
-        type: 'Custom',
-        createdDate: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-      };
-      setTiers([...tiers, newTier]);
-    } else {
-      setTiers(tiers.map(t => {
-        if (t.id === editingTier.id) {
-          return {
-            ...t,
-            ...tierData
-          };
-        }
-        return t;
-      }));
+  const handleSave = async (tierData) => {
+    // Convert the GB RAM input to ram_mb here — the only place this math lives.
+    const payload = {
+      tierName: tierData.name,
+      description: tierData.description,
+      cpu: tierData.cpu,
+      ramMb: (tierData.ram || 0) * 1024,
+      diskGb: tierData.disk,
+      status: tierData.status,
+    };
+    try {
+      if (formMode === 'create') {
+        await create(payload);
+      } else {
+        await update(editingTier.id, payload);
+      }
+      closeForm(true);
+    } catch (e) {
+      pushToast({ kind: 'error', message: e.message || 'Save failed.' });
     }
-    closeForm(true);
   };
 
   const handleActionClick = (action, tier) => {
@@ -184,17 +185,20 @@ export default function TierManagement() {
     });
   };
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
     const { action, tier } = tierActionModal;
-    
-    if (action === 'Delete') {
-      setTiers(tiers.filter(t => t.id !== tier.id));
-    } else if (action === 'Enable') {
-      setTiers(tiers.map(t => t.id === tier.id ? { ...t, status: 'Active' } : t));
-    } else if (action === 'Disable') {
-      setTiers(tiers.map(t => t.id === tier.id ? { ...t, status: 'Inactive' } : t));
+    try {
+      if (action === 'Delete') {
+        await remove(tier.id);
+      } else if (action === 'Enable') {
+        await update(tier.id, { status: 'Active' });
+      } else if (action === 'Disable') {
+        await update(tier.id, { status: 'Inactive' });
+      }
+    } catch (e) {
+      // Surface 409 delete-protection (tier in use) and other errors inline.
+      pushToast({ kind: 'error', message: e.message || 'Action failed.' });
     }
-    
     setTierActionModal({ isOpen: false, action: null, tier: null, isBlocking: false, blockReasons: [] });
   };
 

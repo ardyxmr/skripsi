@@ -8,13 +8,14 @@ import ProviderDiscovery from './ProviderDiscovery';
 import ProviderActionModal from './ProviderActionModal';
 import ErrorBoundary from './ErrorBoundary';
 import { useProviderContext } from '../../../contexts/ProviderContext';
+import api from '../../../lib/api';
 
 export default function ProviderManagement() {
-  const { providers, setProviders } = useProviderContext();
+  const { providers, loading, refetch, create, update, remove } = useProviderContext();
   const [providerSearch, setProviderSearch] = useState('');
   const [providerTypeFilter, setProviderTypeFilter] = useState('All Types');
   const [providerStatusFilter, setProviderStatusFilter] = useState('All Status');
-  const [providerSortConfig, setProviderSortConfig] = useState({ key: 'name', direction: 'asc' });
+  const [providerSortConfig, setProviderSortConfig] = useState({ key: 'providerName', direction: 'asc' });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   
@@ -60,14 +61,45 @@ export default function ProviderManagement() {
     closeModal(true);
   };
 
-  const handleRefreshProviders = () => {
+  const flashToast = (msg, ms = 3500) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), ms);
+  };
+
+  const handleRefreshProviders = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
-    setTimeout(() => {
+    try {
+      await refetch();
+      flashToast('Provider data refreshed successfully.');
+    } catch (e) {
+      flashToast(e.message || 'Refresh failed.');
+    } finally {
       setIsRefreshing(false);
-      setToastMsg('Provider data refreshed successfully.');
-      setTimeout(() => setToastMsg(''), 3000);
-    }, 1500);
+    }
+  };
+
+  const handleTestConnection = async (p) => {
+    setOpenDropdownId(null);
+    try {
+      const res = await api.post(`/providers/${p.id}/test-connection`);
+      flashToast(`${p.providerName}: ${res.status}${res.version ? ` (v${res.version})` : ''}`);
+    } catch (e) {
+      flashToast(e.message || 'Connection test failed.');
+    }
+  };
+
+  const handleRunDiscovery = async (p) => {
+    setOpenDropdownId(null);
+    flashToast(`Running discovery for ${p.providerName}…`, 60000);
+    try {
+      const res = await api.post(`/providers/${p.id}/discover`);
+      const c = res.counts || {};
+      flashToast(`Discovery complete: ${c.nodes || 0} nodes, ${c.templates || 0} templates, ${c.networks || 0} networks, ${c.datastores || 0} datastores, ${c.vms || 0} VMs.`, 5000);
+      await refetch();
+    } catch (e) {
+      flashToast(e.message || 'Discovery failed.');
+    }
   };
 
   const handleProviderSort = (key) => {
@@ -97,20 +129,31 @@ export default function ProviderManagement() {
     setActionModal({ isOpen: true, action: 'Delete', provider, isBlocking: false });
   };
 
-  const confirmAction = () => {
+  const confirmAction = async () => {
     if (actionModal.action === 'Delete') {
-      setProviders(providers.filter(p => p.id !== actionModal.provider.id));
+      try {
+        await remove(actionModal.provider.id);
+        flashToast('Provider deleted.');
+      } catch (e) {
+        flashToast(e.message || 'Delete failed.');
+      }
     }
     setActionModal({ isOpen: false, action: null, provider: null, isBlocking: false });
   };
 
-  const handleFormSubmit = (data) => {
-    if (modal.mode === 'add') {
-      setProviders([...providers, { ...data, id: Date.now(), connectionStatus: 'Connected', discoveryStatus: 'Success', nodes: 0, templates: 0, networks: 0, datastores: 0 }]);
-    } else {
-      setProviders(providers.map(p => p.id === modal.data.id ? { ...p, ...data } : p));
+  const handleFormSubmit = async (data) => {
+    try {
+      if (modal.mode === 'add') {
+        await create(data);
+        flashToast('Provider created.');
+      } else {
+        await update(modal.data.id, data);
+        flashToast('Provider updated.');
+      }
+      closeModal(true);
+    } catch (e) {
+      flashToast(e.message || 'Save failed.');
     }
-    closeModal(true);
   };
 
   const activeTab = 'Provider Management';
@@ -134,23 +177,23 @@ export default function ProviderManagement() {
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-medium">Providers</div>
                     </div>
                     <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{providers.filter(p => p.connectionStatus === 'Connected').length}</div>
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{providers.filter(p => p.status === 'Connected').length}</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-medium">Connected</div>
                     </div>
                     <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{providers.filter(p => p.discoveryStatus === 'Success').length}</div>
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{providers.filter(p => p.discoveryStatus === 'success').length}</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-medium">Discovery Success</div>
                     </div>
                     <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{providers.reduce((acc, p) => acc + p.templates, 0)}</div>
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{providers.reduce((acc, p) => acc + (p.templatesCount || 0), 0)}</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-medium">Templates</div>
                     </div>
                     <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{providers.reduce((acc, p) => acc + p.networks, 0)}</div>
+                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{providers.reduce((acc, p) => acc + (p.networksCount || 0), 0)}</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-medium">Networks</div>
                     </div>
                     <div className="text-center pl-4">
-                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-500">{providers.reduce((acc, p) => acc + p.datastores, 0)}</div>
+                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-500">{providers.reduce((acc, p) => acc + (p.datastoresCount || 0), 0)}</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-medium">Datastores</div>
                     </div>
                   </div>
@@ -207,9 +250,9 @@ export default function ProviderManagement() {
                       className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-lg px-3 py-2 outline-none cursor-pointer min-w-[140px]"
                     >
                       <option value="All Types">All Types</option>
-                      <option value="Proxmox">Proxmox</option>
-                      <option value="VMware">VMware</option>
-                      <option value="Nutanix">Nutanix</option>
+                      <option value="proxmox">Proxmox</option>
+                      <option value="openstack">OpenStack</option>
+                      <option value="olvm">OLVM</option>
                     </select>
                     <select 
                       value={providerStatusFilter}
@@ -260,12 +303,12 @@ export default function ProviderManagement() {
                           </tr>
                         </thead>
                         <tbody>
-                          {providers.filter(p => 
-                            (providerTypeFilter === 'All Types' || p.type === providerTypeFilter) &&
-                            (providerStatusFilter === 'All Status' || p.connectionStatus === providerStatusFilter) &&
-                            (p.name.toLowerCase().includes(providerSearch.toLowerCase()) || 
-                             p.endpoint.toLowerCase().includes(providerSearch.toLowerCase()) || 
-                             p.type.toLowerCase().includes(providerSearch.toLowerCase()))
+                          {providers.filter(p =>
+                            (providerTypeFilter === 'All Types' || p.providerType === providerTypeFilter) &&
+                            (providerStatusFilter === 'All Status' || p.status === providerStatusFilter) &&
+                            ((p.providerName || '').toLowerCase().includes(providerSearch.toLowerCase()) ||
+                             (p.endpoint || '').toLowerCase().includes(providerSearch.toLowerCase()) ||
+                             (p.providerType || '').toLowerCase().includes(providerSearch.toLowerCase()))
                           ).sort((a, b) => {
                             if (a[providerSortConfig.key] < b[providerSortConfig.key]) {
                               return providerSortConfig.direction === 'asc' ? -1 : 1;
@@ -277,32 +320,32 @@ export default function ProviderManagement() {
                           }).map((p) => (
                             <tr key={p.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                               <td className="px-5 py-3">
-                                <div className="text-[13px] font-bold text-gray-800 dark:text-gray-200">{p.name}</div>
+                                <div className="text-[13px] font-bold text-gray-800 dark:text-gray-200">{p.providerName}</div>
                               </td>
-                              <td className="px-4 py-3 text-[13px] text-gray-600 dark:text-gray-400">{p.type}</td>
+                              <td className="px-4 py-3 text-[13px] text-gray-600 dark:text-gray-400 capitalize">{p.providerType}</td>
                               <td className="px-4 py-3 text-[13px] text-gray-600 dark:text-gray-400">{p.endpoint}</td>
-                              <td className="px-4 py-3 text-[13px] font-bold text-emerald-600 dark:text-emerald-400">{p.nodes}</td>
-                              <td className="px-4 py-3 text-[13px] font-bold text-blue-600 dark:text-blue-400">{p.templates}</td>
-                              <td className="px-4 py-3 text-[13px] font-bold text-purple-600 dark:text-purple-400">{p.networks}</td>
-                              <td className="px-4 py-3 text-[13px] font-bold text-amber-500 dark:text-amber-400">{p.datastores}</td>
+                              <td className="px-4 py-3 text-[13px] font-bold text-emerald-600 dark:text-emerald-400">{p.nodesCount ?? '—'}</td>
+                              <td className="px-4 py-3 text-[13px] font-bold text-blue-600 dark:text-blue-400">{p.templatesCount ?? '—'}</td>
+                              <td className="px-4 py-3 text-[13px] font-bold text-purple-600 dark:text-purple-400">{p.networksCount ?? '—'}</td>
+                              <td className="px-4 py-3 text-[13px] font-bold text-amber-500 dark:text-amber-400">{p.datastoresCount ?? '—'}</td>
                               <td className="px-4 py-3">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${p.connectionStatus === 'Connected' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' : 'bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'}`}>
-                                  {p.connectionStatus}
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${p.status === 'Connected' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' : 'bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'}`}>
+                                  {p.status}
                                 </span>
                               </td>
 
                               <td className="px-4 py-3">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${p.discoveryStatus === 'Success' ? 'bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' : p.discoveryStatus === 'Failed' ? 'bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20' : p.discoveryStatus === 'Running' ? 'bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' : 'bg-slate-50 text-slate-600 border border-slate-200 dark:bg-surface dark:text-slate-400 dark:border-theme'}`}>
-                                  {p.discoveryStatus}
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${p.discoveryStatus === 'success' ? 'bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' : p.discoveryStatus === 'failed' ? 'bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20' : p.discoveryStatus === 'running' ? 'bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' : 'bg-slate-50 text-slate-600 border border-slate-200 dark:bg-surface dark:text-slate-400 dark:border-theme'}`}>
+                                  {p.discoveryStatus || 'never_run'}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-[12px]">
-                                <div className="text-gray-800 dark:text-gray-200 font-medium">{p.lastDiscovery || 'Never'}</div>
-                                {p.lastDiscovery && <div className="text-gray-400 dark:text-gray-500 mt-0.5">{p.nextDiscovery ? `Next: ${p.nextDiscovery}` : 'Manual'}</div>}
+                                <div className="text-gray-800 dark:text-gray-200 font-medium">{p.lastDiscoveryAt || 'Never'}</div>
+                                {p.lastDiscoveryAt && <div className="text-gray-400 dark:text-gray-500 mt-0.5">{p.nextDiscoveryAt ? `Next: ${p.nextDiscoveryAt}` : 'Manual'}</div>}
                               </td>
                               <td className="px-4 py-3 text-[12px]">
-                                <div className="text-gray-800 dark:text-gray-200 font-medium">{p.syncInterval}</div>
-                                <div className="text-gray-400 dark:text-gray-500 mt-0.5">{p.autoSync ? 'Auto Sync' : 'Manual Only'}</div>
+                                <div className="text-gray-800 dark:text-gray-200 font-medium">{p.autoDiscoveryEnabled ? (p.discoveryInterval || '—') : 'Manual'}</div>
+                                <div className="text-gray-400 dark:text-gray-500 mt-0.5">{p.autoDiscoveryEnabled ? 'Auto Sync' : 'Manual Only'}</div>
                               </td>
                               <td className="px-5 py-3 text-center">
                                 <TableActionMenu
@@ -313,10 +356,10 @@ export default function ProviderManagement() {
                                   <button onClick={() => { setOpenDropdownId(null); openModal('edit', p); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200">
                                     <Edit2 size={14}/> Edit Provider
                                   </button>
-                                  <button onClick={() => setOpenDropdownId(null)} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400">
+                                  <button onClick={() => handleTestConnection(p)} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400">
                                     <CheckCircle2 size={14}/> Test Discovery Connection
                                   </button>
-                                  <button onClick={() => setOpenDropdownId(null)} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 text-purple-600 dark:text-purple-400">
+                                  <button onClick={() => handleRunDiscovery(p)} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 text-purple-600 dark:text-purple-400">
                                     <Database size={14}/> Run Discovery Now
                                   </button>
                                   <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>

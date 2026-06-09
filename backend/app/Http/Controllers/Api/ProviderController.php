@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Provider;
 use App\Services\AuditService;
+use App\Services\Discovery\ProviderFactory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -53,6 +54,23 @@ class ProviderController extends Controller
         $this->audit->log($request->user(), 'DELETE_PROVIDER', "Deleted provider {$name}", $request);
 
         return response()->json(null, 204);
+    }
+
+    // Live check against the provider using the discovery credential.
+    public function testConnection(Request $request, Provider $provider): JsonResponse
+    {
+        $result = ProviderFactory::make($provider)->testConnection();
+
+        // Direct assignment — these system fields are intentionally not mass-fillable.
+        $provider->status = $result['status'];
+        $provider->last_tested_at = now();
+        $provider->save();
+        $this->audit->log($request->user(), 'TEST_PROVIDER', "Tested {$provider->provider_name}: {$result['status']}", $request);
+
+        return response()->json([
+            'status' => $result['status'],
+            'version' => $result['version'] ?? null,
+        ]);
     }
 
     // Statistics widgets — all from the DB, never live API calls (07-api-contract §2).

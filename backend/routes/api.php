@@ -26,6 +26,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Provider Discovery (Module 01). /stats before the resource so it isn't
         // captured as {provider}. test-connection/discover/explorer added in 2b/2c.
         Route::get('providers/stats', [ProviderController::class, 'stats']);
+        Route::post('providers/{provider}/test-connection', [ProviderController::class, 'testConnection']);
         Route::apiResource('providers', ProviderController::class)->except('show');
     });
 });

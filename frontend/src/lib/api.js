@@ -11,7 +11,10 @@ const api = axios.create({
 api.interceptors.request.use((cfg) => {
   const token = getToken();
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
-  if (cfg.data && !(cfg.data instanceof FormData)) {
+  if (cfg.data instanceof FormData) {
+    // Let the browser/axios set multipart/form-data with the correct boundary.
+    delete cfg.headers['Content-Type'];
+  } else if (cfg.data) {
     cfg.data = decamelizeKeys(cfg.data);
   }
   if (cfg.params) cfg.params = decamelizeKeys(cfg.params);

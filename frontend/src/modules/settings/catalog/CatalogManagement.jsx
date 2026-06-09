@@ -7,6 +7,7 @@ import CatalogForm from './CatalogForm';
 import CatalogExplorer from './CatalogExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useCatalogContext } from '../../../contexts/CatalogContext';
+import api from '../../../lib/api';
 
 export default function CatalogManagement() {
   const { providers } = useProviderContext();
@@ -120,39 +121,37 @@ export default function CatalogManagement() {
     e.preventDefault();
     const formData = new FormData(e.target);
 
-    // Catalog image: a real File from the form's hidden input. With a backend,
-    // upload it to POST /api/catalogs/{id}/image (multipart) after the catalog
-    // is created/updated, then store the returned path. Until then, keep a local
-    // object-URL preview so the chosen image is visible in the UI.
     const imageFile = formData.get('catalogImage');
     const hasNewImage = imageFile && typeof imageFile === 'object' && imageFile.size > 0;
-    const catalogImage = hasNewImage
-      ? URL.createObjectURL(imageFile)
-      : (modal.mode === 'edit' ? (modal.data?.catalogImage ?? null) : null);
 
-    // Payload uses API field names (axios decamelizes camelCase → snake_case).
+    // Submit business IDs only; the backend resolves names + node (ADR-05).
     const payload = {
       catalogName: formData.get('catalogName'),
       catalogDescription: formData.get('catalogDescription'),
-      provider: formData.get('provider'),
-      node: formData.get('node'),
-      template: formData.get('template'),
-      environments: formData.getAll('environment'),
-      tiers: formData.getAll('tiers'),
+      providerId: Number(formData.get('providerId')) || null,
+      providerTemplateId: Number(formData.get('providerTemplateId')) || null,
       status: formData.get('status'),
-      catalogImage,
     };
 
     try {
+      let catalogId = modal.data?.id;
       if (modal.mode === 'edit') {
         await update(modal.data.id, payload);
         showCatalogToast(`Catalog "${payload.catalogName}" updated successfully.`);
       } else {
-        await create(payload);
+        const created = await create(payload);
+        catalogId = created?.id ?? catalogId;
         showCatalogToast(`Catalog "${payload.catalogName}" created successfully.`);
       }
+
+      // Upload the image (multipart) after the catalog exists.
+      if (hasNewImage && catalogId) {
+        const fd = new FormData();
+        fd.append('image', imageFile);
+        await api.raw.post(`/catalogs/${catalogId}/image`, fd);
+        await refetch();
+      }
       closeModal(true);
-      // With a backend: upload the image to POST /catalogs/{id}/image after save.
     } catch (err) {
       showCatalogToast(err.message || 'Save failed.');
     }

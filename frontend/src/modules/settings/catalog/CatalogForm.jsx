@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
+import api from '../../../lib/api';
 
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -11,14 +12,32 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
   const [preview, setPreview] = useState(null);
   const [imgError, setImgError] = useState('');
 
-  // Reset image state whenever the modal opens (or switches add/edit target).
+  // Provider → Template cascade (templates come from the provider's discovered resources).
+  const [providerId, setProviderId] = useState('');
+  const [templates, setTemplates] = useState([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+
+  // Reset image + cascade state whenever the modal opens.
   useEffect(() => {
     if (modal.isOpen && modal.type === 'catalog') {
       setPreview(modal.data?.catalogImage || modal.data?.catalog_image || null);
       setImgError('');
       if (fileInputRef.current) fileInputRef.current.value = '';
+      setProviderId(modal.data?.providerId ?? '');
     }
   }, [modal.isOpen, modal.type, modal.data]);
+
+  // Load discovered templates for the selected provider.
+  useEffect(() => {
+    if (!modal.isOpen || !providerId) { setTemplates([]); return; }
+    let active = true;
+    setLoadingTemplates(true);
+    api.get(`/providers/${providerId}/explorer`)
+      .then((d) => active && setTemplates((d.templates || []).filter((t) => t.discoveredStatus !== 'Missing')))
+      .catch(() => active && setTemplates([]))
+      .finally(() => active && setLoadingTemplates(false));
+    return () => { active = false; };
+  }, [providerId, modal.isOpen]);
 
   const resetToExisting = () => setPreview(modal.data?.catalogImage || modal.data?.catalog_image || null);
 
@@ -104,20 +123,20 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
                   </div>
                   <div>
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Provider <span className="text-rose-500">*</span></label>
-                    <select name="provider" defaultValue={modal.data?.provider || ''} required className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer">
+                    <select name="providerId" value={providerId} onChange={(e) => setProviderId(e.target.value)} required className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer">
                       <option value="" disabled>Select provider</option>
                       {providers.map(p => (
-                        <option key={p.id} value={p.providerName ?? p.name}>{p.providerName ?? p.name}</option>
+                        <option key={p.id} value={p.id}>{p.providerName ?? p.name}</option>
                       ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Template <span className="text-rose-500">*</span></label>
-                    <select name="template" defaultValue={modal.data?.template || ''} required className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer">
-                      <option value="" disabled>Select template</option>
-                      <option value="ubuntu-22-template">ubuntu-22-template</option>
-                      <option value="win-2022-template">win-2022-template</option>
-                      <option value="rocky-9-template">rocky-9-template</option>
+                    <select name="providerTemplateId" defaultValue={modal.data?.providerTemplateId || ''} required disabled={!providerId || loadingTemplates} className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer disabled:opacity-50">
+                      <option value="" disabled>{!providerId ? 'Select a provider first' : loadingTemplates ? 'Loading…' : 'Select discovered template'}</option>
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id}>{t.templateName} ({t.nodeName})</option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -171,33 +190,6 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">PNG, JPG/JPEG or WEBP · exactly 512×512px · max 2 MB.</p>
                     {imgError && <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{imgError}</p>}
-                  </div>
-                </div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
-                <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 block">Assignments</label>
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">Environments</label>
-                    <div className="flex flex-col gap-2">
-                      {['Production', 'Development', 'Staging', 'Testing'].map(env => (
-                        <label key={env} className="flex items-center gap-2 text-[13px] text-slate-700 dark:text-slate-300 cursor-pointer">
-                          <input type="checkbox" name="environment" value={env} defaultChecked={modal.data?.environments?.includes(env)} className="rounded text-blue-600 focus:ring-blue-500 bg-page border-theme cursor-pointer" />
-                          {env}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">Resource Tiers</label>
-                    <div className="flex flex-col gap-2">
-                      {['Bronze', 'Silver', 'Gold'].map(tier => (
-                        <label key={tier} className="flex items-center gap-2 text-[13px] text-slate-700 dark:text-slate-300 cursor-pointer">
-                          <input type="checkbox" name="tiers" value={tier} defaultChecked={modal.data?.tiers?.includes(tier)} className="rounded text-blue-600 focus:ring-blue-500 bg-page border-theme cursor-pointer" />
-                          {tier}
-                        </label>
-                      ))}
-                    </div>
                   </div>
                 </div>
               </div>

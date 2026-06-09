@@ -120,11 +120,8 @@ export default function NetworkManagement() {
     const payload = {
       networkName: formData.get('networkName'),
       description: formData.get('description'),
-      provider: formData.get('provider'),
-      node: formData.get('node'),
-      providerNetwork: formData.get('providerNetwork'),
-      environment: formData.getAll('environment'),
-      tiers: formData.getAll('tiers'),
+      providerId: Number(formData.get('providerId')) || null,
+      providerNetworkId: Number(formData.get('providerNetworkId')) || null,
       status: formData.get('status'),
     };
 

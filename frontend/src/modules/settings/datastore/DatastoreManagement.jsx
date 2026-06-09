@@ -136,11 +136,8 @@ export default function DatastoreManagement() {
     const payload = {
       datastoreName: formData.get('datastoreName'),
       description: formData.get('description'),
-      provider: formData.get('provider'),
-      node: formData.get('node'),
-      providerDatastore: formData.get('providerDatastore'),
-      environment: formData.getAll('environment'),
-      tiers: formData.getAll('tiers'),
+      providerId: Number(formData.get('providerId')) || null,
+      providerDatastoreId: Number(formData.get('providerDatastoreId')) || null,
       status: formData.get('status'),
     };
 

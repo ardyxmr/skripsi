@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CatalogController;
+use App\Http\Controllers\Api\DatastoreController;
 use App\Http\Controllers\Api\GroupController;
+use App\Http\Controllers\Api\NetworkController;
 use App\Http\Controllers\Api\ProviderController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
@@ -18,8 +20,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
 
-    // Published catalog — user-facing read (any authenticated role).
+    // Published resources — user-facing reads (any authenticated role).
     Route::get('catalogs', [CatalogController::class, 'index']);
+    Route::get('networks', [NetworkController::class, 'index']);
+    Route::get('datastores', [DatastoreController::class, 'index']);
 
     // Admin-only IAM CRUD (07-api-contract §10).
     Route::middleware('role:Administrator')->group(function () {
@@ -28,6 +32,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('catalogs/{catalog}', [CatalogController::class, 'update']);
         Route::delete('catalogs/{catalog}', [CatalogController::class, 'destroy']);
         Route::post('catalogs/{catalog}/image', [CatalogController::class, 'uploadImage']);
+
+        // Network + Datastore publishing (write).
+        Route::post('networks', [NetworkController::class, 'store']);
+        Route::put('networks/{network}', [NetworkController::class, 'update']);
+        Route::delete('networks/{network}', [NetworkController::class, 'destroy']);
+        Route::post('datastores', [DatastoreController::class, 'store']);
+        Route::put('datastores/{datastore}', [DatastoreController::class, 'update']);
+        Route::delete('datastores/{datastore}', [DatastoreController::class, 'destroy']);
 
         Route::apiResource('users', UserController::class)->except('show');
         Route::apiResource('roles', RoleController::class)->except('show');

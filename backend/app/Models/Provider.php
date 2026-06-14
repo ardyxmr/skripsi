@@ -33,10 +33,12 @@ class Provider extends Model
         ];
     }
 
-    /** Background sync cadence in seconds for a stored interval label ('30s' | '1m' | '2m'). */
+    /** Background sync cadence in seconds for a stored interval label ('15s' | '20s' | '30s' | '1m' | '2m'). */
     public static function intervalSeconds(?string $interval): int
     {
         return match ($interval) {
+            '15s' => 15,
+            '20s' => 20,
             '30s' => 30,
             '1m' => 60,
             '2m' => 120,

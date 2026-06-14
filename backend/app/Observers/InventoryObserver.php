@@ -20,7 +20,12 @@ class InventoryObserver
 
     public function updated(Inventory $inventory): void
     {
-        if ($inventory->wasChanged('status')) {
+        // Broadcast on a governance status change OR an observed_power_state flip. The latter is an
+        // OUT-OF-BAND change (someone stopped/started the VM in Proxmox) that the discovery sweep
+        // detects — and since the UI derives Running/Stopped from observed_power_state, we push it so
+        // the frontend updates instantly instead of waiting for its next poll. `wasChanged` is only
+        // true on an actual flip, so the steady per-sweep fact mirror (cpu/ram/last_sync) won't spam.
+        if ($inventory->wasChanged('status') || $inventory->wasChanged('observed_power_state')) {
             VmStateChanged::dispatch($inventory, $inventory->getOriginal('status'), $inventory->status);
         }
     }

@@ -244,6 +244,24 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 
 ---
 
+## ADR-22 — Two-tier data freshness: event-driven for our own actions, periodic reconciliation for the rest
+
+**Context.** Inventory's runtime facts (IP, power state, specs) are provider-sourced (ADR-10) and were refreshed only by the periodic discovery sweep, so after an in-app mutation the UI lagged the sweep interval — and boosting the local DB poll can't fix it, because those fields only change once discovery hits Proxmox.
+
+**Decision.** Split freshness into two tiers. **(a) Event-driven** for actions we initiate: a spec-changing job sets a transitional status (`Updating`/`Deleting`) up front, and on completion dispatches a **targeted single-VM `syncVm`** (never a full discovery) plus a **bounded per-VM IP follow-up** (re-queues ≤6×/5s for guest-agent lag). Every status transition emits exactly one `VmStateChanged` via an Eloquent observer, so the seam is centralized. **(b) Periodic reconciliation** — the per-provider sweep (ADR-19), retained as the *only* way to catch **out-of-band** changes (a VM stopped in the Proxmox console). The sweep tick (10s) is kept finer than any provider interval to remove phase drift, and an `observed_power_state` flip also emits `VmStateChanged`. The frontend runs **one adaptive poller** (1.5s while a VM is transitional, 5s idle) feeding a shared cache event that every surface (tables + notification bell) consumes. Hardened by a per-provider **circuit breaker** + per-VM **sync throttle** (`ProviderSyncGuard`).
+
+**Consequences.** Our own actions reflect in ~1–2s; out-of-band changes within the (now tighter, tunable) discovery window. Live Proxmox calls stay centralized (ADR-10) — the sanctioned callers are now Provider Management, the scheduled sweep, the provision job, and the targeted post-job sync. A down provider trips the breaker rather than stampeding the API. Consistency itself is *not* a freshness concern: the transitional-state guards reject conflicting concurrent actions regardless of UI staleness.
+
+## ADR-23 — Real-time push rides the existing event seam over Reverb; Redis is split cache-vs-queue
+
+**Context.** Polling bounds freshness and, with multiple concurrent admins, leaves a stale-read window. The system already emits `VmStateChanged`/`ApprovalChanged` on every transition (ADR-22) and the frontend already funnels all live updates through one cache event — a push-ready seam built ahead of need.
+
+**Decision.** Broadcast those events over **Laravel Reverb** (first-party WebSockets). Events `implements ShouldBroadcast` (**queued**, so a down/slow Reverb fails the broadcast in isolation and never breaks the mutation). **Channel authorization mirrors the API read-scope exactly** — WebSockets must never be a wider data path than HTTP: per-owner `user.{id}` (a manager's group-members' VM events are routed to the manager's *own* channel, so no group channels leak), `role.privileged` (all approvals), presence `role.admin` (fleet + "who's online"). Channel auth uses a **bearer-token Echo authorizer**, not Laravel's cookie default. The single frontend poller **demotes to a heartbeat when the socket is connected and reverts to full adaptive polling if it drops** — graceful degradation, never an outage. **Redis runs as two instances**: cache (`allkeys-lru`, evictable) vs queue + Reverb pub/sub (`noeviction` + AOF) — a job queue must never silently evict a job; Reverb's multi-node scaling rides the queue instance's pub/sub. **Consistency stays a write-time guarantee** (the ADR-22 transitional guards), not a transport one — push only narrows the stale-read window.
+
+**Consequences.** Our actions push sub-second; out-of-band changes push the instant discovery detects them. Push is an *additive* layer over an unchanged poll fallback, so a Reverb/Redis outage degrades to the prior polling behavior. True horizontal scale needs the Redis-backed Reverb scaling (done) plus externalized Terraform state (deferred; see `docs/deployment-realtime-topology.md`).
+
+---
+
 ## Decision summary table
 
 | ID | Decision | Primary invariant it protects |
@@ -269,3 +287,5 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 | 19 | Scheduled per-provider auto-discovery + 24h prune | Source-of-truth snapshot never goes stale; one provider-read point |
 | 20 | Bundled "Edit Resources" → one apply | One approval + one hotplug apply; no resize/disk race |
 | 21 | Lifetime capped to env window | VM never outlives its environment's policy |
+| 22 | Two-tier freshness: event-driven + reconciliation | Our actions reflect in ~1–2s; out-of-band caught by the sweep |
+| 23 | Real-time push (Reverb) over the event seam; split Redis | Sub-second multi-admin updates; queue never evicts; degrades to polling |

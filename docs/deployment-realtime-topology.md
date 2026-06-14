@@ -116,6 +116,7 @@ Check: `systemctl status infraprov-reverb`, `journalctl -u infraprov-worker@1 -f
 
 ```ini
 APP_URL=https://infraprov.example.com
+APP_TIMEZONE=Asia/Jakarta         # OS + app on WIB (GMT+7); also run: sudo timedatectl set-timezone Asia/Jakarta
 
 CACHE_STORE=redis                 # cache → :6379 (config/cache.php 'cache' connection)
 QUEUE_CONNECTION=redis            # queue → :6380

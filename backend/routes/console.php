@@ -11,9 +11,11 @@ Artisan::command('inspire', function () {
 // Expiry engine: expire VMs past their window, auto-destroy after grace (Stage 7).
 Schedule::command('vms:lifecycle')->everyMinute()->withoutOverlapping();
 
-// Discovery freshness: tick at the finest interval (30s) — the command itself decides per provider
-// whether its configured cadence (30s/1m/2m) has elapsed before re-discovering + mirroring facts.
-Schedule::command('discovery:refresh')->everyThirtySeconds()->withoutOverlapping();
+// Discovery freshness: tick every 10s, FINER than any provider cadence (15s/20s/30s/1m/2m), so the
+// per-provider "due" check fires close to its true mark — eliminating the phase drift where a 30s
+// tick could miss a provider's due-time by a second and defer detection ~30s. The command
+// self-throttles per provider, so Proxmox is still only hit at each provider's own interval, not 10s.
+Schedule::command('discovery:refresh')->everyTenSeconds()->withoutOverlapping();
 
 // Stale cleanup: delete discovered resources Missing > 24h (keeps published-referenced ones).
 Schedule::command('discovery:prune')->hourly();

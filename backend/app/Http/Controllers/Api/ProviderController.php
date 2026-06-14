@@ -167,7 +167,7 @@ class ProviderController extends Controller
             'terraform_provider_version' => ['required', 'string'],
 
             'auto_discovery_enabled' => ['boolean'],
-            'discovery_interval' => ['nullable', Rule::in(['30s', '1m', '2m'])],
+            'discovery_interval' => ['nullable', Rule::in(['15s', '20s', '30s', '1m', '2m'])],
         ]);
     }
 }

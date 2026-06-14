@@ -198,6 +198,8 @@ export default function ProviderForm({ isOpen, mode, data, onSubmit, onClose, on
                       disabled={!autoDiscoveryEnabled}
                       className={`w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors cursor-pointer ${autoDiscoveryEnabled ? 'bg-white dark:bg-page text-slate-900 dark:text-slate-100' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 cursor-not-allowed'}`}
                     >
+                      <option value="15s">15 Seconds</option>
+                      <option value="20s">20 Seconds</option>
                       <option value="30s">30 Seconds</option>
                       <option value="1m">1 Minute</option>
                       <option value="2m">2 Minutes</option>

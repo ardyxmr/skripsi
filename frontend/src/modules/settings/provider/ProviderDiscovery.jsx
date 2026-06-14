@@ -2,17 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Layers, Box, Play, Database, Network, Grid, Server, Search, CheckCircle2, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 import api from '../../../lib/api';
+import StatusPill from '../../../components/common/StatusPill';
 
 const EMPTY = { nodes: [], templates: [], networks: [], datastores: [], vms: [] };
+
+// Soft-variant pill matching the explorer row style (rounded, uppercase, no dot).
+const Pill = (props) => <StatusPill variant="soft" uppercase shape="sm" {...props} />;
 
 // One consolidated VM status (replaces the confusing Power + Discovered-status pair):
 // a present VM shows its power (Running/Stopped); a VM no longer in Proxmox shows Missing
 // (pruned automatically after 24h).
 const vmStatusBadge = (item) => {
-  if (item.discoveredStatus !== 'Active') return { label: 'Missing', cls: 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400' };
-  if (item.powerState === 'running') return { label: 'Running', cls: 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' };
-  if (item.powerState === 'stopped') return { label: 'Stopped', cls: 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400' };
-  return { label: 'Unknown', cls: 'bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400' };
+  if (item.discoveredStatus !== 'Active') return <Pill status="Missing" />;
+  if (item.powerState === 'running') return <Pill status="Running" />;
+  if (item.powerState === 'stopped') return <Pill status="Stopped" />;
+  return <Pill status="Unknown" />;
 };
 
 export default function ProviderDiscovery({ isOpen, provider, onClose }) {
@@ -104,15 +108,11 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Connection Status</div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${connectionStatus === 'Connected' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400'}`}>
-                      {connectionStatus}
-                    </span>
+                    <StatusPill status={connectionStatus} label={connectionStatus} shape="sm" pad="px-2 py-0.5" uppercase />
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Discovery Status</div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${ds === 'success' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400' : ds === 'failed' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400' : ds === 'running' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-slate-100 text-slate-700 dark:bg-surface dark:text-slate-400'}`}>
-                      {dsLabel}
-                    </span>
+                    <StatusPill tone={ds === 'success' ? 'info' : ds === 'failed' ? 'danger' : ds === 'running' ? 'warning' : 'neutral'} label={dsLabel} shape="sm" pad="px-2 py-0.5" uppercase />
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Last Discovery</div>
@@ -307,7 +307,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                       {resourceNavSelection === 'nodes' && nodes.filter(item => (item.nodeName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
                         <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.nodeName}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.status === 'online' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400'}`}>{item.status}</span></td>
+                          <td className="px-5 py-3"><Pill tone={item.status === 'online' ? 'success' : 'danger'} label={item.status} /></td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.cpuCount != null ? `${item.cpuCount} vCPU` : '—'}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.totalMemory != null ? `${Math.round(item.totalMemory / 1024 / 1024 / 1024)} GB` : '—'}</td>
                         </tr>
@@ -316,7 +316,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                         <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.templateName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.nodeName}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.discoveredStatus === 'Active' ? 'bg-blue-50 border border-blue-200 text-blue-700 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-blue-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400'}`}>{item.discoveredStatus}</span></td>
+                          <td className="px-5 py-3"><Pill tone={item.discoveredStatus === 'Active' ? 'info' : 'neutral'} label={item.discoveredStatus} /></td>
                         </tr>
                       ))}
                       {resourceNavSelection === 'networks' && networks.filter(item => (item.networkName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
@@ -324,7 +324,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.networkName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.networkName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.cidr || '—'}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.discoveredStatus === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400'}`}>{item.discoveredStatus}</span></td>
+                          <td className="px-5 py-3"><Pill tone={item.discoveredStatus === 'Active' ? 'success' : 'neutral'} label={item.discoveredStatus} /></td>
                         </tr>
                       ))}
                       {resourceNavSelection === 'datastores' && datastores.filter(item => (item.datastoreName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
@@ -332,7 +332,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.datastoreName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.datastoreType || '—'}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.totalSpace != null ? `${Math.round((item.totalSpace - (item.availableSpace || 0)) / 1024 / 1024 / 1024)} GB / ${Math.round(item.totalSpace / 1024 / 1024 / 1024)} GB` : '—'}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.discoveredStatus === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400'}`}>{item.discoveredStatus}</span></td>
+                          <td className="px-5 py-3"><Pill tone={item.discoveredStatus === 'Active' ? 'success' : 'danger'} label={item.discoveredStatus} /></td>
                         </tr>
                       ))}
                       {resourceNavSelection === 'vms' && vms.filter(item => (item.vmName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
@@ -341,7 +341,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400 font-mono">{item.externalVmid}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.nodeName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400 font-mono">{item.ipAddress || '—'}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${vmStatusBadge(item).cls}`}>{vmStatusBadge(item).label}</span></td>
+                          <td className="px-5 py-3">{vmStatusBadge(item)}</td>
                         </tr>
                       ))}
                     </tbody>

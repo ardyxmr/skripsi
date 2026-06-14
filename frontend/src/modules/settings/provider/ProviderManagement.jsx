@@ -10,10 +10,14 @@ import NodePreview from './NodePreview';
 import ErrorBoundary from './ErrorBoundary';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import api from '../../../lib/api';
+import StatusPill from '../../../components/common/StatusPill';
+import TableSkeleton from '../../../components/common/TableSkeleton';
+import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 
 export default function ProviderManagement() {
   const { providers, loading, refetch, create, update, remove } = useProviderContext();
   const [providerSearch, setProviderSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(providerSearch, 250);
   const [providerTypeFilter, setProviderTypeFilter] = useState('All Types');
   const [providerStatusFilter, setProviderStatusFilter] = useState('All Status');
   const [providerSortConfig, setProviderSortConfig] = useState({ key: 'providerName', direction: 'asc' });
@@ -279,7 +283,7 @@ export default function ProviderManagement() {
                   </div>
                   
                   <div className="w-full overflow-x-auto overflow-y-visible">
-                    {providers.length === 0 ? (
+                    {providers.length === 0 && !loading ? (
                       <div className="w-full py-16 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
                         <Cloud size={48} className="mb-4 opacity-20" />
                         <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Providers Configured</h4>
@@ -316,12 +320,13 @@ export default function ProviderManagement() {
                           </tr>
                         </thead>
                         <tbody>
+                          {loading && providers.length === 0 && <TableSkeleton cols={12} />}
                           {providers.filter(p =>
                             (providerTypeFilter === 'All Types' || p.providerType === providerTypeFilter) &&
                             (providerStatusFilter === 'All Status' || p.status === providerStatusFilter) &&
-                            ((p.providerName || '').toLowerCase().includes(providerSearch.toLowerCase()) ||
-                             (p.endpoint || '').toLowerCase().includes(providerSearch.toLowerCase()) ||
-                             (p.providerType || '').toLowerCase().includes(providerSearch.toLowerCase()))
+                            ((p.providerName || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                             (p.endpoint || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                             (p.providerType || '').toLowerCase().includes(debouncedSearch.toLowerCase()))
                           ).sort((a, b) => {
                             if (a[providerSortConfig.key] < b[providerSortConfig.key]) {
                               return providerSortConfig.direction === 'asc' ? -1 : 1;
@@ -342,15 +347,15 @@ export default function ProviderManagement() {
                               <td className="px-4 py-3 text-[13px] font-bold text-purple-600 dark:text-purple-400">{p.networksCount ?? '—'}</td>
                               <td className="px-4 py-3 text-[13px] font-bold text-amber-500 dark:text-amber-400">{p.datastoresCount ?? '—'}</td>
                               <td className="px-4 py-3">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${p.status === 'Connected' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' : 'bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'}`}>
-                                  {p.status}
-                                </span>
+                                <StatusPill status={p.status} label={p.status} variant="soft" shape="full" uppercase />
                               </td>
 
                               <td className="px-4 py-3">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${p.discoveryStatus === 'success' ? 'bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' : p.discoveryStatus === 'failed' ? 'bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20' : p.discoveryStatus === 'running' ? 'bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' : 'bg-slate-50 text-slate-600 border border-slate-200 dark:bg-surface dark:text-slate-400 dark:border-theme'}`}>
-                                  {p.discoveryStatus || 'never_run'}
-                                </span>
+                                <StatusPill
+                                  tone={p.discoveryStatus === 'success' ? 'info' : p.discoveryStatus === 'failed' ? 'danger' : p.discoveryStatus === 'running' ? 'warning' : 'neutral'}
+                                  label={p.discoveryStatus || 'never_run'}
+                                  variant="soft" shape="full" uppercase
+                                />
                               </td>
                               <td className="px-4 py-3 text-[12px]">
                                 <div className="text-gray-800 dark:text-gray-200 font-medium">{p.lastDiscoveryAt || 'Never'}</div>

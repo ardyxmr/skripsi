@@ -11,10 +11,13 @@ import DatastoreForm from './DatastoreForm';
 import DatastoreDiscovery from './DatastoreDiscovery';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useDatastoreContext } from '../../../contexts/DatastoreContext';
+import StatusPill from '../../../components/common/StatusPill';
+import TableSkeleton from '../../../components/common/TableSkeleton';
+import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 
 export default function DatastoreManagement() {
   const { providers } = useProviderContext();
-  const { datastores, refetch, create, update, remove } = useDatastoreContext();
+  const { datastores, loading, refetch, create, update, remove } = useDatastoreContext();
   const [datastoreSearchQuery, setDatastoreSearchQuery] = useState('');
   const [datastoreProviderFilter, setDatastoreProviderFilter] = useState('All Providers');
   const [datastoreStatusFilter, setDatastoreStatusFilter] = useState('All Status');
@@ -160,14 +163,16 @@ export default function DatastoreManagement() {
     setDatastoreSortConfig({ key, direction });
   };
 
+  const debouncedSearch = useDebouncedValue(datastoreSearchQuery, 250);
   const sortedDatastores = React.useMemo(() => {
     let sortableData = [...datastores];
-    
+
     // Apply Filters
-    if (datastoreSearchQuery) {
-      sortableData = sortableData.filter(d => 
-        d.name.toLowerCase().includes(datastoreSearchQuery.toLowerCase()) || 
-        d.description.toLowerCase().includes(datastoreSearchQuery.toLowerCase())
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      sortableData = sortableData.filter(d =>
+        d.name.toLowerCase().includes(q) ||
+        d.description.toLowerCase().includes(q)
       );
     }
     if (datastoreProviderFilter !== 'All Providers') sortableData = sortableData.filter(d => d.provider === datastoreProviderFilter);
@@ -187,7 +192,7 @@ export default function DatastoreManagement() {
       });
     }
     return sortableData;
-  }, [datastores, datastoreSearchQuery, datastoreProviderFilter, datastoreStatusFilter, datastoreSortConfig]);
+  }, [datastores, debouncedSearch, datastoreProviderFilter, datastoreStatusFilter, datastoreSortConfig]);
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -292,7 +297,7 @@ export default function DatastoreManagement() {
           </div>
           
           <div className="w-full overflow-x-auto overflow-y-visible">
-            {datastores.length === 0 ? (
+            {datastores.length === 0 && !loading ? (
               <div className="w-full py-16 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
                 <Database size={48} className="mb-4 opacity-20" />
                 <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Datastores Found</h4>
@@ -333,6 +338,7 @@ export default function DatastoreManagement() {
                   </tr>
                 </thead>
                 <tbody>
+                  {loading && datastores.length === 0 && <TableSkeleton cols={10} />}
                   {sortedDatastores.map((datastore) => (
                     <tr key={datastore.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                       <td className="px-5 py-3">
@@ -358,17 +364,7 @@ export default function DatastoreManagement() {
                         </div>
                       </td>
                       <td className="px-5 py-3">
-                        <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                          datastore.status === 'Active'
-                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
-                            : (datastore.status === 'Offline / Missing' || datastore.status === 'Node Offline' || datastore.status === 'Missing' || datastore.status === 'Provider Offline')
-                            ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
-                            : datastore.status === 'Low Capacity'
-                            ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                            : 'bg-slate-100 dark:bg-surface text-slate-600 dark:text-slate-400 border-slate-200 dark:border-theme'
-                        }`}>
-                          {datastore.status}
-                        </span>
+                        <StatusPill status={datastore.status} label={datastore.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" />
                       </td>
                       <td className="px-5 py-3 text-slate-600 dark:text-slate-300 text-[13px] font-medium">
                         {datastore.activeVMs || 0}

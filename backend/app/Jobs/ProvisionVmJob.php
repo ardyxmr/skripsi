@@ -132,6 +132,13 @@ class ProvisionVmJob implements ShouldQueue
             } catch (\Throwable) {
                 // facts will catch up on the next provider sync (Stage 7)
             }
+
+            // Guest-agent IP lag: a fresh clone reports its IP only after it finishes booting,
+            // so the sync above often gets vmid/specs but no IP. Hand off to the bounded,
+            // single-VM follow-up to chase the IP instead of waiting for the 30s sweep.
+            if (empty($inv->fresh()->ip_address)) {
+                SyncVmFactsJob::dispatch($inv->id)->delay(now()->addSeconds(5));
+            }
         }
 
         $audit->log($pr->requester, 'CREATE_VM', "Provisioned {$this->vmName} (vmid {$vmid})");

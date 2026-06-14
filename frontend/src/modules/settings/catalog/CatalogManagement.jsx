@@ -8,10 +8,13 @@ import CatalogExplorer from './CatalogExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useCatalogContext } from '../../../contexts/CatalogContext';
 import api from '../../../lib/api';
+import StatusPill from '../../../components/common/StatusPill';
+import TableSkeleton from '../../../components/common/TableSkeleton';
+import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 
 export default function CatalogManagement() {
   const { providers } = useProviderContext();
-  const { catalogs, refetch, create, update, remove } = useCatalogContext();
+  const { catalogs, loading, refetch, create, update, remove } = useCatalogContext();
   
   // Search & Filters
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -182,11 +185,13 @@ export default function CatalogManagement() {
     setCatalogActionModal({ isOpen: false, action: null, catalog: null, isBlocking: false });
   };
 
+  const debouncedSearch = useDebouncedValue(catalogSearch, 250);
   const filteredCatalogs = catalogs.filter(c => {
-    const matchesSearch = c.name.toLowerCase().includes(catalogSearch.toLowerCase()) || 
-                          (c.description && c.description.toLowerCase().includes(catalogSearch.toLowerCase())) ||
-                          c.provider.toLowerCase().includes(catalogSearch.toLowerCase()) ||
-                          c.template.toLowerCase().includes(catalogSearch.toLowerCase());
+    const q = debouncedSearch.toLowerCase();
+    const matchesSearch = c.name.toLowerCase().includes(q) ||
+                          (c.description && c.description.toLowerCase().includes(q)) ||
+                          c.provider.toLowerCase().includes(q) ||
+                          c.template.toLowerCase().includes(q);
     
     const matchesProvider = catalogProviderFilter === 'All Providers' || c.provider === catalogProviderFilter;
     const matchesStatus = catalogStatusFilter === 'All Status' || c.status === catalogStatusFilter;
@@ -305,7 +310,7 @@ export default function CatalogManagement() {
           </div>
           
           <div className="w-full overflow-x-auto overflow-y-visible">
-            {catalogs.length === 0 ? (
+            {catalogs.length === 0 && !loading ? (
               <div className="w-full py-16 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
                 <Grid size={48} className="mb-4 opacity-20" />
                 <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Catalogs Found</h4>
@@ -337,6 +342,7 @@ export default function CatalogManagement() {
                   </tr>
                 </thead>
                 <tbody>
+                  {loading && catalogs.length === 0 && <TableSkeleton cols={7} />}
                   {sortedCatalogs.map((catalog) => (
                     <tr key={catalog.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                       <td className="px-5 py-3">
@@ -361,15 +367,7 @@ export default function CatalogManagement() {
                         </div>
                       </td>
                       <td className="px-5 py-3">
-                        <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                          catalog.status === 'Active'
-                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
-                            : (catalog.status === 'Offline / Missing' || catalog.status === 'Node Offline' || catalog.status === 'Missing' || catalog.status === 'Template Missing' || catalog.status === 'Provider Offline')
-                            ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
-                            : 'bg-slate-100 dark:bg-surface text-slate-600 dark:text-slate-400 border-slate-200 dark:border-theme'
-                        }`}>
-                          {catalog.status}
-                        </span>
+                        <StatusPill status={catalog.status} label={catalog.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" />
                       </td>
                       <td className="px-5 py-3 text-center">
                         <TableActionMenu

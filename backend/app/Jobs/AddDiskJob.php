@@ -34,12 +34,17 @@ class AddDiskJob implements ShouldQueue
     public function handle(WorkspaceService $workspaces, TerraformRunner $terraform, AuditService $audit): void
     {
         $vm = Inventory::with(['provider', 'environment'])->find($this->inventoryId);
-        if (! $vm || ! $vm->provider || ! $vm->workspace_path || ! is_dir($vm->workspace_path)) {
+        if (! $vm) {
+            return;
+        }
+        if (! $vm->provider || ! $vm->workspace_path || ! is_dir($vm->workspace_path)) {
+            $vm->update(['status' => 'Active']); // un-stick the transitional state
             return;
         }
 
         $resolved = $workspaces->readResolved($vm->workspace_path);
         if (! $resolved) {
+            $vm->update(['status' => 'Active']);
             return;
         }
 
@@ -50,6 +55,7 @@ class AddDiskJob implements ShouldQueue
         $existing = $vm->disks()->where('disk_index', '>', 0)->count();
         $limit = min((int) ($vm->environment?->max_data_disks ?? 0), (int) config('provisioning.max_data_disk_slots'));
         if ($existing >= $limit) {
+            $vm->update(['status' => 'Active']);
             $audit->log($vm->owner, 'ADD_DISK', "Add-disk REJECTED {$vm->vm_name}: data-disk cap reached ({$existing}/{$limit})");
 
             return;
@@ -70,7 +76,7 @@ class AddDiskJob implements ShouldQueue
         $result = $terraform->apply($vm->workspace_path, $vm->provider);
 
         if (! $result['ok']) {
-            $vm->update(['error_message' => Str::limit("[add-disk/{$result['step']}] ".$result['output'], 2000)]);
+            $vm->update(['status' => 'Active', 'error_message' => Str::limit("[add-disk/{$result['step']}] ".$result['output'], 2000)]);
             $audit->log($vm->owner, 'ADD_DISK', "Add-disk FAILED {$vm->vm_name} ({$slot}, step {$result['step']})");
 
             return;
@@ -86,11 +92,15 @@ class AddDiskJob implements ShouldQueue
         ]);
 
         $vm->update([
+            'status' => 'Active',
             'disk_allocated_gb' => (int) $vm->disks()->sum('size_gb'),
             'error_message' => null,
         ]);
 
         $audit->log($vm->owner, 'ADD_DISK', "Attached {$this->sizeGb}G raw disk ({$slot}) to {$vm->vm_name}"
             .($this->setupDescription ? " — {$this->setupDescription}" : ''));
+
+        // Event-driven freshness: refresh live runtime facts now (don't wait for the 30s sweep).
+        SyncVmFactsJob::dispatch($vm->id);
     }
 }

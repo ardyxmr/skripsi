@@ -10,12 +10,14 @@ import { useNodeContext } from '../../../contexts/NodeContext';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useTierContext } from '../../../contexts/TierContext';
 import ResizableTh from '../../../components/ResizableTh';
+import TableSkeleton from '../../../components/common/TableSkeleton';
+import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import EnvironmentForm from './EnvironmentForm';
 import EnvironmentExplorer from './EnvironmentExplorer';
 import { useUI } from '../../../stores/uiStore';
 
 export default function EnvironmentManagement() {
-  const { environments, create, update, remove } = useEnvironmentContext();
+  const { environments, loading, create, update, remove } = useEnvironmentContext();
   const pushToast = useUI((s) => s.pushToast);
   const { catalogs } = useCatalogContext();
   const { networks } = useNetworkContext();
@@ -76,9 +78,11 @@ export default function EnvironmentManagement() {
   const [envActionConfirmText, setEnvActionConfirmText] = useState('');
 
   // Filtering Logic
+  const debouncedSearch = useDebouncedValue(searchQuery, 250);
   const filteredEnvironments = environments.filter(env => {
-    const matchesSearch = env.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          env.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = debouncedSearch.toLowerCase();
+    const matchesSearch = env.name.toLowerCase().includes(q) ||
+                          env.description.toLowerCase().includes(q);
     const matchesStatus = statusFilter === 'All Status' || env.status === statusFilter;
     const matchesType = typeFilter === 'All Types' || env.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
@@ -322,7 +326,9 @@ export default function EnvironmentManagement() {
                 </tr>
               </thead>
               <tbody>
-                {filteredEnvironments.length === 0 ? (
+                {loading && environments.length === 0 ? (
+                  <TableSkeleton cols={6} />
+                ) : filteredEnvironments.length === 0 ? (
                   <tr>
                     <td colSpan="6" className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
                       <Box size={32} className="mx-auto mb-3 opacity-20" />

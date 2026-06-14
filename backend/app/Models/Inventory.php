@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Observers\InventoryObserver;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 // Provisioned VM (06-database-schema.md §6). One row per VM (per-VM workspace, ADR-08).
+#[ObservedBy([InventoryObserver::class])]
 #[Fillable([
     'provision_request_id',
     'vm_name', 'owner_user_id', 'environment_id', 'provider_id', 'node_id', 'catalog_id',

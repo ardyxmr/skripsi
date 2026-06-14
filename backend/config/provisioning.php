@@ -29,4 +29,18 @@ return [
     // VMs are pruned unconditionally; templates/networks/datastores/nodes still bound to a
     // published row are kept (unpublish them first). Override with DISCOVERY_STALE_HOURS.
     'discovery_stale_hours' => (int) env('DISCOVERY_STALE_HOURS', 24),
+
+    // --- Phase 3 sync hardening (ProviderSyncGuard) ---
+
+    // Circuit breaker: after this many consecutive live-API failures to a provider, AUTOMATED
+    // callers (scheduled discovery:refresh + SyncVmFactsJob) skip live calls to it for the
+    // cooldown below (last-known DB facts stand) instead of hammering a down Proxmox host. A
+    // manual Discover/sync always still attempts (a success closes the breaker).
+    'circuit_failure_threshold' => (int) env('PROVIDER_CB_FAILURE_THRESHOLD', 3),
+    'circuit_cooldown_seconds' => (int) env('PROVIDER_CB_COOLDOWN_SECONDS', 60),
+
+    // Targeted-sync throttle: collapse duplicate SyncVmFactsJob triggers for the SAME VM landing
+    // within this window into a single live call (one active sync chain per VM). MUST stay below
+    // the bounded IP follow-up delay (5s) so the chain never throttles itself.
+    'sync_throttle_seconds' => (int) env('VM_SYNC_THROTTLE_SECONDS', 3),
 ];

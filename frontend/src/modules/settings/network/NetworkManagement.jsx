@@ -7,10 +7,13 @@ import NetworkForm from './NetworkForm';
 import NetworkExplorer from './NetworkExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useNetworkContext } from '../../../contexts/NetworkContext';
+import StatusPill from '../../../components/common/StatusPill';
+import TableSkeleton from '../../../components/common/TableSkeleton';
+import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 
 export default function NetworkManagement() {
   const { providers } = useProviderContext();
-  const { networks, refetch, create, update, remove } = useNetworkContext();
+  const { networks, loading, refetch, create, update, remove } = useNetworkContext();
   
   // Search & Filters
   const [networkSearch, setNetworkSearch] = useState('');
@@ -163,11 +166,13 @@ export default function NetworkManagement() {
     setNetworkActionModal({ isOpen: false, action: null, network: null, isBlocking: false });
   };
 
+  const debouncedSearch = useDebouncedValue(networkSearch, 250);
   const sortedNetworks = useMemo(() => {
+    const q = debouncedSearch.toLowerCase();
     return networks.filter(n => {
-      const matchesSearch = n.name.toLowerCase().includes(networkSearch.toLowerCase()) || 
-                            (n.description && n.description.toLowerCase().includes(networkSearch.toLowerCase())) ||
-                            n.provider.toLowerCase().includes(networkSearch.toLowerCase());
+      const matchesSearch = n.name.toLowerCase().includes(q) ||
+                            (n.description && n.description.toLowerCase().includes(q)) ||
+                            n.provider.toLowerCase().includes(q);
       
       const matchesProvider = networkProviderFilter === 'All Providers' || n.provider === networkProviderFilter;
       const matchesStatus = networkStatusFilter === 'All Status' || n.status === networkStatusFilter;
@@ -181,7 +186,7 @@ export default function NetworkManagement() {
       if (a[networkSortConfig.key] > b[networkSortConfig.key]) return networkSortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [networks, networkSearch, networkProviderFilter, networkStatusFilter, networkSortConfig]);
+  }, [networks, debouncedSearch, networkProviderFilter, networkStatusFilter, networkSortConfig]);
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -281,7 +286,7 @@ export default function NetworkManagement() {
           </div>
           
           <div className="w-full overflow-x-auto overflow-y-visible">
-            {networks.length === 0 ? (
+            {networks.length === 0 && !loading ? (
               <div className="w-full py-16 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
                 <Grid size={48} className="mb-4 opacity-20" />
                 <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Networks Found</h4>
@@ -319,6 +324,7 @@ export default function NetworkManagement() {
                   </tr>
                 </thead>
                 <tbody>
+                  {loading && networks.length === 0 && <TableSkeleton cols={8} />}
                   {sortedNetworks.map((network) => (
                     <tr key={network.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                       <td className="px-5 py-3">
@@ -330,15 +336,7 @@ export default function NetworkManagement() {
                       <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-[13px] font-mono">{network.providerNetwork}</td>
                       <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-[13px] font-mono">{network.cidr || '192.168.1.0/24'}</td>
                       <td className="px-5 py-3">
-                        <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                          network.status === 'Active'
-                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
-                            : (network.status === 'Offline / Missing' || network.status === 'Node Offline' || network.status === 'Missing' || network.status === 'Provider Offline')
-                            ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
-                            : 'bg-slate-100 dark:bg-surface text-slate-600 dark:text-slate-400 border-slate-200 dark:border-theme'
-                        }`}>
-                          {network.status}
-                        </span>
+                        <StatusPill status={network.status} label={network.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" />
                       </td>
                       <td className="px-5 py-3 text-slate-600 dark:text-slate-300 text-[13px] font-medium">
                         {network.activeVMs || 0} VMs

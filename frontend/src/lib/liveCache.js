@@ -9,12 +9,21 @@ import api from './api';
 
 const cache = {}; // path -> raw rows (pre-normalize, exactly as the API returned)
 
+// Broadcast on every write so passive consumers (the NotificationCenter bell) update
+// in the SAME tick the visible page refreshes its data — no separate, lagging poll.
+export const LIVE_CACHE_EVENT = 'livecache:updated';
+
 export function getCached(path) {
   return cache[path] ?? null;
 }
 
 export function setCached(path, rows) {
   cache[path] = rows;
+  try {
+    window.dispatchEvent(new CustomEvent(LIVE_CACHE_EVENT, { detail: { path } }));
+  } catch {
+    /* non-browser / SSR — no-op */
+  }
 }
 
 export function clearLiveCache() {

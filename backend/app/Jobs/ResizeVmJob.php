@@ -31,12 +31,17 @@ class ResizeVmJob implements ShouldQueue
     public function handle(WorkspaceService $workspaces, TerraformRunner $terraform, AuditService $audit): void
     {
         $vm = Inventory::with('provider')->find($this->inventoryId);
-        if (! $vm || ! $vm->provider || ! $vm->workspace_path || ! is_dir($vm->workspace_path)) {
+        if (! $vm) {
+            return;
+        }
+        if (! $vm->provider || ! $vm->workspace_path || ! is_dir($vm->workspace_path)) {
+            $vm->update(['status' => 'Active']); // un-stick the transitional state
             return;
         }
 
         $resolved = $workspaces->readResolved($vm->workspace_path);
         if (! $resolved) {
+            $vm->update(['status' => 'Active']);
             return;
         }
         if ($this->cpu !== null) {
@@ -51,7 +56,7 @@ class ResizeVmJob implements ShouldQueue
         $result = $terraform->apply($vm->workspace_path, $vm->provider);
 
         if (! $result['ok']) {
-            $vm->update(['error_message' => Str::limit("[resize/{$result['step']}] ".$result['output'], 2000)]);
+            $vm->update(['status' => 'Active', 'error_message' => Str::limit("[resize/{$result['step']}] ".$result['output'], 2000)]);
             $audit->log($vm->owner, 'RESIZE_VM', "Resize FAILED {$vm->vm_name} (step {$result['step']})");
 
             return;
@@ -59,10 +64,14 @@ class ResizeVmJob implements ShouldQueue
 
         $onlineVcpu = $resolved['vcpus'] ?? ($resolved['cores'] * ($resolved['sockets'] ?? 1));
         $vm->update([
+            'status' => 'Active',
             'vcpu' => $onlineVcpu,
             'ram_mb' => $resolved['memory'],
             'error_message' => null,
         ]);
         $audit->log($vm->owner, 'RESIZE_VM', "Resized {$vm->vm_name} → {$onlineVcpu} vCPU / {$resolved['memory']} MB");
+
+        // Event-driven freshness: refresh live runtime facts now (don't wait for the 30s sweep).
+        SyncVmFactsJob::dispatch($vm->id);
     }
 }

@@ -88,19 +88,28 @@ class LifecycleService
                 $vm->update(['is_permanent' => true, 'expiry_date' => null]);
                 break;
 
+            // Spec-changing mutations: mark Updating up front (transitional state) so the UI
+            // shows an in-progress state and the frontend's adaptive poll accelerates; the job
+            // flips it back to Active and refreshes runtime facts on completion.
             case 'RESIZE':
+                $vm->update(['status' => 'Updating']);
                 ResizeVmJob::dispatch($vm->id, $payload['cpu'] ?? null, $payload['ram_mb'] ?? null);
                 break;
 
             case 'EDIT_RESOURCES': // unified CPU/RAM + data-disk bundle → one apply
+                $vm->update(['status' => 'Updating']);
                 EditResourcesVmJob::dispatch($vm->id, $payload['cpu'] ?? null, $payload['ram_mb'] ?? null, $payload['disks'] ?? []);
                 break;
 
             case 'ADD_DISK':
+                $vm->update(['status' => 'Updating']);
                 AddDiskJob::dispatch($vm->id, (int) ($payload['size_gb'] ?? 0), $payload['setup_description'] ?? null);
                 break;
 
             case 'DESTROY':
+                // Mark Deleting up front so the UI shows a (red) in-progress state while
+                // terraform destroy runs; the job flips it to Deleted on success.
+                $vm->update(['status' => 'Deleting']);
                 DestroyVmJob::dispatch($vm->id);
                 break;
         }

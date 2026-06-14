@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Check, Shield, Users, User, Search, Plus, Edit2, Trash2, X, AlertTriangle, Loader2, MoreVertical, RefreshCw } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
 import ResizableTh from '../../../components/ResizableTh';
+import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { useUserContext } from '../../../contexts/UserContext';
 import UserForm from './UserForm';
 import RoleForm from './RoleForm';
@@ -40,12 +41,14 @@ export default function UserManagement() {
   const getRoleName = (id) => roles.find(r => r.id === id)?.name || 'Unknown';
   const getGroupName = (id) => groups.find(g => g.id === id)?.name || 'Unknown';
 
+  const debouncedUserSearch = useDebouncedValue(userSearch, 250);
   const sortedUsers = useMemo(() => {
     let filtered = users.filter(u => !u.deletedAt);
-    if (userSearch) {
-      filtered = filtered.filter(u => 
-        u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
-        u.email.toLowerCase().includes(userSearch.toLowerCase())
+    if (debouncedUserSearch) {
+      const q = debouncedUserSearch.toLowerCase();
+      filtered = filtered.filter(u =>
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q)
       );
     }
     if (userRoleFilter !== 'All Roles') {
@@ -62,7 +65,7 @@ export default function UserManagement() {
         ? new Date(b.createdAt) - new Date(a.createdAt) 
         : new Date(a.createdAt) - new Date(b.createdAt);
     });
-  }, [users, userSearch, userRoleFilter, userGroupFilter, userStatusFilter, userSortDesc, roles, groups]);
+  }, [users, debouncedUserSearch, userRoleFilter, userGroupFilter, userStatusFilter, userSortDesc, roles, groups]);
 
   const openModal = (type, mode, data = null) => {
     setModal({ isOpen: true, type, mode, data });

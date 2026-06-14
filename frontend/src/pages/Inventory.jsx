@@ -6,10 +6,11 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
-import { getCached, setCached } from '../lib/liveCache';
+import { getCached, setCached, LIVE_CACHE_EVENT } from '../lib/liveCache';
 import { useUI } from '../stores/uiStore';
 import { useUserContext } from '../contexts/UserContext';
 import { isAdmin } from '../lib/rbac';
+import StatusPill from '../components/common/StatusPill';
 
 // Map an API inventory row onto the field names this page renders, keeping
 // Friendly labels for a pending lifecycle approval shown beside the VM status.
@@ -50,6 +51,17 @@ function normalizeVm(row) {
     expiryType: row.expiryType ?? null,                // env expiry policy (for the renew cap)
     expiryValue: row.expiryValue ?? null,
   };
+}
+
+// Display status folds the live Proxmox power state into the governance status:
+// a governed (Active) VM is shown as Running (powered on) or Stopped (powered off).
+// All other governance states (Provisioning/Failed/Expired/Deleting/Deleted) pass
+// through unchanged. Purely presentational — the DB status stays 'Active'.
+function effectiveVmStatus(vm) {
+  if (vm.status === 'Active') {
+    return vm.observedPowerState === 'stopped' ? 'Stopped' : 'Running';
+  }
+  return vm.status;
 }
 
 // Shimmer placeholder rows shown during the very first load so the table never
@@ -279,17 +291,23 @@ export default function Inventory() {
   const pollPausedRef = useRef(false);
   pollPausedRef.current = !!(editModalVm || extendModalVm || deleteModalVm || drawerOpen || openDropdownId);
 
-  // Live auto-refresh: silently re-fetch every 7s so provisioning / status /
-  // expiry changes appear without a manual refresh. Pauses while the tab is
-  // hidden or the user is mid-interaction (see pollPausedRef).
+  // Live updates are driven by the single app-wide LiveDataPoller (App.jsx): whenever it writes
+  // fresh /inventory rows to the cache it fires LIVE_CACHE_EVENT, and we re-render from the cache
+  // here — no per-page timer. Skipped while the tab is hidden or the user is mid-interaction
+  // (modal/drawer/menu) so a background update can't yank the table.
   useEffect(() => {
-    const t = setInterval(async () => {
+    const onLive = (e) => {
+      if (e.detail?.path !== '/inventory') return;
       if (document.hidden || pollPausedRef.current) return;
-      await loadInventory({ silent: true });
-      setLastSync(new Date().toISOString());
-    }, 7000);
-    return () => clearInterval(t);
-  }, [loadInventory]);
+      const rows = getCached('/inventory');
+      if (Array.isArray(rows)) {
+        setVms(rows.map(normalizeVm));
+        setLastSync(new Date().toISOString());
+      }
+    };
+    window.addEventListener(LIVE_CACHE_EVENT, onLive);
+    return () => window.removeEventListener(LIVE_CACHE_EVENT, onLive);
+  }, []);
 
   // Global sync: force the latest discovered snapshot (provider_vms) to mirror into every VM the
   // user can see — a DB-only mass refresh (no live Proxmox call; that lives in Provider Management).
@@ -345,17 +363,18 @@ export default function Inventory() {
         vm.environment.toLowerCase().includes(s) ||
         vm.owner.toLowerCase().includes(s);
         
+      const eff = effectiveVmStatus(vm);
       const matchEnv = envFilter === 'All' || vm.environment === envFilter;
-      const matchStatus = statusFilter === 'All' || vm.status === statusFilter;
-      
+      const matchStatus = statusFilter === 'All' || eff === statusFilter || vm.status === statusFilter;
+
       let matchWidget = true;
-      if (activeWidgetFilter === 'Healthy') {
-        matchWidget = vm.status === 'Active';
+      if (activeWidgetFilter === 'Running') {
+        matchWidget = eff === 'Running';
       } else if (activeWidgetFilter === 'Expiring Soon') {
         const days = getDaysRemaining(vm.expiryDate);
         matchWidget = vm.expiryDate !== null && days <= 7 && days > 0 && vm.status !== 'Expired';
       } else if (activeWidgetFilter === 'Need Action') {
-        matchWidget = vm.status === 'Expired';
+        matchWidget = eff === 'Stopped' || vm.status === 'Expired';
       }
       
       return matchSearch && matchEnv && matchStatus && matchWidget;
@@ -423,22 +442,28 @@ export default function Inventory() {
     }
   };
 
-  // Status Styles Config
+  // Status dot color + tooltip (the status pill itself uses the shared <StatusPill>).
   const getStatusConfig = (status) => {
     switch (status) {
       case 'Active':
       case 'Running':
-        return { color: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400', tooltip: 'VM is active and healthy' };
+        return { color: 'bg-emerald-500', tooltip: 'VM is running' };
+      case 'Stopped':
+        return { color: 'bg-[#8a5a2b]', tooltip: 'VM is powered off in Proxmox' };
       case 'Deleted':
-        return { color: 'bg-gray-400', badge: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400', tooltip: 'VM has been destroyed (record retained)' };
+        return { color: 'bg-gray-400', tooltip: 'VM has been destroyed (record retained)' };
       case 'Provisioning':
-        return { color: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400', tooltip: 'Terraform Apply in Progress' };
+        return { color: 'bg-blue-500', tooltip: 'Terraform Apply in Progress' };
+      case 'Updating':
+        return { color: 'bg-violet-500', tooltip: 'Applying changes (resize / edit / add-disk)' };
+      case 'Deleting':
+        return { color: 'bg-rose-500', tooltip: 'Terraform Destroy in progress' };
       case 'Failed':
-        return { color: 'bg-rose-500', badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400', tooltip: 'Provisioning failed, needs retry or deletion' };
+        return { color: 'bg-rose-500', tooltip: 'Provisioning failed, needs retry or deletion' };
       case 'Expired':
-        return { color: 'bg-rose-500', badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400', tooltip: 'VM lifecycle has expired' };
+        return { color: 'bg-rose-500', tooltip: 'VM lifecycle has expired' };
       default:
-        return { color: 'bg-gray-400', badge: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', tooltip: 'Unknown status' };
+        return { color: 'bg-gray-400', tooltip: 'Unknown status' };
     }
   };
 
@@ -472,7 +497,7 @@ export default function Inventory() {
         ? `Expired (Grace Period - ${formatCountdown(vm.gracePeriodUntil)} Remaining)`
         : `Expired (Auto Destroying...)`;
     }
-    return vm.status;
+    return effectiveVmStatus(vm);
   };
 
   const formatSimpleDate = (iso) => {
@@ -487,9 +512,10 @@ export default function Inventory() {
 
   // Widget Calculations
   const totalVmCount = vms.length;
-  const healthyCount = vms.filter(v => v.status === 'Active').length;
+  const runningCount = vms.filter(v => effectiveVmStatus(v) === 'Running').length;
   const expiringSoonCount = vms.filter(v => v.expiryDate && getDaysRemaining(v.expiryDate) <= 7 && getDaysRemaining(v.expiryDate) > 0 && v.status !== 'Expired').length;
-  const needActionCount = vms.filter(v => v.status === 'Expired').length;
+  // A stopped (powered-off) VM needs attention just like an expired one.
+  const needActionCount = vms.filter(v => effectiveVmStatus(v) === 'Stopped' || v.status === 'Expired').length;
 
   // Live renewal headroom for the open Renew modal (recomputes each tick via nowTs).
   const renewBounds = extendModalVm ? computeRenewBounds(extendModalVm, nowTs) : null;
@@ -517,12 +543,12 @@ export default function Inventory() {
           <div className="text-[12px] text-gray-400 font-medium mt-1">All VMs in inventory</div>
         </div>
         
-        <div 
-          onClick={() => setActiveWidgetFilter('Healthy')}
-          className={`cursor-pointer rounded-card p-5 border shadow-sm transition-[transform,box-shadow] hover:shadow-md hover:-translate-y-0.5 ${activeWidgetFilter === 'Healthy' ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-400 ring-1 ring-emerald-400' : 'bg-white dark:bg-card border-emerald-100 dark:border-emerald-900/30'}`}>
-          <div className="text-[11px] font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider mb-2">Healthy</div>
-          <div className="text-[28px] font-bold text-gray-800 dark:text-gray-100">{healthyCount}</div>
-          <div className="text-[12px] text-emerald-600 dark:text-emerald-400/80 font-medium mt-1">Running VMs</div>
+        <div
+          onClick={() => setActiveWidgetFilter('Running')}
+          className={`cursor-pointer rounded-card p-5 border shadow-sm transition-[transform,box-shadow] hover:shadow-md hover:-translate-y-0.5 ${activeWidgetFilter === 'Running' ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-400 ring-1 ring-emerald-400' : 'bg-white dark:bg-card border-emerald-100 dark:border-emerald-900/30'}`}>
+          <div className="text-[11px] font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider mb-2">Running</div>
+          <div className="text-[28px] font-bold text-gray-800 dark:text-gray-100">{runningCount}</div>
+          <div className="text-[12px] text-emerald-600 dark:text-emerald-400/80 font-medium mt-1">Powered-on VMs</div>
         </div>
         
         <div 
@@ -538,7 +564,7 @@ export default function Inventory() {
           className={`cursor-pointer rounded-card p-5 border shadow-sm transition-[transform,box-shadow] hover:shadow-md hover:-translate-y-0.5 ${activeWidgetFilter === 'Need Action' ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-400 ring-1 ring-rose-400' : 'bg-white dark:bg-card border-rose-100 dark:border-rose-900/30'}`}>
           <div className="text-[11px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wider mb-2">Need Action</div>
           <div className="text-[28px] font-bold text-gray-800 dark:text-gray-100">{needActionCount}</div>
-          <div className="text-[12px] text-rose-600 dark:text-rose-400/80 font-medium mt-1">Grace period</div>
+          <div className="text-[12px] text-rose-600 dark:text-rose-400/80 font-medium mt-1">Stopped or expired</div>
         </div>
       </div>
 
@@ -583,7 +609,7 @@ export default function Inventory() {
                     </div>
                     <div>
                       <div className="text-[11px] text-gray-400 dark:text-gray-500 mb-1">Status</div>
-                      <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{selectedVm.status}</div>
+                      <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{effectiveVmStatus(selectedVm)}</div>
                     </div>
                   </div>
                 </section>
@@ -1139,10 +1165,13 @@ export default function Inventory() {
             className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-input px-3 py-2 outline-none cursor-pointer focus:border-teal-400 min-w-[140px]"
           >
             <option value="All">All Status</option>
-            <option value="Active">Active</option>
+            <option value="Running">Running</option>
+            <option value="Stopped">Stopped</option>
             <option value="Provisioning">Provisioning</option>
+            <option value="Updating">Updating</option>
             <option value="Failed">Failed</option>
             <option value="Expired">Expired</option>
+            <option value="Deleting">Deleting</option>
             <option value="Deleted">Deleted</option>
           </select>
 
@@ -1211,7 +1240,7 @@ export default function Inventory() {
               ) : (
                 filteredVms.map(vm => {
                   const isExpanded = !!expandedRows[vm.id];
-                  const statusConf = getStatusConfig(vm.status);
+                  const statusConf = getStatusConfig(effectiveVmStatus(vm));
                   const expiryConf = getExpiryDisplay(vm.expiryDate);
                   const isDropdownOpen = openDropdownId === vm.id;
                   
@@ -1258,9 +1287,9 @@ export default function Inventory() {
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <div className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider ${statusConf.badge}`}>
+                            <StatusPill status={effectiveVmStatus(vm)} className="tracking-wider">
                               {renderStatusText(vm)}
-                            </div>
+                            </StatusPill>
                             {/* Pending lifecycle approval(s) on this VM (resize/extend/permanent/…) */}
                             {vm.pendingActions?.length > 0 && (
                               <span
@@ -1272,22 +1301,28 @@ export default function Inventory() {
                               </span>
                             )}
                           </div>
-                          {/* Provider-synced observed power state (dual status). */}
-                          <div className="mt-1.5">
-                            {vm.observedPowerState === 'unknown' ? (
+                          {/* Power state is now folded into the status pill above; only
+                              surface a sync-health warning when the provider snapshot is stale. */}
+                          {vm.observedPowerState === 'unknown' && (
+                            <div className="mt-1.5">
                               <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400" title={vm.lastSyncAt ? `Last sync: ${vm.lastSyncAt}` : 'Never synced'}>
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Provider Unreachable
                               </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
-                                <span className={`w-1.5 h-1.5 rounded-full ${vm.observedPowerState === 'running' ? 'bg-emerald-500' : vm.observedPowerState === 'stopped' ? 'bg-gray-400' : 'bg-amber-400'}`}></span>
-                                {vm.observedPowerState}
-                              </span>
-                            )}
-                          </div>
+                            </div>
+                          )}
                           {vm.status === 'Provisioning' && (
                             <div className="w-full h-1 bg-gray-200 dark:bg-surface rounded-full mt-2 overflow-hidden">
                               <div className="h-full bg-blue-500 animate-[pulse_1s_ease-in-out_infinite]" style={{ width: '60%' }}></div>
+                            </div>
+                          )}
+                          {vm.status === 'Updating' && (
+                            <div className="w-full h-1 bg-gray-200 dark:bg-surface rounded-full mt-2 overflow-hidden">
+                              <div className="h-full bg-violet-500 animate-[pulse_1s_ease-in-out_infinite]" style={{ width: '60%' }}></div>
+                            </div>
+                          )}
+                          {vm.status === 'Deleting' && (
+                            <div className="w-full h-1 bg-gray-200 dark:bg-surface rounded-full mt-2 overflow-hidden">
+                              <div className="h-full bg-rose-500 animate-[pulse_1s_ease-in-out_infinite]" style={{ width: '60%' }}></div>
                             </div>
                           )}
                         </td>
@@ -1312,7 +1347,7 @@ export default function Inventory() {
                       </tr>
 
                       {/* Expanded Row Content */}
-                      <tr className={`bg-gray-50/50 dark:bg-page border-b border-gray-100 dark:border-theme overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'table-row opacity-100' : 'hidden opacity-0'}`}>
+                      <tr className={`bg-gray-50/50 dark:bg-page border-b border-gray-100 dark:border-theme overflow-hidden transition-opacity duration-300 ease-in-out ${isExpanded ? 'table-row opacity-100' : 'hidden opacity-0'}`}>
                         <td colSpan="10" className="p-0">
                           <div className="p-6 ml-14 mr-6 my-2 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-xl shadow-sm flex flex-col md:flex-row gap-8">
                             
@@ -1352,10 +1387,6 @@ export default function Inventory() {
                                 <div>
                                   <div className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400">Network</div>
                                   <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{vm.network || 'vlan-prod'}</div>
-                                </div>
-                                <div>
-                                  <div className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400">Tier</div>
-                                  <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{vm.tier}</div>
                                 </div>
                               </div>
                             </div>

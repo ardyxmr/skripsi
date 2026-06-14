@@ -7,6 +7,7 @@ import NodeForm from './NodeForm';
 import NodeExplorer from './NodeExplorer';
 import { useNodeContext } from '../../../contexts/NodeContext';
 import { useProviderContext } from '../../../contexts/ProviderContext';
+import StatusPill from '../../../components/common/StatusPill';
 
 // Relative freshness label for the Sync column, e.g. "synced 2m ago".
 const ago = (ts) => {
@@ -16,12 +17,6 @@ const ago = (ts) => {
   if (d < 3600) return `synced ${Math.floor(d / 60)}m ago`;
   if (d < 86400) return `synced ${Math.floor(d / 3600)}h ago`;
   return `synced ${Math.floor(d / 86400)}d ago`;
-};
-
-const opPill = (s) => {
-  if (s === 'Online') return 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
-  if (s === 'Offline') return 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
-  return 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
 };
 
 function UtilBar({ pct, offline }) {
@@ -211,7 +206,7 @@ export default function NodePreview() {
                     <td className="px-4 py-3"><UtilBar pct={n.cpuPct} offline={offline} /></td>
                     <td className="px-4 py-3"><UtilBar pct={n.ramPct} offline={offline} /></td>
                     <td className="px-4 py-3">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${opPill(n.operational)}`}>{n.operational}</span>
+                      <StatusPill tone={n.operational === 'Online' ? 'success' : n.operational === 'Offline' ? 'danger' : 'warning'} label={n.operational} variant="soft" shape="full" uppercase />
                     </td>
                     <td className="px-4 py-3 text-[12px] text-slate-500 dark:text-slate-400">
                       <span className="inline-flex items-center gap-1.5">

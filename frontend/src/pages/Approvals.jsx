@@ -2,10 +2,11 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { Search, RefreshCw, Check, X, ChevronRight, ChevronDown, CheckSquare, Square, Filter, RotateCcw, FileEdit, AlertCircle } from 'lucide-react';
 import api from '../lib/api';
-import { getCached, setCached } from '../lib/liveCache';
+import { getCached, setCached, LIVE_CACHE_EVENT } from '../lib/liveCache';
 import { useUI } from '../stores/uiStore';
 import { useUserContext } from '../contexts/UserContext';
 import { canApprove } from '../lib/rbac';
+import StatusPill from '../components/common/StatusPill';
 
 const REQUEST_TYPE_LABEL = {
   PROVISION: 'Create New VM',
@@ -229,16 +230,19 @@ export default function Approvals() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Live auto-refresh: silently re-fetch every 7s so newly submitted / actioned
-  // requests appear without a manual refresh. Pauses while the tab is hidden or
-  // the action modal is open (so a background update can't disrupt an in-flight action).
+  // Live updates come from the single app-wide LiveDataPoller (App.jsx) via LIVE_CACHE_EVENT —
+  // no per-page timer. Skipped while the tab is hidden or an action modal is open, so a
+  // background update can't disrupt an in-flight action.
   useEffect(() => {
-    const t = setInterval(() => {
+    const onLive = (e) => {
+      if (e.detail?.path !== '/approvals') return;
       if (document.hidden || actionModalOpenRef.current) return;
-      loadApprovals({ silent: true });
-    }, 7000);
-    return () => clearInterval(t);
-  }, [loadApprovals]);
+      const rows = getCached('/approvals');
+      if (Array.isArray(rows)) setRequests(rows.map(normalizeRequest));
+    };
+    window.addEventListener(LIVE_CACHE_EVENT, onLive);
+    return () => window.removeEventListener(LIVE_CACHE_EVENT, onLive);
+  }, []);
 
   // Resize State
   const [colWidths, setColWidths] = useState({});
@@ -764,15 +768,9 @@ export default function Approvals() {
                           {t.scope && <div className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">{t.scope}</div>}
                         </td>
                         <td className="px-4 py-4">
-                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold shadow-sm
-                            ${req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 
-                              req.status === 'Rejected' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400' : 
-                              req.status === 'Reverted' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400' :
-                              'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'}`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${req.status === 'Approved' ? 'bg-emerald-500' : req.status === 'Rejected' ? 'bg-rose-500' : req.status === 'Reverted' ? 'bg-orange-500' : 'bg-amber-500'}`}></span>
+                          <StatusPill status={req.status} dot shape="full" size="sm" className="shadow-sm">
                             {req.status}
-                          </div>
+                          </StatusPill>
                         </td>
                         <td className="px-4 py-4 text-[12px] font-medium text-gray-700 dark:text-gray-300">
                           {formatDate(req.requestDate)}
@@ -852,16 +850,12 @@ export default function Approvals() {
                                           
                                           const bgClass = isApprove ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : isReject ? 'bg-rose-50/50 dark:bg-rose-900/10' : 'bg-orange-50/50 dark:bg-orange-900/10';
                                           const borderClass = isApprove ? 'border-emerald-100 dark:border-emerald-900/30' : isReject ? 'border-rose-100 dark:border-rose-900/30' : 'border-orange-100 dark:border-orange-900/30';
-                                          const badgeBgClass = isApprove ? 'bg-emerald-100 dark:bg-emerald-900/40' : isReject ? 'bg-rose-100 dark:bg-rose-900/40' : 'bg-orange-100 dark:bg-orange-900/40';
-                                          const textClass = isApprove ? 'text-emerald-700 dark:text-emerald-400' : isReject ? 'text-rose-700 dark:text-rose-400' : 'text-orange-700 dark:text-orange-400';
                                           const reasonTextClass = isApprove ? 'text-emerald-700 dark:text-emerald-300' : isReject ? 'text-rose-700 dark:text-rose-300' : 'text-orange-700 dark:text-orange-300';
                                           
                                           return (
                                             <div key={index} className={`${bgClass} p-4 rounded-xl border ${borderClass}`}>
                                               <div className="flex items-center justify-between mb-2">
-                                                <div className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${badgeBgClass} ${textClass}`}>
-                                                  {log.action_type}
-                                                </div>
+                                                <StatusPill tone={isApprove ? 'success' : isReject ? 'danger' : 'revert'} label={log.action_type} shape="sm" pad="px-2 py-0.5" uppercase />
                                                 <div className="text-[11px] font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
                                                   <div className="flex items-center">{formatDate(log.action_date)}</div>
                                                 </div>

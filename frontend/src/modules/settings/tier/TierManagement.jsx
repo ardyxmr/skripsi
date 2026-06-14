@@ -5,11 +5,13 @@ import TableActionMenu from '../../../components/common/TableActionMenu';
 import { useTierContext } from '../../../contexts/TierContext';
 import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
 import ResizableTh from '../../../components/ResizableTh';
+import TableSkeleton from '../../../components/common/TableSkeleton';
+import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import TierForm from './TierForm';
 import { useUI } from '../../../stores/uiStore';
 
 export default function TierManagement() {
-  const { tiers, create, update, remove } = useTierContext();
+  const { tiers, loading, create, update, remove } = useTierContext();
   const { environments } = useEnvironmentContext();
   const pushToast = useUI((s) => s.pushToast);
   
@@ -63,9 +65,11 @@ export default function TierManagement() {
   const [tierActionConfirmText, setTierActionConfirmText] = useState('');
 
   // Filtering Logic
+  const debouncedSearch = useDebouncedValue(searchQuery, 250);
   const filteredTiers = tiers.filter(tier => {
-    const matchesSearch = tier.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          tier.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = debouncedSearch.toLowerCase();
+    const matchesSearch = tier.name.toLowerCase().includes(q) ||
+                          tier.description.toLowerCase().includes(q);
     const matchesStatus = statusFilter === 'All Status' || tier.status === statusFilter;
     const matchesType = typeFilter === 'All Types' || tier.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
@@ -296,7 +300,9 @@ export default function TierManagement() {
                 </tr>
               </thead>
               <tbody>
-                {filteredTiers.length === 0 ? (
+                {loading && tiers.length === 0 ? (
+                  <TableSkeleton cols={7} />
+                ) : filteredTiers.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
                       <Layers size={32} className="mx-auto mb-3 opacity-20" />

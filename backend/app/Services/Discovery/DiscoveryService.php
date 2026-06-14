@@ -17,7 +17,10 @@ use App\Services\AuditService;
  */
 class DiscoveryService
 {
-    public function __construct(private AuditService $audit) {}
+    public function __construct(
+        private AuditService $audit,
+        private ProviderSyncGuard $guard,
+    ) {}
 
     public function discover(Provider $provider): array
     {
@@ -154,9 +157,11 @@ class DiscoveryService
             $provider->last_discovery_at = $runAt;
             $provider->last_sync_at = $runAt;
             $provider->save();
+            $this->guard->recordProviderSuccess($provider->id); // host reachable → close the breaker
         } catch (\Throwable $e) {
             $provider->discovery_status = 'failed';
             $provider->save();
+            $this->guard->recordProviderFailure($provider->id); // feed the circuit breaker
             throw $e;
         }
 
@@ -207,48 +212,67 @@ class DiscoveryService
      */
     public function syncVm(Provider $provider, string $node, string $vmid): ?ProviderVm
     {
-        $driver = ProviderFactory::make($provider);
-        $runAt = now();
-        $nodeId = ProviderNode::where('provider_id', $provider->id)->where('node_name', $node)->value('id');
-
-        $match = null;
-        foreach ($driver->getClusterResources('vm') as $vm) {
-            if ((string) ($vm['vmid'] ?? '') === (string) $vmid) {
-                $match = $vm;
-                break;
-            }
-        }
-        if (! $match) {
-            return null;
-        }
-
-        $alloc = ['vcpu' => null, 'ram_mb' => null, 'disk_allocated_gb' => null, 'disks' => []];
         try {
-            $alloc = ConfigParser::parse($driver->getVmConfig($node, $vmid));
-        } catch (\Throwable) {
-            // leave allocation null
-        }
-        $ip = ($match['status'] ?? '') === 'running'
-            ? $this->firstIpv4($driver->getVmInterfaces($node, $vmid))
-            : null;
+            $driver = ProviderFactory::make($provider);
+            $runAt = now();
+            $nodeId = ProviderNode::where('provider_id', $provider->id)->where('node_name', $node)->value('id');
 
-        return ProviderVm::updateOrCreate(
-            ['provider_id' => $provider->id, 'external_vmid' => (string) $vmid],
-            [
-                'provider_node_id' => $nodeId,
-                'vm_name' => $match['name'] ?? null,
-                'power_state' => $match['status'] ?? null,
-                'ip_address' => $ip,
-                'vcpu' => $alloc['vcpu'],
-                'ram_mb' => $alloc['ram_mb'],
-                'disk_allocated_gb' => $alloc['disk_allocated_gb'],
-                'disks_json' => $alloc['disks'],
-                'cpu_utilization' => isset($match['cpu']) ? round(((float) $match['cpu']) * 100, 4) : null,
-                'ram_usage_mb' => isset($match['mem']) ? intdiv((int) $match['mem'], 1048576) : null,
-                'discovered_status' => 'Active',
-                'last_sync_at' => $runAt,
-            ],
-        );
+            // The cluster-resources call is the connectivity probe — a host-down error throws here
+            // and trips the breaker (outer catch).
+            $match = null;
+            foreach ($driver->getClusterResources('vm') as $vm) {
+                if ((string) ($vm['vmid'] ?? '') === (string) $vmid) {
+                    $match = $vm;
+                    break;
+                }
+            }
+            if (! $match) {
+                $this->guard->recordProviderSuccess($provider->id); // host reachable, VM simply absent
+                return null;
+            }
+
+            $alloc = ['vcpu' => null, 'ram_mb' => null, 'disk_allocated_gb' => null, 'disks' => []];
+            try {
+                $alloc = ConfigParser::parse($driver->getVmConfig($node, $vmid));
+            } catch (\Throwable) {
+                // leave allocation null
+            }
+
+            // IP comes from the guest agent, which can be unready well after the host is reachable —
+            // wrap it so guest-agent lag never trips the breaker (the bounded IP follow-up retries).
+            $ip = null;
+            if (($match['status'] ?? '') === 'running') {
+                try {
+                    $ip = $this->firstIpv4($driver->getVmInterfaces($node, $vmid));
+                } catch (\Throwable) {
+                    // agent not ready yet — leave IP null
+                }
+            }
+
+            $pv = ProviderVm::updateOrCreate(
+                ['provider_id' => $provider->id, 'external_vmid' => (string) $vmid],
+                [
+                    'provider_node_id' => $nodeId,
+                    'vm_name' => $match['name'] ?? null,
+                    'power_state' => $match['status'] ?? null,
+                    'ip_address' => $ip,
+                    'vcpu' => $alloc['vcpu'],
+                    'ram_mb' => $alloc['ram_mb'],
+                    'disk_allocated_gb' => $alloc['disk_allocated_gb'],
+                    'disks_json' => $alloc['disks'],
+                    'cpu_utilization' => isset($match['cpu']) ? round(((float) $match['cpu']) * 100, 4) : null,
+                    'ram_usage_mb' => isset($match['mem']) ? intdiv((int) $match['mem'], 1048576) : null,
+                    'discovered_status' => 'Active',
+                    'last_sync_at' => $runAt,
+                ],
+            );
+
+            $this->guard->recordProviderSuccess($provider->id);
+            return $pv;
+        } catch (\Throwable $e) {
+            $this->guard->recordProviderFailure($provider->id);
+            throw $e;
+        }
     }
 
     public function activeCounts(Provider $provider): array

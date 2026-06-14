@@ -118,7 +118,15 @@ export default function Catalog() {
               >
                 <div className="w-20 h-20 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-inner bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 overflow-hidden transition-transform group-hover:scale-110">
                   {cat.catalogImage
-                    ? <img src={cat.catalogImage} alt="" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    ? <img
+                        src={cat.catalogImage}
+                        alt=""
+                        decoding="async"
+                        className="w-full h-full object-contain opacity-0 transition-opacity duration-200"
+                        ref={(el) => { if (el && el.complete) el.style.opacity = '1'; }}
+                        onLoad={(e) => { e.currentTarget.style.opacity = '1'; }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
                     : <Server size={38} />}
                 </div>
                 <div className="text-[15px] font-bold text-gray-800 dark:text-gray-100 mb-1.5">{cat.name}</div>

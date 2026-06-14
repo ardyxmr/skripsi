@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Provider;
 use App\Services\Discovery\DiscoveryService;
+use App\Services\Discovery\ProviderSyncGuard;
 use App\Services\VmFactSyncService;
 use Illuminate\Console\Command;
 
@@ -20,11 +21,18 @@ class RefreshDiscovery extends Command
 
     protected $description = 'Re-discover each auto-discovery provider when its interval has elapsed, and mirror its facts into inventory.';
 
-    public function handle(DiscoveryService $discovery, VmFactSyncService $facts): int
+    public function handle(DiscoveryService $discovery, VmFactSyncService $facts, ProviderSyncGuard $guard): int
     {
         foreach (Provider::all() as $provider) {
             if (! $provider->auto_discovery_enabled) {
                 continue; // manual-only — refreshed on demand from Provider Management
+            }
+
+            // Circuit breaker: while a provider is in cooldown, don't keep hammering it on the
+            // automated cadence — the last-known DB facts stand until it recovers (or a manual
+            // Discover probes it).
+            if (! $guard->providerAvailable($provider->id)) {
+                continue;
             }
 
             $intervalSec = Provider::intervalSeconds($provider->discovery_interval);

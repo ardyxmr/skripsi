@@ -6,6 +6,23 @@ import { getToken } from '../lib/auth';
 const CatalogContext = createContext();
 const RESOURCE = '/catalogs';
 
+// Warm the browser cache for catalog icons as soon as the list is fetched (app-level,
+// at startup / on login) so the Catalog page shows them instantly instead of fetching
+// each <img> only after navigation. References are retained so the decoded bitmaps
+// aren't garbage-collected between visits.
+const preloadedImages = new Map();
+function preloadCatalogImages(rows = []) {
+  for (const row of rows) {
+    const url = row?.catalogImage;
+    if (url && !preloadedImages.has(url)) {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = url;
+      preloadedImages.set(url, img);
+    }
+  }
+}
+
 // Alias API fields → the names the catalog table renders, with safe defaults
 // (prevents `undefined.toLowerCase()` crashes on real data).
 export function normalizeCatalog(row = {}) {
@@ -34,8 +51,9 @@ export function CatalogProvider({ children }) {
     setLoading(true);
     setError(null);
     try {
-      const rows = await api.get(RESOURCE);
-      setCatalogs((rows || []).map(normalizeCatalog));
+      const rows = (await api.get(RESOURCE) || []).map(normalizeCatalog);
+      setCatalogs(rows);
+      preloadCatalogImages(rows); // warm icon cache ahead of the Catalog page
     } catch (e) {
       setError(e);
     } finally {

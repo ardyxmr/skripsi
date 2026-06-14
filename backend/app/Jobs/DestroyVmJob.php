@@ -36,7 +36,11 @@ class DestroyVmJob implements ShouldQueue
         if ($vm->workspace_path && is_dir($vm->workspace_path)) {
             $result = $terraform->destroy($vm->workspace_path, $vm->provider);
             if (! $result['ok']) {
-                $vm->update(['error_message' => Str::limit('[destroy] '.$result['output'], 2000)]);
+                // Roll the optimistic 'Deleting' status back so the row isn't stuck mid-delete.
+                $vm->update([
+                    'status' => 'Active',
+                    'error_message' => Str::limit('[destroy] '.$result['output'], 2000),
+                ]);
                 $audit->log($vm->owner, 'DELETE_VM', "Destroy FAILED {$vm->vm_name}");
 
                 return;

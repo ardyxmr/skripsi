@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Layers, Network, Database, Server, RefreshCw } from 'lucide-react';
 import api from '../../../lib/api';
+import StatusPill from '../../../components/common/StatusPill';
 
 // Read-only, node-scoped Discovery Explorer drawer — the node-scoped twin of
 // ProviderDiscovery. Tabs read GET /nodes/{id}/explorer. No publish/provision.
@@ -11,22 +12,16 @@ const TABS = [
   { key: 'vms', label: 'VMs', icon: Server },
 ];
 
-// Colored status pills — same vocabulary/colors as the provider Discovery Explorer so the two views are consistent.
-const Badge = ({ label, cls }) => <span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${cls}`}>{label}</span>;
-const C = {
-  emerald: 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400',
-  slate: 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400',
-  amber: 'bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400',
-  rose: 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400',
-};
+// Colored status pills — shared StatusPill (soft variant) keeps these consistent with the provider Discovery Explorer.
+const Pill = (props) => <StatusPill variant="soft" uppercase shape="sm" {...props} />;
 // Present VM → Running (green) / Stopped; gone → Missing. Mirrors ProviderDiscovery's vmStatusBadge.
 const vmStatusBadge = (r) => {
-  if (r.discoveredStatus !== 'Active') return <Badge label="Missing" cls={C.rose} />;
-  if (r.powerState === 'running') return <Badge label="Running" cls={C.emerald} />;
-  if (r.powerState === 'stopped') return <Badge label="Stopped" cls={C.slate} />;
-  return <Badge label="Unknown" cls={C.amber} />;
+  if (r.discoveredStatus !== 'Active') return <Pill status="Missing" />;
+  if (r.powerState === 'running') return <Pill status="Running" />;
+  if (r.powerState === 'stopped') return <Pill status="Stopped" />;
+  return <Pill status="Unknown" />;
 };
-const discBadge = (s) => <Badge label={s} cls={s === 'Active' ? C.emerald : C.rose} />;
+const discBadge = (s) => <Pill tone={s === 'Active' ? 'success' : 'danger'} label={s} />;
 
 export default function NodeExplorer({ isOpen, node, onClose }) {
   const [tab, setTab] = useState('templates');

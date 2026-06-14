@@ -40,12 +40,17 @@ class EditResourcesVmJob implements ShouldQueue
     public function handle(WorkspaceService $workspaces, TerraformRunner $terraform, AuditService $audit): void
     {
         $vm = Inventory::with(['provider', 'environment'])->find($this->inventoryId);
-        if (! $vm || ! $vm->provider || ! $vm->workspace_path || ! is_dir($vm->workspace_path)) {
+        if (! $vm) {
+            return;
+        }
+        if (! $vm->provider || ! $vm->workspace_path || ! is_dir($vm->workspace_path)) {
+            $vm->update(['status' => 'Active']); // un-stick the transitional state
             return;
         }
 
         $resolved = $workspaces->readResolved($vm->workspace_path);
         if (! $resolved) {
+            $vm->update(['status' => 'Active']);
             return;
         }
 
@@ -87,7 +92,8 @@ class EditResourcesVmJob implements ShouldQueue
         }
 
         if (empty($changes)) {
-            return; // nothing actionable (e.g. all disks rejected by the cap)
+            $vm->update(['status' => 'Active']); // nothing actionable (e.g. all disks rejected by the cap)
+            return;
         }
 
         // Persist BOTH tfvars and deployment.json, then a SINGLE apply for the whole bundle.
@@ -96,7 +102,7 @@ class EditResourcesVmJob implements ShouldQueue
 
         $result = $terraform->apply($vm->workspace_path, $vm->provider);
         if (! $result['ok']) {
-            $vm->update(['error_message' => Str::limit("[edit-resources/{$result['step']}] ".$result['output'], 2000)]);
+            $vm->update(['status' => 'Active', 'error_message' => Str::limit("[edit-resources/{$result['step']}] ".$result['output'], 2000)]);
             $audit->log($vm->owner, 'EDIT_RESOURCES', "Edit Resources FAILED {$vm->vm_name} (step {$result['step']})");
 
             return;
@@ -113,7 +119,7 @@ class EditResourcesVmJob implements ShouldQueue
             ]);
         }
 
-        $update = ['error_message' => null];
+        $update = ['status' => 'Active', 'error_message' => null];
         if ($this->cpu !== null) {
             $update['vcpu'] = $resolved['vcpus'] ?? $vm->vcpu;
         }
@@ -126,5 +132,8 @@ class EditResourcesVmJob implements ShouldQueue
         $vm->update($update);
 
         $audit->log($vm->owner, 'EDIT_RESOURCES', "Edited {$vm->vm_name}: ".implode(', ', $changes));
+
+        // Event-driven freshness: refresh live runtime facts now (don't wait for the 30s sweep).
+        SyncVmFactsJob::dispatch($vm->id);
     }
 }

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../lib/api';
+import { getToken } from '../lib/auth';
 
 const ProviderContext = createContext();
 const RESOURCE = '/providers';
@@ -22,7 +23,7 @@ export function ProviderProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    refetch();
+    if (getToken()) refetch(); // wait for auth — DataBootstrap re-fetches on login
   }, [refetch]);
 
   const create = async (data) => {

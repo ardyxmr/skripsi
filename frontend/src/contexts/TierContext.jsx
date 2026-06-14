@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../lib/api';
 import { makeCrud } from '../lib/crud';
+import { getToken } from '../lib/auth';
 
 const TierContext = createContext();
 const RESOURCE = '/tiers';
@@ -41,7 +42,7 @@ export function TierProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    refetch();
+    if (getToken()) refetch(); // wait for auth — DataBootstrap re-fetches on login
   }, [refetch]);
 
   const { create, update, remove } = makeCrud(RESOURCE, setTiers, refetch, normalizeTier);

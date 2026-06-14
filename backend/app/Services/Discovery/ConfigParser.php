@@ -4,7 +4,7 @@ namespace App\Services\Discovery;
 
 /**
  * Parse a Proxmox /config map into allocation facts (04-backend-services.md §2.2a):
- *  - vCPU = sockets × cores (default sockets=1)
+ *  - vCPU = ONLINE `vcpus` when set (hot-plug headroom model), else sockets × cores
  *  - scan disk buses scsiX / virtioX / sataX / ideX
  *  - keep a line only if it has size= AND is NOT media=cdrom (efidisk0/tpmstate0/
  *    unusedX never match the bus regex, so they're excluded automatically)
@@ -16,7 +16,12 @@ class ConfigParser
     {
         $sockets = (int) ($config['sockets'] ?? 1) ?: 1;
         $cores = (int) ($config['cores'] ?? 1) ?: 1;
-        $vcpu = $sockets * $cores;
+        // Proxmox reports `vcpus` = the ONLINE vCPU count whenever fewer than the full
+        // sockets×cores topology are hot-plugged (our reboot-free headroom: a Bronze VM is
+        // built cores=8 but vcpus=2). Report the ONLINE count so inventory mirrors the tier
+        // allocation — not the max ceiling — and tracks live resizes. Fall back to the full
+        // topology only for VMs with no vcpus cap (all cores online).
+        $vcpu = (int) ($config['vcpus'] ?? 0) ?: ($sockets * $cores);
 
         $ramMb = (int) ($config['memory'] ?? 0); // Proxmox 'memory' is already MB
 

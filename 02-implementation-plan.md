@@ -36,7 +36,7 @@
 **Goal:** read infrastructure from Proxmox into the database.
 
 1. Migrations: `providers` (dual-credential fields encrypted + terraform provider source/version + discovery monitoring fields), `provider_nodes`, `provider_templates`, `provider_networks`, `provider_datastores`, `provider_vms`.
-2. **Provider Driver** abstraction with `ProviderFactory`; implement `ProxmoxProvider` with: `testConnection()`, `discoverNodes()`, `discoverTemplates()`, `discoverNetworks()`, `discoverDatastores()`, `discoverVms()`, `syncResources()`, `getNodeHealth()`. Endpoints from `config/provider_endpoints.php`. All provider GETs (resources + VM runtime facts) live here.
+2. **Provider Driver** abstraction with `ProviderFactory`; implement `ProxmoxProvider` with: `testConnection()`, `discoverNodes()`, `discoverTemplates()`, `discoverNetworks()`, `discoverDatastores()`, `discoverVms()`, `syncResources()`, `getNodeHealth()`. Endpoints from `config/provider_endpoints.php`. All provider GETs (resources + VM runtime facts) live here. When persisting `provider_nodes`, also store the `cpu_utilization`/`ram_usage_mb` snapshot from the status-tier `/cluster/resources?type=node` read (ADR-17).
 3. Encrypted credential storage; ensure no credential field is ever serialized to a response.
 4. Provider CRUD + **Test Connection** + **Run Discovery Now**.
 5. Discovery scheduler honoring `auto_discovery_enabled` + `discovery_interval`.
@@ -52,13 +52,13 @@
 
 **Goal:** admin-curated abstractions over discovered resources.
 
-1. Migrations: `catalogs`, published `networks`, published `datastores` (each referencing the discovered provider resource ids).
+1. Migrations: `catalogs`, published `nodes` (ADR-17), published `networks`, published `datastores` (each referencing the discovered provider resource ids).
 2. Catalog CRUD with image upload (validation: type, 512×512, ≤2 MB; stored under `storage/app/catalog-images/`).
-3. Network and Datastore publish CRUD.
+3. Node, Network and Datastore publish CRUD.
 4. Status derivation: Active / Inactive / Provider Offline / Template Missing based on the linked discovered resource's state.
-5. Resolution helpers: `catalog_id`→template, `network_id`→bridge, `datastore_id`→storage, `node_id`→node name (used later by provisioning).
+5. Resolution helpers: `catalog_id`→template, `network_id`→bridge, `datastore_id`→storage, `node_id` (published)→`provider_node_id`→node name (used later by provisioning) — implemented against the new `nodes` table.
 
-**Exit criteria:** admin can publish a catalog item/network/datastore; user-facing reads come only from published tables.
+**Exit criteria:** admin can publish a catalog item/node/network/datastore; user-facing reads come only from published tables; the wizard's node list reads from `nodes`, never `provider_nodes`.
 
 ---
 
@@ -66,11 +66,11 @@
 
 **Goal:** governance rules that constrain provisioning.
 
-1. Migrations: `tiers`, `environments`, `environment_provider_rules`, `environment_tier_rules`, `environment_network_rules`, `environment_datastore_rules`.
+1. Migrations: `tiers`, `environments`, `environment_provider_rules`, `environment_tier_rules`, `environment_node_rules` (ADR-17), `environment_network_rules`, `environment_datastore_rules`.
 2. Seed default tiers (Bronze/Silver/Gold) with authoritative spec values; allow admin to create Platinum.
 3. Tier CRUD + status + delete validation (blocked if used by environment/inventory/request).
-4. Environment CRUD with expiry policy, `approval_required`, and the four allow-lists.
-5. Resource-filtering service: given an environment, return allowed providers/tiers/networks/datastores for the wizard.
+4. Environment CRUD with expiry policy, `approval_required`, and the five allow-lists (providers/tiers/nodes/networks/datastores).
+5. Resource-filtering service: given an environment, return allowed providers/tiers/nodes/networks/datastores for the wizard.
 
 **Exit criteria:** selecting an environment filters the wizard to only its allowed resources; tier resolution returns correct CPU/RAM/disk.
 
@@ -80,7 +80,7 @@
 
 **Goal:** capture requests and govern them — still no Terraform execution.
 
-1. Migration: `provision_requests` (IDs only + vm_name + requested expiry) and `approval_requests`.
+1. Migration: `provision_requests` (IDs only + vm_name + requested expiry) and `approval_requests`. The node FK is the **published** `node_id` (FK→`nodes`), not raw `provider_node_id` (ADR-17).
 2. Provision request creation: validate against environment policy; if `approval_required=false`, enqueue straight to the Terraform queue (Phase 6); else create a `PROVISION` `approval_requests` row (Pending) with approver resolved via group manager.
 3. Approval engine independent of request type: Approve / Reject / Revert with mandatory `action_reason`.
 4. Revert → user edits reverted request → resubmit → Pending.
@@ -144,3 +144,8 @@ Phase 1 (IAM)
 ```
 
 Audit logging (Phase 8 verification) is actually wired incrementally from Phase 1 onward; it is only *audited as complete* at the end.
+
+## Status (current)
+
+- **Phases 0–7: DONE**, all live-verified against real Proxmox. **Phase 8 (Ansible hardening): not started** (the main remaining stage).
+- **Post-Phase-7 refinements delivered** (see `09-backend-build-stages.md` → "Post-Stage-7 refinements", ADRs 19–21): scheduled per-provider auto-discovery + 24h stale-prune (default on); unified bundled "Edit Resources" (one approval, one apply); lifetime capped to the environment window; live CPU/RAM hotplug; single API collection point (Inventory reads DB); discovery accuracy fixes (online vCPU, IP-only-while-running, consolidated VM status, resolved Node column); realtime/instant-open Inventory & Approvals UI.

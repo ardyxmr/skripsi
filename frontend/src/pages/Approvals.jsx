@@ -2,13 +2,17 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { Search, RefreshCw, Check, X, ChevronRight, ChevronDown, CheckSquare, Square, Filter, RotateCcw, FileEdit, AlertCircle } from 'lucide-react';
 import api from '../lib/api';
+import { getCached, setCached } from '../lib/liveCache';
 import { useUI } from '../stores/uiStore';
+import { useUserContext } from '../contexts/UserContext';
+import { canApprove } from '../lib/rbac';
 
 const REQUEST_TYPE_LABEL = {
   PROVISION: 'Create New VM',
   RENEWAL: 'Extend Period',
   PERMANENT: 'Make Permanent',
   RESIZE: 'Edit Resources',
+  EDIT_RESOURCES: 'Edit Resources',
   ADD_DISK: 'Add Data Disk',
   DESTROY: 'Delete VM',
 };
@@ -22,6 +26,7 @@ function normalizeRequest(row) {
     ...row,
     type: REQUEST_TYPE_LABEL[row.requestType] || row.type || row.requestType,
     vmName: row.vmName ?? '—',
+    instanceCount: row.instanceCount ?? null,   // PROVISION only; null for lifecycle requests
     os: row.catalogName ?? row.os ?? '—',
     environment: row.environmentName ?? row.environment ?? '—',
     tier: row.tierName ?? row.tier ?? '—',
@@ -38,21 +43,119 @@ function normalizeRequest(row) {
   };
 }
 
+// Short date like "07 Jun 2026" for compact table cells.
+function formatShortDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getDate().toString().padStart(2, '0')} ${d.toLocaleString('en-US', { month: 'short' })} ${d.getFullYear()}`;
+}
+
+// Color-coded resource lines per request type. Net-new changes are green; existing/baseline gray.
+// Returns { lines: [{ text, cls }] } so the cell can render a scannable multi-line breakdown.
+const GREEN = 'text-emerald-600 dark:text-emerald-400 font-semibold';
+const GRAY = 'text-gray-500 dark:text-gray-400';
+const PLAIN = 'text-gray-700 dark:text-gray-300 font-medium';
+function resourceDisplay(req) {
+  const p = req.payload || {};
+  const baseDisk = (req.requestType === 'PROVISION' && req.bootDiskGb) ? req.bootDiskGb : req.disk;
+  const cpuRamLine = () => {
+    const cpu = p.cpu ?? req.cpu;
+    const ram = p.ramMb != null ? Math.round(p.ramMb / 1024) : req.ram;
+    return { text: `${cpu ?? '—'} CPU / ${ram ?? '—'} GB RAM`, cls: GREEN };
+  };
+  switch (req.requestType) {
+    case 'EDIT_RESOURCES': {
+      const lines = [];
+      if (p.cpu != null || p.ramMb != null) lines.push(cpuRamLine());
+      (p.disks || []).forEach((d) => lines.push({ text: `+${d.sizeGb} GB Data Disk`, cls: GREEN }));
+      lines.push({ text: `Boot ${baseDisk ?? '—'} GB`, cls: GRAY });
+      return { lines };
+    }
+    case 'RESIZE':
+      return { lines: [cpuRamLine(), { text: 'New resize target', cls: GRAY }] };
+    case 'ADD_DISK':
+      return { lines: [{ text: `+${p.sizeGb ?? '—'} GB Data Disk`, cls: GREEN }, { text: `Boot ${baseDisk ?? '—'} GB`, cls: GRAY }] };
+    default:
+      return { lines: [{ text: `${req.cpu ?? '—'} CPU / ${req.ram ?? '—'} GB RAM`, cls: PLAIN }, { text: `${baseDisk ?? '—'} GB Disk`, cls: GRAY }] };
+  }
+}
+
+// Type-column label: "Edit Resources" + a bracketed scope derived from the bundle payload so a
+// manager can see what's inside at a glance.
+function typeDisplay(req) {
+  if (req.requestType === 'EDIT_RESOURCES') {
+    const p = req.payload || {};
+    const scope = [];
+    if (p.cpu != null || p.ramMb != null) scope.push('Extend CPU/RAM');
+    if ((p.disks || []).length) scope.push('Add Disk');
+    return { label: 'Edit Resources', scope: scope.length ? `[${scope.join(', ')}]` : '' };
+  }
+  return { label: req.type, scope: '' };
+}
+
+// Expiry shown per request type: PERMANENT/RENEWAL from the request itself, lifecycle
+// edits from the VM's current expiry, PROVISION from the requested date or env policy.
+function expiryDisplay(req) {
+  const p = req.payload || {};
+  switch (req.requestType) {
+    case 'PERMANENT':
+      return 'Permanent';
+    case 'RENEWAL':
+      return `+${p.extensionPeriod || '7 Days'}`;
+    case 'RESIZE':
+    case 'ADD_DISK':
+    case 'DESTROY':
+      return formatShortDate(req.currentExpiry) || 'Lifetime';
+    case 'PROVISION':
+    default:
+      if (req.requestedExpiry) return formatShortDate(req.requestedExpiry);
+      if (!req.expiryType || req.expiryType === 'lifetime' || !req.expiryValue) return 'Lifetime';
+      return `${req.expiryValue} ${req.expiryType}`;
+  }
+}
+
+// Shimmer placeholder rows shown during the very first load so the table never
+// flashes its empty-state ("No requests found") before the data arrives.
+function SkeletonRows({ cols, rows = 6 }) {
+  return Array.from({ length: rows }).map((_, i) => (
+    <tr key={`sk-${i}`} className="animate-pulse">
+      <td colSpan={cols} className="px-4 py-4">
+        <div className="flex items-center gap-4">
+          <div className="h-4 w-4 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 flex-1 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 w-28 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 w-24 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 w-20 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 w-16 rounded bg-gray-100 dark:bg-slate-700/40" />
+        </div>
+      </td>
+    </tr>
+  ));
+}
+
 export default function Approvals() {
   const navigate = useNavigate();
   const pushToast = useUI((s) => s.pushToast);
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { currentUser } = useUserContext();
+  const canAct = canApprove(currentUser); // Manager/Admin can approve/reject/revert; users are read-only
+  // Seed from the app-startup cache so the table paints instantly on open; the
+  // mount fetch + polling below still refresh it. Skeleton only shows on a cold start.
+  const [requests, setRequests] = useState(() => (getCached('/approvals') || []).map(normalizeRequest));
+  const [loading, setLoading] = useState(() => !getCached('/approvals'));
 
-  const loadApprovals = useCallback(async () => {
-    setLoading(true);
+  // `silent` (background polling / manual refresh) skips the full-page loading
+  // state and the error toast, so the table just updates in place with no flash.
+  const loadApprovals = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const rows = await api.get('/approvals');
+      setCached('/approvals', rows || []);
       setRequests((rows || []).map(normalizeRequest));
     } catch (e) {
-      pushToast({ kind: 'error', message: e.message || 'Failed to load approvals.' });
+      if (!silent) pushToast({ kind: 'error', message: e.message || 'Failed to load approvals.' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [pushToast]);
 
@@ -62,6 +165,10 @@ export default function Approvals() {
   const [searchTerm, setSearchTerm] = useState('');
   const [envFilter, setEnvFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  // Sort by a date column; click a header to toggle desc/asc (default: newest request first).
+  const [sortConfig, setSortConfig] = useState({ field: 'requestDate', dir: 'desc' });
+  const requestSort = (field) =>
+    setSortConfig((prev) => ({ field, dir: prev.field === field && prev.dir === 'desc' ? 'asc' : 'desc' }));
   
   // UI State
   const [expandedRows, setExpandedRows] = useState({});
@@ -121,7 +228,18 @@ export default function Approvals() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-  
+
+  // Live auto-refresh: silently re-fetch every 7s so newly submitted / actioned
+  // requests appear without a manual refresh. Pauses while the tab is hidden or
+  // the action modal is open (so a background update can't disrupt an in-flight action).
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.hidden || actionModalOpenRef.current) return;
+      loadApprovals({ silent: true });
+    }, 7000);
+    return () => clearInterval(t);
+  }, [loadApprovals]);
+
   // Resize State
   const [colWidths, setColWidths] = useState({});
   const handleResizeStart = (e, colKey) => {
@@ -149,18 +267,29 @@ export default function Approvals() {
   const needActionRequests = requests.filter(r => r.status === 'Reverted').length;
 
   const filteredRequests = useMemo(() => {
-    return requests.filter(req => {
-      const matchSearch = searchTerm === '' || 
+    const filtered = requests.filter(req => {
+      const matchSearch = searchTerm === '' ||
         req.vmName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req.requestedBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req.os.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       const matchEnv = envFilter === 'All' || req.environment === envFilter;
       const matchStatus = statusFilter === 'All' || req.status === statusFilter;
-      
+
       return matchSearch && matchEnv && matchStatus;
     });
-  }, [requests, searchTerm, envFilter, statusFilter]);
+
+    // Sort by the chosen date column; nulls (e.g. no action date yet) sort last.
+    const dir = sortConfig.dir === 'asc' ? 1 : -1;
+    return filtered.sort((a, b) => {
+      const ta = a[sortConfig.field] ? new Date(a[sortConfig.field]).getTime() : null;
+      const tb = b[sortConfig.field] ? new Date(b[sortConfig.field]).getTime() : null;
+      if (ta === null && tb === null) return 0;
+      if (ta === null) return 1;
+      if (tb === null) return -1;
+      return (ta - tb) * dir;
+    });
+  }, [requests, searchTerm, envFilter, statusFilter, sortConfig]);
 
   // Handlers
   const toggleExpand = (id) => {
@@ -183,7 +312,7 @@ export default function Approvals() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadApprovals();
+    await loadApprovals({ silent: true });
     setIsRefreshing(false);
   };
 
@@ -200,7 +329,10 @@ export default function Approvals() {
     }
 
     const endpoint = { Approve: 'approve', Reject: 'reject', Revert: 'revert' }[actionType];
-    const targets = requests.filter((r) => actionTargetIds.includes(r.id) && r.status === 'Pending');
+    // Revert is PROVISION-only ("send back to draft"); never revert a live-asset change request.
+    const targets = requests.filter((r) =>
+      actionTargetIds.includes(r.id) && r.status === 'Pending'
+      && (actionType !== 'Revert' || r.requestType === 'PROVISION'));
 
     try {
       await Promise.all(
@@ -222,15 +354,19 @@ export default function Approvals() {
     if (!req) return;
 
     // Reverted PROVISION requests carry the original IDs; pre-fill the wizard with them.
+    // requestId tells the wizard to RESUBMIT this same request (update in place), not create a new one.
     navigate('/request-vm', {
       state: {
+        requestId: req.referenceId,
         environmentId: req.environmentId,
         providerId: req.providerId,
+        nodeId: req.nodeId,
         catalogId: req.catalogId,
         tierId: req.tierId,
         networkId: req.networkId,
         datastoreId: req.datastoreId,
         vmPrefix: req.vmName,
+        vmCount: req.instanceCount,
         description: req.description,
       },
     });
@@ -390,8 +526,8 @@ export default function Approvals() {
       {/* Main Content Area */}
       <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col h-auto overflow-hidden">
         
-        {/* Bulk Action Banner */}
-        {selectedRows.length > 0 && (
+        {/* Bulk Action Banner (approvers only) */}
+        {canAct && selectedRows.length > 0 && (
           <div className="bg-teal-50 dark:bg-teal-900/30 border-b border-teal-100 dark:border-teal-800 px-5 py-3 flex items-center justify-between animate-in slide-in-from-top-2">
             <div className="text-[13px] font-semibold text-teal-800 dark:text-teal-300 flex items-center gap-2">
               <CheckSquare size={16} />
@@ -411,12 +547,15 @@ export default function Approvals() {
                 >
                   <X size={14} /> Reject Selected
                 </button>
-                <button 
-                  onClick={() => openActionModal('Revert', null)}
-                  className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-1.5 rounded-lg text-[12px] font-medium transition-[transform,opacity] shadow-sm flex items-center gap-1.5"
-                >
-                  <RotateCcw size={14} /> Revert Selected
-                </button>
+                {/* Revert = back-to-draft, PROVISION only; hidden unless a new-VM request is selected */}
+                {selectedRows.some(id => { const r = requests.find(x => x.id === id); return r?.status === 'Pending' && r?.requestType === 'PROVISION'; }) && (
+                  <button
+                    onClick={() => openActionModal('Revert', null)}
+                    className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-1.5 rounded-lg text-[12px] font-medium transition-[transform,opacity] shadow-sm flex items-center gap-1.5"
+                  >
+                    <RotateCcw size={14} /> Revert Selected
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -464,11 +603,18 @@ export default function Approvals() {
               <option value="Reverted">Need Action</option>
             </select>
 
-            <button 
+            {/* Refresh button doubles as the live indicator: green pulsing dot + emerald tint
+                signals auto-refresh is on; clicking refreshes immediately (spins). */}
+            <button
               onClick={handleRefresh}
-              className={`p-2 bg-white dark:bg-surface border border-gray-200 dark:border-theme rounded-input text-gray-500 dark:text-gray-300 hover:text-teal-600 hover:border-teal-300 dark:hover:border-teal-600 shadow-sm ${isRefreshing ? 'animate-spin text-teal-600 border-teal-300' : ''}`}
+              title="Live — auto-refreshing every few seconds. Click to refresh now."
+              className="relative p-2 bg-white dark:bg-surface border border-gray-200 dark:border-theme rounded-input text-emerald-600 dark:text-emerald-400 hover:border-emerald-300 dark:hover:border-emerald-600 shadow-sm"
             >
-              <RefreshCw size={16} />
+              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface"></span>
+              </span>
             </button>
           </div>
         </div>
@@ -482,12 +628,14 @@ export default function Approvals() {
                   <div onMouseDown={(e) => handleResizeStart(e, 'col1')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
                 </th>
                 <th className="px-3 py-3 w-10 text-center relative group" style={{ width: colWidths['col2'] }}>
-                  <input 
-                    type="checkbox" 
-                    className="w-3.5 h-3.5 rounded text-teal-600 border-gray-300 focus:ring-teal-500 cursor-pointer" 
-                    checked={filteredRequests.length > 0 && selectedRows.length === filteredRequests.length}
-                    onChange={toggleSelectAll}
-                  />
+                  {canAct && (
+                    <input
+                      type="checkbox"
+                      className="w-3.5 h-3.5 rounded text-teal-600 border-gray-300 focus:ring-teal-500 cursor-pointer"
+                      checked={filteredRequests.length > 0 && selectedRows.length === filteredRequests.length}
+                      onChange={toggleSelectAll}
+                    />
+                  )}
                   <div onMouseDown={(e) => handleResizeStart(e, 'col2')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
                 </th>
                 <th className="px-4 py-3 relative group" style={{ width: colWidths['col3'] }}>
@@ -518,12 +666,12 @@ export default function Approvals() {
                   Status
                   <div onMouseDown={(e) => handleResizeStart(e, 'col8')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 relative group" style={{ width: colWidths['col9'] }}>
-                  Req Date ▼
+                <th onClick={() => requestSort('requestDate')} className="px-4 py-3 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 relative group select-none" style={{ width: colWidths['col9'] }}>
+                  Req Date {sortConfig.field === 'requestDate' ? (sortConfig.dir === 'asc' ? '▲' : '▼') : '⇅'}
                   <div onMouseDown={(e) => handleResizeStart(e, 'col9')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
                 </th>
-                <th className="px-4 py-3 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 relative group" style={{ width: colWidths['col10'] }}>
-                  Action Date ▼
+                <th onClick={() => requestSort('actionDate')} className="px-4 py-3 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 relative group select-none" style={{ width: colWidths['col10'] }}>
+                  Action Date {sortConfig.field === 'actionDate' ? (sortConfig.dir === 'asc' ? '▲' : '▼') : '⇅'}
                   <div onMouseDown={(e) => handleResizeStart(e, 'col10')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
                 </th>
                 <th className="px-4 py-3 text-right pr-6 relative group" style={{ width: colWidths['col11'] }}>
@@ -533,7 +681,9 @@ export default function Approvals() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-theme relative">
-              {filteredRequests.length === 0 ? (
+              {loading && requests.length === 0 ? (
+                <SkeletonRows cols={12} />
+              ) : filteredRequests.length === 0 ? (
                 <tr>
                   <td colSpan="12" className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center">
@@ -550,7 +700,10 @@ export default function Approvals() {
                   const isExpanded = !!expandedRows[req.id];
                   const isSelected = selectedRows.includes(req.id);
                   const isPending = req.status === 'Pending';
-                  
+                  const res = resourceDisplay(req);
+                  const exp = expiryDisplay(req);
+                  const t = typeDisplay(req);
+
                   return (
                     <React.Fragment key={req.id}>
                       <tr className={`group hover:bg-gray-50/50 dark:hover:bg-slate-700/50 ${isSelected ? 'bg-teal-50/30 dark:bg-teal-900/10' : ''}`}>
@@ -563,15 +716,27 @@ export default function Approvals() {
                           </button>
                         </td>
                         <td className="px-3 py-4 text-center">
-                          <input 
-                            type="checkbox" 
-                            className="w-3.5 h-3.5 rounded text-teal-600 border-gray-300 focus:ring-teal-500 cursor-pointer"
-                            checked={isSelected}
-                            onChange={() => toggleSelect(req.id)}
-                          />
+                          {canAct && (
+                            <input
+                              type="checkbox"
+                              className="w-3.5 h-3.5 rounded text-teal-600 border-gray-300 focus:ring-teal-500 cursor-pointer"
+                              checked={isSelected}
+                              onChange={() => toggleSelect(req.id)}
+                            />
+                          )}
                         </td>
                         <td className="px-4 py-4">
-                          <div className="text-[13px] font-bold text-gray-800 dark:text-gray-100 font-mono">{req.vmName}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-bold text-gray-800 dark:text-gray-100 font-mono">{req.vmName}</span>
+                            {req.instanceCount != null && (
+                              <span
+                                className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300"
+                                title={`${req.instanceCount} instance${req.instanceCount > 1 ? 's' : ''} requested`}
+                              >
+                                ×{req.instanceCount}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-4">
                           <div className="text-[13px] font-semibold text-gray-700 dark:text-gray-200">{req.os}</div>
@@ -584,19 +749,19 @@ export default function Approvals() {
                               'bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400'}`}>
                             {req.environment}
                           </div>
-                          <div className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mt-1">Exp: {req.expiry}</div>
+                          <div className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mt-1">Exp: {exp}</div>
                         </td>
                         <td className="px-4 py-4">
-                          <div className="text-[12px] font-medium text-gray-700 dark:text-gray-300">
-                            {req.cpu} CPU / {req.ram} GB RAM
-                          </div>
-                          <div className="text-[11px] text-gray-500 dark:text-gray-400">{req.disk} GB Disk</div>
+                          {res.lines.map((ln, i) => (
+                            <div key={i} className={`${i === 0 ? 'text-[12px]' : 'text-[11px]'} ${ln.cls}`}>{ln.text}</div>
+                          ))}
                         </td>
                         <td className="px-4 py-4">
                           <div className="text-[13px] text-gray-700 dark:text-gray-300">{req.provider}</div>
                         </td>
                         <td className="px-4 py-4">
-                          <div className="text-[12px] font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">{req.type}</div>
+                          <div className="text-[12px] font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">{t.label}</div>
+                          {t.scope && <div className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">{t.scope}</div>}
                         </td>
                         <td className="px-4 py-4">
                           <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold shadow-sm
@@ -617,8 +782,11 @@ export default function Approvals() {
                         </td>
                         <td className="px-4 py-4 text-right pr-6 min-w-[150px]">
                           {req.status === 'Pending' ? (
+                            !canAct ? (
+                              <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider text-right">Awaiting Approval</div>
+                            ) : (
                             <div className="flex items-center justify-end gap-2">
-                              <button 
+                              <button
                                 onClick={() => openActionModal('Approve', req.id)}
                                 className="w-7 h-7 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-500 dark:hover:text-white transition-[transform,opacity] flex items-center justify-center shadow-sm"
                                 title="Approve"
@@ -632,15 +800,19 @@ export default function Approvals() {
                               >
                                 <X size={14} />
                               </button>
-                              <button 
-                                onClick={() => openActionModal('Revert', req.id)}
-                                className="w-7 h-7 rounded bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white border border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-500 dark:hover:text-white transition-[transform,opacity] flex items-center justify-center shadow-sm"
-                                title="Revert to Need Action"
-                              >
-                                <RotateCcw size={14} />
-                              </button>
+                              {/* Revert = back-to-draft; only meaningful for a new-VM (PROVISION) request */}
+                              {req.requestType === 'PROVISION' && (
+                                <button
+                                  onClick={() => openActionModal('Revert', req.id)}
+                                  className="w-7 h-7 rounded bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white border border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-500 dark:hover:text-white transition-[transform,opacity] flex items-center justify-center shadow-sm"
+                                  title="Revert to Need Action (editable draft)"
+                                >
+                                  <RotateCcw size={14} />
+                                </button>
+                              )}
                             </div>
-                          ) : req.status === 'Reverted' ? (
+                            )
+                          ) : (req.status === 'Reverted' && req.requestType === 'PROVISION') ? (
                             <div className="flex items-center justify-end">
                               <button 
                                 onClick={() => executeEdit(req.id)}
@@ -662,10 +834,11 @@ export default function Approvals() {
                         <tr className="bg-gray-50/50 dark:bg-page border-b border-gray-100 dark:border-theme">
                           <td colSpan="12" className="p-0">
                             <div className="animate-in slide-in-from-top-1 fade-in duration-200">
-                              <div className="p-6 ml-14 mr-6 my-2 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-xl shadow-sm flex flex-col md:flex-row gap-6">
-                                <div className="flex-1">
+                              <div className="p-6 ml-14 mr-6 my-2 bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-xl shadow-sm flex flex-col md:flex-row gap-6 items-start">
+                                {/* order-2 → moved to the RIGHT; fixed width keeps the description box small and the Action History below it matches the same width */}
+                                <div className="w-full md:w-[440px] shrink-0 order-2">
                                   <div className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Description / Purpose</div>
-                                  <div className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed bg-gray-50 dark:bg-page p-3 rounded-lg border border-gray-100 dark:border-theme">
+                                  <div className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed bg-gray-50 dark:bg-page p-3 rounded-lg border border-gray-100 dark:border-theme max-h-[110px] overflow-y-auto custom-scrollbar">
                                     {req.description || <span className="italic text-gray-400">No Description Provided</span>}
                                   </div>
                                   
@@ -707,7 +880,8 @@ export default function Approvals() {
                                   )}
                                 </div>
                                 
-                                <div className="w-full md:w-[300px] shrink-0 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 p-4 rounded-xl">
+                                {/* order-1 → moved to the LEFT, takes the remaining width */}
+                                <div className="flex-1 order-1 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 p-4 rounded-xl">
                                   <div className="text-[11px] font-bold text-blue-500 dark:text-blue-400 uppercase tracking-wider mb-3">Request Information</div>
                                   <div className="space-y-3">
                                     <div>

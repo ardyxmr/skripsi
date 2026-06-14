@@ -95,7 +95,7 @@ export function UserProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    fetchAdminLists();
+    if (getToken()) fetchAdminLists(); // wait for auth — DataBootstrap re-fetches on login
   }, [fetchAdminLists]);
 
   const userCrud = makeCrud('/users', setUsers, fetchAdminLists, normalizeUser);

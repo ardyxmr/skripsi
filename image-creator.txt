@@ -1,0 +1,150 @@
+## The 5 must-haves (why the old one broke)
+Every template needs these or clones misbehave:
+1. **`qemu-guest-agent` installed + enabled** — our stub sets `agent=1`, so Terraform *waits for the agent to report an IP*. No agent → apply hangs / no IP.
+2. **`cloud-init` installed + datasource reads the Proxmox drive** — so per-clone user/password/network/hostname apply.
+3. **`lvm2` + virtio drivers in the initramfs** — the fix for your `init-bottom` hang (LVM root must activate before pivot).
+4. **Clean identity before templating** — blank `machine-id`, remove SSH host keys, `cloud-init clean` — so every clone is unique (otherwise duplicate DHCP/IDs).
+5. **Disk on `scsi0` (virtio-scsi-single) + cloud-init on `ide2` + serial console** — matches the stub and how cloud images expect to boot.
+
+Use VMIDs like **9000+** for templates so they never collide with portal-provisioned VMs (100+). Import disks to an **images-capable, thin** store (your `vmdata` now that thin is on).
+
+---
+
+## Template 1 — Rocky Linux cloud image (plain layout) ✅ easiest/most reliable
+
+Run on the **Proxmox node shell**:
+
+```bash
+# 1. Download the Rocky 9 GenericCloud qcow2
+cd /var/lib/vz/template
+wget https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2
+
+# 2. Pre-bake the agent + reset identity into the image (libguestfs)
+apt-get install -y libguestfs-tools
+virt-customize -a Rocky-10-GenericCloud-Base.latest.x86_64.qcow2 \
+  --install qemu-guest-agent \
+  --run-command 'systemctl enable qemu-guest-agent' \
+  --run-command 'truncate -s 0 /etc/machine-id' \
+  --run-command 'rm -f /etc/ssh/ssh_host_*'
+
+# 3. Create the VM shell (matches our stub: virtio-scsi, agent, serial console)
+VMID=9000
+qm create $VMID --name rocky9-cloud --memory 2048 --cores 2 \
+  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-single \
+  --ostype l26 --agent enabled=1 --serial0 socket --vga serial0
+
+# 4. Import the disk + attach as scsi0 (to vmdata, thin)
+qm importdisk $VMID Rocky-10-GenericCloud-Base.latest.x86_64.qcow2 vmdata
+qm set $VMID --scsi0 vmdata:vm-$VMID-disk-0
+
+# 5. Cloud-init drive on ide2 + boot from the disk
+qm set $VMID --ide2 vmdata:cloudinit --boot order=scsi0
+
+# 6. Convert to template (do NOT set ciuser/password here — Terraform supplies them)
+qm template $VMID
+```
+
+Cloud images already have `cloud-init` + `growpart`, so the boot disk auto-grows to whatever size the portal requests. Nothing else needed.
+
+---
+
+## Template 2 — Ubuntu 24.04 with custom LVM partitions
+root@ubuntu-24-lts:/home/sysadm# lsblk
+NAME             MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+sda                8:0    0   32G  0 disk
+├─sda1             8:1    0    1M  0 part
+└─sda2             8:2    0   32G  0 part
+  ├─vg0-lv--boot 252:0    0    1G  0 lvm  /boot
+  ├─vg0-lv--swap 252:1    0    2G  0 lvm  [SWAP]
+  └─vg0-lv--root 252:2    0   29G  0 lvm  /
+sr0               11:0    1 1024M  0 rom
+
+Here you install by hand, so **you** must add the agent/cloud-init/initramfs bits afterward — that's the step the old template skipped.
+
+```bash
+# 1. Create the VM and boot the Ubuntu 24.04 live-server ISO
+VMID=9001
+qm create $VMID --name ubuntu24-lvm --memory 2048 --cores 2 \
+  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-single --ostype l26 \
+  --agent enabled=1 --serial0 socket --vga serial0 \
+  --scsi0 vmdata:32 \
+  --ide2 local:iso/ubuntu-24.04.3-live-server-amd64.iso,media=cdrom \
+  --boot order='scsi0;ide2'
+qm start $VMID
+# → open the console, run the installer, pick "Custom storage layout" and build your LVM layout.
+```
+
+After the install finishes, **boot the VM, log in, and prep it** (this is the critical part):
+
+```bash
+sudo apt-get update
+# agent + cloud-init + LVM + growpart tooling
+sudo apt-get install -y qemu-guest-agent cloud-init lvm2 cloud-guest-utils
+sudo systemctl enable qemu-guest-agent
+
+# >>> the fix for the init-bottom hang: make sure LVM + virtio are in the initramfs
+sudo update-initramfs -u -k all
+
+# let cloud-init manage networking + use Proxmox's drive (NoCloud/ConfigDrive)
+sudo sed -i 's/^datasource_list.*/datasource_list: [ NoCloud, ConfigDrive ]/' /etc/cloud/cloud.cfg.d/*.cfg 2>/dev/null
+echo 'network: {config: disabled}' | sudo tee /etc/cloud/cloud.cfg.d/99-pve.cfg  # Proxmox sets net via cloud-init
+
+# clean identity so every clone is unique
+sudo cloud-init clean --logs
+sudo truncate -s 0 /etc/machine-id
+sudo rm -f /var/lib/dbus/machine-id && sudo ln -s /etc/machine-id /var/lib/dbus/machine-id
+sudo rm -f /etc/ssh/ssh_host_*
+sudo rm -f /etc/netplan/50-cloud-init.yaml
+sudo apt-get clean
+sudo shutdown -h now
+```
+
+Then swap the ISO for a cloud-init drive and templatize:
+
+```bash
+qm set $VMID --ide2 vmdata:cloudinit --boot order=scsi0
+qm template $VMID
+```
+
+**LVM resize note:** cloud-init's `growpart` will grow the *partition* on resize, but with a **custom LVM** layout the **logical volume + filesystem won't auto-grow** unless you add a one-liner. If you want the extra disk space usable, drop this into the template before sealing it (a boot service):
+```bash
+# /etc/cloud/cloud.cfg.d/90-lvm-grow.cfg  → or a runcmd:
+# growpart /dev/sda 3 ; pvresize /dev/sda3 ; lvextend -r -l +100%FREE /dev/vg0/lv-root
+```
+(Adjust device/VG/LV names to your layout.) For *booting* reliably, steps 1–4 above are what matter.
+
+---
+
+## Verify each template before using it in the portal
+Clone once **manually** and confirm it boots + gets an IP (proves the agent + initramfs are good):
+```bash
+qm clone 9000 990 --name verify --full
+qm set 990 --ipconfig0 ip=dhcp --ciuser ubuntu --cipassword 'Test123!'
+qm resize 990 scsi0 40G        # confirms resize+growpart works, like the portal does
+qm start 990
+qm agent 990 network-get-interfaces   # should return an IP within ~30-60s → agent + boot OK
+# happy? → qm destroy 990 --purge
+```
+If `qm agent ... network-get-interfaces` returns an IP, that template will work end-to-end in the portal.
+
+---
+
+Once you've built and verified them, publish them as catalogs (you'll see them in discovery as templates on `pve`), and I'll run a fresh batch through Stage 6 — it should come up clean. Want me to **save this as a runbook in the repo** (e.g. `docs/template-preparation.md`) so it's not lost, and add a one-line pointer from the deployment workflow doc?
+
+Make sure you ran the prep inside it (especially these two):
+sudo apt-get install -y qemu-guest-agent cloud-init lvm2 cloud-guest-utils
+sudo systemctl enable qemu-guest-agent
+sudo update-initramfs -u -k all        # <-- puts lvm2+virtio in initramfs (the real fix)
+sudo cloud-init clean --logs && sudo truncate -s 0 /etc/machine-id
+sudo rm -f /etc/ssh/ssh_host_*
+sudo shutdown -h now
+Make sure the template has a cloud-init drive + good defaults, then seal:
+qm set 9001 --ide2 vmdata:cloudinit --boot order=scsi0 --vga std --cpu host
+qm template 9001
+Test-clone it (this is the step you were waiting for me to give):
+qm clone 9001 991 --name ubtest --full
+qm set 991 --ciuser sysadm --cipassword 'Test123!' --ipconfig0 ip=dhcp --cpu host
+qm start 991
+sleep 60
+qm agent 991 network-get-interfaces      # returns an IP → boots clean + agent OK
+If that returns an IP (and the console isn't stuck at init-bottom), the Ubuntu LVM template is good too. qm destroy 991 --purge after.

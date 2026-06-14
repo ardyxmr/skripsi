@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import api from '../lib/api';
 import { useUI } from '../stores/uiStore';
 import { useEnvironmentContext } from '../contexts/EnvironmentContext';
 import { useCatalogContext } from '../contexts/CatalogContext';
+import { useNodeContext } from '../contexts/NodeContext';
+import { useNetworkContext } from '../contexts/NetworkContext';
+import { useDatastoreContext } from '../contexts/DatastoreContext';
 
-const EMPTY_ALLOWED = { providers: [], tiers: [], networks: [], datastores: [] };
+// Env policy now allow-lists providers/tiers/nodes; networks & datastores follow the node.
+const EMPTY_ALLOWED = { providers: [], tiers: [], nodes: [] };
 
 export default function VmRequest() {
   const location = useLocation();
@@ -17,16 +21,20 @@ export default function VmRequest() {
   const { environments } = useEnvironmentContext();
   const { allowedResources } = useEnvironmentContext();
   const { catalogs } = useCatalogContext();
+  const { nodes: allNodes } = useNodeContext();
+  const { networks } = useNetworkContext();
+  const { datastores } = useDatastoreContext();
 
   // Wizard state — store IDs only (resolved to provider values by the backend).
   const [step, setStep] = useState(1);
   const [environmentId, setEnvironmentId] = useState(location.state?.environmentId || '');
   const [providerId, setProviderId] = useState(location.state?.providerId || '');
+  const [nodeId, setNodeId] = useState(location.state?.nodeId || '');
   const [allowed, setAllowed] = useState(EMPTY_ALLOWED);
   const [loadingAllowed, setLoadingAllowed] = useState(false);
 
   const [vmPrefix, setVmPrefix] = useState(location.state?.vmPrefix || 'APP');
-  const [vmCount, setVmCount] = useState(location.state?.vmCount || 1);
+  const [vmCount, setVmCount] = useState(location.state?.vmCount ?? '');
   const [catalogId, setCatalogId] = useState(location.state?.catalogId || searchParams.get('catalog_id') || '');
   const [tierId, setTierId] = useState(location.state?.tierId || '');
   const [networkId, setNetworkId] = useState(location.state?.networkId || '');
@@ -37,6 +45,7 @@ export default function VmRequest() {
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [warn, setWarn] = useState(false); // shown when the user clicks an incomplete step's button
 
   const activeEnvironments = useMemo(
     () => (environments || []).filter((e) => e.status === 'Active'),
@@ -64,6 +73,7 @@ export default function VmRequest() {
   const handleSelectEnvironment = (id) => {
     setEnvironmentId(id);
     setProviderId('');
+    setNodeId('');
     setCatalogId('');
     setTierId('');
     setNetworkId('');
@@ -74,13 +84,29 @@ export default function VmRequest() {
   const isPermanentEnv = selectedEnv && (selectedEnv.expiryType === 'permanent' || selectedEnv.expiryType === 'lifetime');
   const envDuration = isPermanentEnv ? 'Lifetime' : selectedEnv ? `${selectedEnv.expiryValue} Days` : '';
 
-  // Catalogs are scoped by the selected provider and must be Active.
+  // Published nodes allowed in this env, narrowed to the chosen provider (etc.txt / ADR-17).
+  const allowedNodeIds = useMemo(() => (allowed.nodes || []).map((n) => n.id), [allowed.nodes]);
+  const providerNodes = useMemo(
+    () => (allNodes || []).filter((n) => allowedNodeIds.includes(n.id) && String(n.providerId) === String(providerId) && n.status === 'Active'),
+    [allNodes, allowedNodeIds, providerId]
+  );
+  const selectedNode = (allNodes || []).find((n) => String(n.id) === String(nodeId));
+  const selPnid = selectedNode?.providerNodeId;
+
+  // Catalog/network/datastore are bound to the node: filter to the selected node's discovered node.
   const availableCatalogs = useMemo(
-    () => (catalogs || []).filter((c) => String(c.providerId) === String(providerId) && c.status === 'Active'),
-    [catalogs, providerId]
+    () => (catalogs || []).filter((c) => String(c.providerId) === String(providerId) && c.providerNodeId === selPnid && c.status === 'Active'),
+    [catalogs, providerId, selPnid]
+  );
+  const availableNetworks = useMemo(
+    () => (networks || []).filter((n) => n.providerNodeId === selPnid && n.status === 'Active'),
+    [networks, selPnid]
+  );
+  const availableDatastores = useMemo(
+    () => (datastores || []).filter((d) => d.providerNodeId === selPnid && d.status === 'Active'),
+    [datastores, selPnid]
   );
   const selectedCatalog = availableCatalogs.find((c) => String(c.id) === String(catalogId));
-  const providerNodeId = selectedCatalog?.providerNodeId ?? '';
 
   const selectedTier = (allowed.tiers || []).find((t) => String(t.id) === String(tierId));
   const tierDiskFloor = selectedTier?.diskGb ?? 0;
@@ -93,6 +119,10 @@ export default function VmRequest() {
   }, [vmPrefix, vmCount]);
 
   const count = parseInt(vmCount, 10) || 1;
+
+  // Per-step completeness — drives both the button state and the "fill all fields" warning.
+  const step1Valid = !!(environmentId && providerId);
+  const step2Valid = !!(nodeId && catalogId && vmPrefix && vmCount && tierId && networkId && datastoreId);
   const totalCpu = (selectedTier?.cpu || 0) * count;
   const totalRam = (selectedTier ? selectedTier.ramMb / 1024 : 0) * count;
   const totalDisk = (selectedTier?.diskGb || 0) * count;
@@ -111,7 +141,7 @@ export default function VmRequest() {
 
   const handleNext = (nextStep) => {
     if (nextStep === 2 && (!environmentId || !providerId)) return;
-    if (nextStep === 3 && (!catalogId || !vmPrefix || !vmCount || !tierId || !networkId || !datastoreId)) return;
+    if (nextStep === 3 && (!nodeId || !catalogId || !vmPrefix || !vmCount || !tierId || !networkId || !datastoreId)) return;
     setStep(nextStep);
   };
 
@@ -119,11 +149,11 @@ export default function VmRequest() {
     setSubmitting(true);
     try {
       const effectiveBootDisk = bootDiskGb === '' ? null : Math.max(parseInt(bootDiskGb, 10) || 0, tierDiskFloor);
-      await api.post('/provision-requests', {
+      const payload = {
         vmName: vmPrefix,
         environmentId: Number(environmentId),
         providerId: Number(providerId),
-        providerNodeId: providerNodeId ? Number(providerNodeId) : null,
+        nodeId: Number(nodeId),
         catalogId: Number(catalogId),
         tierId: Number(tierId),
         networkId: Number(networkId),
@@ -133,9 +163,18 @@ export default function VmRequest() {
         bootDiskGb: effectiveBootDisk,
         requestedExpiry: null,
         description,
-      });
-      pushToast({ kind: 'success', message: 'Provision request submitted. Pending approval.' });
-      navigate('/catalog');
+      };
+      const resubmitId = location.state?.requestId;
+      if (resubmitId) {
+        // Revert → edit → resubmit: update the SAME request (no duplicate).
+        await api.put(`/provision-requests/${resubmitId}`, payload);
+        pushToast({ kind: 'success', message: 'Request resubmitted.' });
+        navigate('/approvals');
+      } else {
+        await api.post('/provision-requests', payload);
+        pushToast({ kind: 'success', message: 'Provision request submitted.' });
+        navigate('/catalog');
+      }
     } catch (e) {
       pushToast({ kind: 'error', message: e.message || 'Submission failed.' });
       setShowConfirmModal(false);
@@ -217,31 +256,38 @@ export default function VmRequest() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Provider</label>
                 <select
                   disabled={!environmentId || loadingAllowed}
                   className={`${selectCls} disabled:opacity-50 disabled:cursor-not-allowed`}
                   value={providerId}
-                  onChange={(e) => { setProviderId(e.target.value); setCatalogId(''); }}
+                  onChange={(e) => { setProviderId(e.target.value); setNodeId(''); setCatalogId(''); setNetworkId(''); setDatastoreId(''); }}
                 >
                   <option value="" disabled>{loadingAllowed ? 'Loading…' : 'Select Provider...'}</option>
                   {(allowed.providers || []).map((p) => (
                     <option key={p.id} value={p.id}>{p.providerName}</option>
                   ))}
                 </select>
+                <p className="text-[11px] text-gray-400 mt-1.5">Choose the environment and provider here — you'll pick the deployment node in the next step.</p>
               </div>
             </div>
 
-            <div className="flex justify-end mt-6 pt-4 border-t border-gray-100 dark:border-theme">
-              <button
-                disabled={!environmentId || !providerId}
-                onClick={() => handleNext(2)}
-                className="bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white px-6 py-2.5 text-[13px] font-medium rounded-lg shadow-md shadow-teal-500/20 transition-[transform,opacity,box-shadow] disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg disabled:hover:shadow-none disabled:hover:-translate-y-0 hover:-translate-y-0.5"
-              >
-                Next Step →
-              </button>
+            <div className="mt-6 pt-4 border-t border-gray-100 dark:border-theme">
+              {warn && !step1Valid && (
+                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 text-[12px] font-medium text-rose-600 dark:text-rose-400">
+                  <AlertCircle size={14} /> Please fill all required fields first.
+                </div>
+              )}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => { if (!step1Valid) { setWarn(true); return; } setWarn(false); handleNext(2); }}
+                  className={`bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white px-6 py-2.5 text-[13px] font-medium rounded-lg shadow-md shadow-teal-500/20 transition-[transform,opacity,box-shadow] hover:shadow-lg hover:-translate-y-0.5 ${step1Valid ? '' : 'opacity-50 cursor-not-allowed hover:translate-y-0 hover:shadow-md'}`}
+                >
+                  Next Step →
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -266,10 +312,23 @@ export default function VmRequest() {
                   <div className={`${inputCls} text-gray-800`}>{(allowed.providers || []).find((p) => String(p.id) === String(providerId))?.providerName || '—'}</div>
                 </div>
                 <div>
-                  <div className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Node</div>
-                  <div className={`${inputCls} text-gray-800`}>{selectedCatalog?.nodeName || 'From catalog'}</div>
+                  <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Node <span className="text-rose-500">*</span></label>
+                  <select
+                    disabled={!providerId}
+                    className={`${selectCls} disabled:opacity-50 disabled:cursor-not-allowed`}
+                    value={nodeId}
+                    onChange={(e) => { setNodeId(e.target.value); setCatalogId(''); setNetworkId(''); setDatastoreId(''); }}
+                  >
+                    <option value="" disabled>{providerNodes.length === 0 ? 'No nodes allowed here' : 'Select Node...'}</option>
+                    {providerNodes.map((n) => (
+                      <option key={n.id} value={n.id}>{n.name}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
+              {!nodeId && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">Select a node to load its catalogs, networks and datastores below.</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -289,7 +348,13 @@ export default function VmRequest() {
                   type="number"
                   className={inputCls}
                   value={vmCount}
-                  onChange={(e) => setVmCount(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)))}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '') { setVmCount(''); return; }       // allow clearing to retype freely
+                    const n = parseInt(v, 10);
+                    if (!Number.isNaN(n)) setVmCount(Math.min(20, Math.max(0, n)));
+                  }}
+                  placeholder="e.g. 1"
                   min="1" max="20"
                 />
               </div>
@@ -312,7 +377,7 @@ export default function VmRequest() {
               <div>
                 <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Catalog</label>
                 <select className={selectCls} value={catalogId} onChange={(e) => setCatalogId(e.target.value)}>
-                  <option value="" disabled>Select Catalog...</option>
+                  <option value="" disabled>{!nodeId ? 'Select a node first' : 'Select Catalog...'}</option>
                   {availableCatalogs.map((c) => (
                     <option key={c.id} value={c.id}>{c.catalogName}</option>
                   ))}
@@ -333,18 +398,18 @@ export default function VmRequest() {
               <div>
                 <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Network</label>
                 <select className={selectCls} value={networkId} onChange={(e) => setNetworkId(e.target.value)}>
-                  <option value="" disabled>Select Network...</option>
-                  {(allowed.networks || []).map((n) => (
-                    <option key={n.id} value={n.id}>{n.networkName}</option>
+                  <option value="" disabled>{!nodeId ? 'Select a node first' : 'Select Network...'}</option>
+                  {availableNetworks.map((n) => (
+                    <option key={n.id} value={n.id}>{n.name}</option>
                   ))}
                 </select>
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Datastore</label>
                 <select className={selectCls} value={datastoreId} onChange={(e) => setDatastoreId(e.target.value)}>
-                  <option value="" disabled>Select Datastore...</option>
-                  {(allowed.datastores || []).map((d) => (
-                    <option key={d.id} value={d.id}>{d.datastoreName}</option>
+                  <option value="" disabled>{!nodeId ? 'Select a node first' : 'Select Datastore...'}</option>
+                  {availableDatastores.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
               </div>
@@ -397,15 +462,21 @@ export default function VmRequest() {
               </div>
             </div>
 
-            <div className="flex justify-between mt-6 pt-4 border-t border-gray-100 dark:border-theme">
-              <button onClick={() => handleNext(1)} className="bg-white dark:bg-card text-gray-700 dark:text-gray-200 px-5 py-2.5 text-[13px] font-medium rounded-lg border border-gray-200 dark:border-theme hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm">← Back</button>
-              <button
-                onClick={() => handleNext(3)}
-                disabled={!catalogId || !vmPrefix || !vmCount || !tierId || !networkId || !datastoreId}
-                className="bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white px-6 py-2.5 text-[13px] font-medium rounded-lg shadow-md shadow-teal-500/20 transition-[transform,opacity,box-shadow] disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg disabled:hover:shadow-none hover:-translate-y-0.5 disabled:hover:-translate-y-0"
-              >
-                Review Request →
-              </button>
+            <div className="mt-6 pt-4 border-t border-gray-100 dark:border-theme">
+              {warn && !step2Valid && (
+                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 text-[12px] font-medium text-rose-600 dark:text-rose-400">
+                  <AlertCircle size={14} /> Please fill all required fields first.
+                </div>
+              )}
+              <div className="flex justify-between">
+                <button onClick={() => { setWarn(false); handleNext(1); }} className="bg-white dark:bg-card text-gray-700 dark:text-gray-200 px-5 py-2.5 text-[13px] font-medium rounded-lg border border-gray-200 dark:border-theme hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm">← Back</button>
+                <button
+                  onClick={() => { if (!step2Valid) { setWarn(true); return; } setWarn(false); handleNext(3); }}
+                  className={`bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white px-6 py-2.5 text-[13px] font-medium rounded-lg shadow-md shadow-teal-500/20 transition-[transform,opacity,box-shadow] hover:shadow-lg hover:-translate-y-0.5 ${step2Valid ? '' : 'opacity-50 cursor-not-allowed hover:translate-y-0 hover:shadow-md'}`}
+                >
+                  Review Request →
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -419,11 +490,11 @@ export default function VmRequest() {
                 {[
                   ['Environment', selectedEnv?.environmentName],
                   ['Provider', (allowed.providers || []).find((p) => String(p.id) === String(providerId))?.providerName],
-                  ['Node', selectedCatalog?.nodeName || '—'],
+                  ['Node', selectedNode?.name || '—'],
                   ['Catalog', selectedCatalog?.catalogName],
                   ['Compute Tier', selectedTier?.tierName],
-                  ['Network', (allowed.networks || []).find((n) => String(n.id) === String(networkId))?.networkName],
-                  ['Datastore', (allowed.datastores || []).find((d) => String(d.id) === String(datastoreId))?.datastoreName],
+                  ['Network', availableNetworks.find((n) => String(n.id) === String(networkId))?.name],
+                  ['Datastore', availableDatastores.find((d) => String(d.id) === String(datastoreId))?.name],
                   ['VM Name Prefix', vmPrefix],
                   ['Instances', vmCount],
                   ['Boot Disk', bootDiskGb ? `${Math.max(parseInt(bootDiskGb, 10) || 0, tierDiskFloor)} GB` : `Template default${tierDiskFloor ? ` (${tierDiskFloor} GB)` : ''}`],

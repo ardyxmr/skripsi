@@ -1,15 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { Grid, Plus, Server, CheckSquare, Settings as SettingsIcon, LogOut, Moon, Sun, User as UserIcon, Menu } from 'lucide-react';
 
-import Login from './pages/Login';
-import Catalog from './pages/Catalog';
-import Inventory from './pages/Inventory';
-import VmRequest from './pages/VmRequest';
-import Settings from './pages/Settings';
-import Approvals from './pages/Approvals';
-import NotFound from './pages/NotFound';
+import Login from './pages/Login'; // eager — the unauthenticated entry point stays instant
+
+// Authenticated pages are code-split: each loads its own chunk on first visit, so the initial
+// bundle (and login → first paint) is far smaller. The <Suspense> around the Outlet shows a loader.
+const Catalog = lazy(() => import('./pages/Catalog'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const VmRequest = lazy(() => import('./pages/VmRequest'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Approvals = lazy(() => import('./pages/Approvals'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 import NotificationCenter from './components/NotificationCenter';
+import DataBootstrap from './components/DataBootstrap';
 import Toast from './components/Toast';
 import RequireAuth from './components/RequireAuth';
 import RequireRole from './components/RequireRole';
@@ -19,13 +23,24 @@ import { ProviderProvider } from './contexts/ProviderContext';
 import { CatalogProvider } from './contexts/CatalogContext';
 import { NetworkProvider } from './contexts/NetworkContext';
 import { DatastoreProvider } from './contexts/DatastoreContext';
+import { NodeProvider } from './contexts/NodeContext';
 import { TierProvider } from './contexts/TierContext';
 import { EnvironmentProvider } from './contexts/EnvironmentContext';
 
 import { useUI } from './stores/uiStore';
-import { ROLES, canApprove, canManageSettings } from './lib/rbac';
+import { ROLES, canManageSettings } from './lib/rbac';
 import api from './lib/api';
 import { clearToken } from './lib/auth';
+import { prefetchLiveData, clearLiveCache } from './lib/liveCache';
+
+// Shown while a lazy route chunk loads (sidebar/topbar stay; only the content area swaps).
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center py-24 text-gray-400 dark:text-gray-500">
+      <div className="w-6 h-6 border-2 border-gray-300 dark:border-slate-600 border-t-teal-500 rounded-full animate-spin" />
+    </div>
+  );
+}
 
 function initialsOf(user) {
   if (!user?.name) return '?';
@@ -42,15 +57,15 @@ function Sidebar({ user }) {
   const toggleSidebar = useUI((s) => s.toggleSidebar);
   const location = useLocation();
 
+  // Same "Approval Requests" menu for everyone — the page scopes its rows by role
+  // (Managers/Admins see all + can act; a user sees only their own requests).
   const links = [
     { name: 'Catalog', icon: <Grid size={15} />, path: '/catalog' },
     { name: 'Provision VM', icon: <Plus size={15} />, path: '/request-vm' },
+    { name: 'Approval Requests', icon: <CheckSquare size={15} />, path: '/approvals' },
     { name: 'Inventory', icon: <Server size={15} />, path: '/inventory' },
   ];
 
-  if (canApprove(user)) {
-    links.splice(3, 0, { name: 'Approval Requests', icon: <CheckSquare size={15} />, path: '/approvals' });
-  }
   if (canManageSettings(user)) {
     links.push({ name: 'Settings', icon: <SettingsIcon size={15} />, path: '/settings' });
   }
@@ -199,6 +214,12 @@ function ProtectedLayout() {
   const isDarkMode = useUI((s) => s.darkMode);
   const navigate = useNavigate();
 
+  // Warm the live-data cache once on entering the authed area so Inventory /
+  // Approvals open instantly (their own fetch + polling keep the data fresh).
+  useEffect(() => {
+    prefetchLiveData();
+  }, []);
+
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -216,6 +237,7 @@ function ProtectedLayout() {
       /* ignore network errors on logout */
     }
     clearToken();
+    clearLiveCache();
     setCurrentUser(null);
     navigate('/login', { replace: true });
   };
@@ -226,7 +248,9 @@ function ProtectedLayout() {
       <div className="flex-1 flex flex-col min-w-0 bg-transparent transition-all duration-[250ms]">
         <Topbar user={currentUser} onLogout={handleLogout} />
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
-          <Outlet />
+          <Suspense fallback={<PageFallback />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>
@@ -241,8 +265,10 @@ export default function App() {
           <CatalogProvider>
             <NetworkProvider>
               <DatastoreProvider>
+                <NodeProvider>
                 <TierProvider>
                   <EnvironmentProvider>
+                    <DataBootstrap />
                     <Toast />
                     <Routes>
                       <Route path="/login" element={<Login />} />
@@ -252,9 +278,7 @@ export default function App() {
                           <Route path="/catalog" element={<Catalog />} />
                           <Route path="/request-vm" element={<VmRequest />} />
                           <Route path="/inventory" element={<Inventory />} />
-                          <Route element={<RequireRole roles={[ROLES.MANAGER, ROLES.ADMIN]} />}>
-                            <Route path="/approvals" element={<Approvals />} />
-                          </Route>
+                          <Route path="/approvals" element={<Approvals />} />
                           <Route element={<RequireRole roles={[ROLES.ADMIN]} />}>
                             <Route path="/settings" element={<Settings />} />
                           </Route>
@@ -264,6 +288,7 @@ export default function App() {
                     </Routes>
                   </EnvironmentProvider>
                 </TierProvider>
+                </NodeProvider>
               </DatastoreProvider>
             </NetworkProvider>
           </CatalogProvider>

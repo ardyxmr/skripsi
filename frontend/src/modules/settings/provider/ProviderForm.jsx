@@ -194,16 +194,13 @@ export default function ProviderForm({ isOpen, mode, data, onSubmit, onClose, on
                     <label className={`text-[12px] font-medium ${autoDiscoveryEnabled ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'}`}>Discovery Interval</label>
                     <select
                       name="discoveryInterval"
-                      defaultValue={data?.discoveryInterval || '30m'}
+                      defaultValue={data?.discoveryInterval || '2m'}
                       disabled={!autoDiscoveryEnabled}
                       className={`w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors cursor-pointer ${autoDiscoveryEnabled ? 'bg-white dark:bg-page text-slate-900 dark:text-slate-100' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 cursor-not-allowed'}`}
                     >
-                      <option value="15m">15 Minutes</option>
-                      <option value="30m">30 Minutes</option>
-                      <option value="1h">1 Hour</option>
-                      <option value="6h">6 Hours</option>
-                      <option value="12h">12 Hours</option>
-                      <option value="24h">24 Hours</option>
+                      <option value="30s">30 Seconds</option>
+                      <option value="1m">1 Minute</option>
+                      <option value="2m">2 Minutes</option>
                     </select>
                   </div>
                 </div>

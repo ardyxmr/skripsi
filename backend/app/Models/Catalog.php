@@ -36,6 +36,14 @@ class Catalog extends Model
         if ($this->providerTemplate && $this->providerTemplate->discovered_status === 'Missing') {
             return 'Template Missing';
         }
+        // Health follows the bound node (etc.txt / ADR-17): a node going down
+        // takes its catalogs/networks/datastores offline even if the cluster/provider stays Connected.
+        if ($this->providerNode && $this->providerNode->discovered_status === 'Missing') {
+            return 'Missing';
+        }
+        if ($this->providerNode && $this->providerNode->status === 'offline') {
+            return 'Node Offline';
+        }
         if ($this->provider && $this->provider->status !== 'Connected') {
             return 'Provider Offline';
         }

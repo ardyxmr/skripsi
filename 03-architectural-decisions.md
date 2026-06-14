@@ -53,7 +53,7 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 
 **Context.** Users must not see `ubuntu2204-template`, `vmbr0`, or `local-lvm`.
 
-**Decision.** Users only ever see published names ("Ubuntu 22.04 LTS", "Development Network", "Standard Storage"). The user-facing Catalog page reads only from `catalogs`, never from `provider_templates`. One catalog item maps to exactly one template.
+**Decision.** Users only ever see published names ("Ubuntu 22.04 LTS", "Development Network", "Standard Storage", "Jakarta Zone A"). The user-facing Catalog page reads only from `catalogs`, never from `provider_templates`. One catalog item maps to exactly one template. (Node joined the published abstractions in ADR-17.)
 
 **Consequences.** Raw identifiers are resolved only inside the backend at provisioning time. Renaming a published resource never affects the underlying provider.
 
@@ -63,7 +63,7 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 
 **Context.** Terraform needs concrete provider values; persisting them on the request would freeze stale data and leak provider details.
 
-**Decision.** `provision_requests` and `inventory` store only published/business IDs (`environment_id`, `provider_id`, `provider_node_id`, `catalog_id`, `tier_id`, `network_id`, `datastore_id`). Immediately before `terraform init`, the backend resolves these to `target_node`, `template`, `network`, `storage`, `cpu`, `memory`, `disk_size`. Terraform **never** receives an `*_id`.
+**Decision.** `provision_requests` and `inventory` store only published/business IDs (`environment_id`, `provider_id`, `node_id` (published, per ADR-17), `catalog_id`, `tier_id`, `network_id`, `datastore_id`). Immediately before `terraform init`, the backend resolves these to `target_node` (via `node_id → provider_node_id → provider_nodes.node_name`), `template`, `network`, `storage`, `cpu`, `memory`, `disk_size`. Terraform **never** receives an `*_id`.
 
 **Consequences.** A single resolution service is the only place IDs become provider values. Tier is resolved to CPU/RAM/disk here, so editing a tier never changes already-provisioned VMs.
 
@@ -89,13 +89,13 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 
 ---
 
-## ADR-08 — Per-request isolated Terraform workspace; state on disk
+## ADR-08 — Per-VM isolated Terraform workspace; state on disk
 
-**Context.** Shared state risks cross-deployment corruption and makes destroy/retry/audit hard.
+**Context.** Shared state risks cross-deployment corruption and makes destroy/retry/audit hard. A batch request (`instance_count = N`) compounds this: a single `count=N`/`for_each` workspace shares one state across N VMs, so a per-VM resize re-plans all N, retry-one is messy, and `count` re-indexing can destroy the wrong sibling.
 
-**Decision.** Each provision request owns a workspace `storage/app/provisioning/{username}/date_pr{DDMMYYYY_His}/` containing `provider.tf`, `main.tf`, `variables.tf`, `terraform.tfvars`, `terraform.tfstate(.backup)`, `deployment.json`, and logs. **State is never stored in the database.** Workspaces are never auto-deleted, including on failure or destroy.
+**Decision.** The **VM** is the Terraform unit (not the request): each VM owns a workspace `storage/app/provisioning/{username}/date_pr{DDMMYYYY_His}/{vm_name}/` containing `provider.tf`, `main.tf` (single VM, fully variable-driven), `variables.tf`, `terraform.tfvars`, `terraform.tfstate(.backup)`, `deployment.json`, and logs. A request with `instance_count = N` **fans out to N workspaces / N queued `ProvisionVmJob`s (parallel on the queue) / N inventory rows**; the **request** remains the single governance unit (one approval, one audit). **State is never stored in the database.** Workspaces are never auto-deleted, including on failure or destroy.
 
-**Consequences.** Inventory stores `workspace_path` + `terraform_state_path` so the lifecycle engine can retry/destroy without searching. `deployment.json` is local metadata only — the database remains source of truth.
+**Consequences.** Each inventory row stores its own `workspace_path` + `terraform_state_path`, so resize/add-disk/delete/retry operate on **that VM's** workspace — a resize re-renders only that VM's `terraform.tfvars` and applies in place, never touching siblings; `main.tf` never changes. `deployment.json` is local metadata only — the database remains source of truth. Tradeoff: N workspaces/applies per batch (vs one) — mitigated by running the per-VM jobs in parallel; the isolation is the standard pattern for VM self-service portals.
 
 ---
 
@@ -117,6 +117,8 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 
 **Consequences.** Inventory shows actual IPs with fast, provider-independent reads; no service outside discovery talks to the provider. Discovery reads `/cluster/resources` (cheap, frequent — power + utilization snapshot) and `/config` (lazy — allocation), and writes a portal-owned lifecycle status plus a provider-synced `observed_power_state`. User inventory shows allocation + dual status; live utilization (CPU%/RAM, node/datastore capacity) is Admin-only. Because `provider_vms` is the provider's truth, the system can detect **drift** (inventory rows whose `provider_vms` entry is `Missing`, or provider VMs with no inventory row). Adding a provider later means implementing one `discoverVms()` — the sync and inventory stay unchanged.
 
+**Amendments (post-Stage-7, see ADR-19).** Two facts are runtime-scoped: (a) **vCPU** is parsed as the *online* count — Proxmox's `vcpus` field when set (the hotplug-headroom model builds a VM `cores=MAX, vcpus=tier.cpu`), falling back to `sockets × cores` only when uncapped — so inventory reflects the tier allocation, not the max topology; (b) **IP is flushed when the VM is not running** (`VmFactSyncService` clears it on stop; the last-known IP is kept only for a *running* VM with a momentary guest-agent miss). The "Provider Sync" path is no longer a per-VM live call from Inventory — Inventory mirrors `provider_vms` from the DB (global `POST /inventory/sync-all`), and live provider reads happen only in Provider Management + the scheduled discovery engine (ADR-19).
+
 ---
 
 ## ADR-11 — Edit Resources: CPU/RAM auto-applied, data disks added via a separate gated flow
@@ -128,6 +130,8 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 - **Add data disk** → `ADD_DISK` request, shown only when `environments.allow_data_disk` is on → on approval, Terraform attaches a **raw** disk, then an admin formats/mounts it in-guest (status Pending Disk Setup → Ready). Existing disks are never shrunk or modified.
 
 **Consequences.** Both reuse the generic approval engine (ADR-06) and existing workspace (ADR-08); no destructive disk operations are possible from the portal. The manual disk step is a deliberate scope choice — automating it (guest-agent exec / Ansible) is future work, and a creation-time data-disk field is a future extension behind the same flag (the disk model is a list, so enabling it needs no migration).
+
+**Superseded for bundling by ADR-20.** CPU/RAM and data-disk adds are still governed exactly as above, but the *modal now submits a single bundled request* (`EDIT_RESOURCES`) applied in one Terraform run, instead of separate `RESIZE` + `ADD_DISK` requests/jobs.
 
 ---
 
@@ -181,6 +185,65 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 
 ---
 
+## ADR-17 — Node is a published abstraction, like Catalog/Network/Datastore
+
+**Context.** ADR-04 hides raw provider identifiers, but the provision wizard exposed `provider_nodes.node_name` directly, and requests stored the raw `provider_node_id`. This is the one place the published-layer contract was broken.
+
+**Decision.** Add a published `nodes` table mirroring published `networks`/`datastores`. Users select a published node by friendly name; `provision_requests` and `inventory` store the published `node_id`; `ResourceResolutionService` resolves `node_id → provider_node_id → target_node` immediately before Terraform. Raw node names are admin-only (discovery/explorer + Node Preview).
+
+**Consequences.** Node now obeys ADR-04 (no raw identifiers to users) and ADR-05 (IDs only, late resolution). Renaming a published node never touches the provider. Adding a provider type is still one `discoverNodes()` — unchanged. The published-layer count goes from three to four; no new engine or workflow concepts are introduced.
+
+---
+
+## ADR-18 — Terraform provider version is pinned per workspace; upgrades are gated, never in-place
+
+**Context.** The Terraform provider (currently `Telmate/proxmox @ 3.0.2-rc04`) and the Proxmox version it targets will both move over the life of the system. The provisioning stub also relies on Telmate's **legacy indexable `disk` list** block (chosen for the gated data-disk flow, ADR-16) — a block that is *deprecated* and could be removed in a future provider release. A naïve "bump the version everywhere" would risk breaking the schema under already-deployed VMs.
+
+**Decision.** Provider upgrades are treated as a **gated, opt-in, forward-only configuration change** (building on ADR-08/09):
+
+1. **Existing VMs are frozen.** Each workspace owns its `provider.tf` (exact version, no ranges) plus its downloaded provider binary and `.terraform.lock.hcl`. `TerraformRunner` runs plain `terraform init` — **never `init -upgrade`** — so a version change in the DB only affects *new* provisions. Day-2 ops on an old VM keep using that VM's pinned provider.
+2. **Pin to exact versions; prefer stable over RC.** The rendered `version = "x.y.z"` is always exact. Move off the release candidate to a stable `3.0.x` when one is published.
+3. **Gate every bump.** Before changing `providers.terraform_provider_version`, run `backend/scripts/check-provider-compat.sh <version>` — it validates the master stub against the candidate provider in a throwaway workspace (catches schema breaks such as the `disk` list being removed) — then smoke-test one real VM (provision + add-disk + resize + destroy) on a throwaway environment.
+4. **Stub variants coexist.** Because provider coupling is contained to `main.tf`/`variables.tf` + the generated `provider.tf`, a stub needing a different schema gets a *new* variant selected by `config('provisioning.stub_variant')` in `WorkspaceService`; existing workspaces already copied their stub, so variants run side by side. **Realized:** a `structured` stub (non-deprecated Telmate `disks` block, order-stable, no indexed disk-ignore) and the original `legacy` stub (deprecated indexable `disk` list) now coexist, with `structured` the default for new provisions; `scripts/check-provider-compat.sh <ver> [source] [variant]` validates either. The structured stub also fixes the data-disk count at a **physical slot ceiling** (`config('provisioning.max_data_disk_slots')`), under which each environment sets a softer policy cap `max_data_disks` (two-tier capping, ADR-16); the cap is enforced at env-save, at the add-disk request, and re-checked serially in `AddDiskJob`.
+5. **Forced migrations are per-VM.** If a Proxmox/API change ever forces existing VMs onto a new provider, migrate **one workspace at a time** (snapshot → `terraform plan`, never auto-apply → reconcile with `moved {}`/`state mv`/`import`). ADR-08 isolation means a bad migration risks a single VM, not the fleet.
+
+**Consequences.** The blast radius of any provider change is small and localized: new provisions can be validated and rolled forward without disturbing running VMs, and the deprecated `disk` block is an accepted, controlled dependency rather than a latent fleet-wide hazard. The trade-off is that multiple provider versions may be live at once (different VMs on different providers) — acceptable, and exactly what the per-workspace design already supports. The structured `disks` stub is now the default (off the deprecated block); migrating *existing* legacy-stub VMs, or switching to the `bpg/proxmox` provider, remains documented future work, not a prerequisite.
+
+---
+
+## ADR-19 — Auto-discovery is scheduled per-provider, ON by default; stale resources pruned after a grace window
+
+**Context.** Provider Management is the source of truth for the whole system — every other menu reads its DB snapshot (ADR-01/10). If a provider's snapshot is only refreshed on a manual "Discover" click, leaving it stale silently corrupts every downstream menu with drifted data. Separately, the "flag Missing, never delete" rule (discovery never deletes) means destroyed VMs/templates linger forever with stale facts.
+
+**Decision.**
+1. **Scheduled, per-provider, on by default.** A single `discovery:refresh` command is scheduled at the finest cadence (every 30s) and **self-throttles per provider**: it re-discovers a provider only when `now ≥ last_discovery_at + discovery_interval`, then mirrors that provider's facts into inventory (`VmFactSyncService::syncProvider`). `auto_discovery_enabled` defaults **true** and `discovery_interval ∈ {30s, 1m, 2m}` (default `2m`) — both for new providers and back-migrated for existing ones. Manual-only providers (`auto_discovery_enabled=false`) are skipped and refreshed on demand.
+2. **Stale cleanup with a grace window.** A scheduled `discovery:prune` (hourly) deletes discovered rows that have been `Missing` longer than `provisioning.discovery_stale_hours` (default 24h). `provider_vms` are always safe to delete; `provider_templates/networks/datastores/nodes` still referenced by a **published** row are kept (deleting them would silently null the published binding — an admin unpublishes first).
+3. **One collection point.** Live Proxmox reads happen only in the discovery layer, driven from **Provider Management** (test-connection / discover / node-sync) and the scheduled engine — plus `ProvisionVmJob` registering a just-created VM. Every other menu, Inventory included, reads `provider_*`/published tables from the DB.
+
+**Consequences.** The source-of-truth snapshot stays fresh automatically without manual clicks, and dead resources self-clean within the grace window while published references stay intact. The UI surfaces the schedule (`next_discovery_at = last_discovery_at + interval`) instead of "Manual Only". Discovery cost scales with provider count × cadence, bounded by `withoutOverlapping`. This reinforces ADR-01/10 (no business-layer provider calls) and is the realization of the previously-deferred auto-discovery scheduler.
+
+---
+
+## ADR-20 — "Edit Resources" is one bundled request applied in a single Terraform run
+
+**Context.** CPU/RAM resize and data-disk add are both hotplug, no-reboot operations on the same live VM, but were modeled as two separate requests (`RESIZE` + `ADD_DISK`) — two approvals for the manager, and the second only appeared after the first was approved. Worse, the two jobs each ran their own `terraform apply` in the same workspace, and `ResizeVmJob` never persisted cores/memory to `deployment.json`, so a following add-disk job could `readResolved` stale CPU/RAM and *revert* the resize.
+
+**Decision.** Bundle them into one approval-gated request type **`EDIT_RESOURCES`** with a single flexible payload `{cpu?, ram_mb?, disks: [{size_gb, setup_description}]}` (no migration — `approval_requests.payload` is already JSON). One endpoint (`POST /inventory/{id}/edit-resources`) creates one approval; on apply, one **`EditResourcesVmJob`** reads the workspace once, applies CPU/RAM **and** appends data disks, persists **both** `tfvars` and `deployment.json`, and runs a **single** `terraform apply`. Data-disk caps (ADR-16) are still enforced (env-save, request pre-check, and the authoritative serialized job re-check). Legacy `RESIZE`/`ADD_DISK` handlers remain for in-flight/old rows.
+
+**Consequences.** One manager approval and one hotplug apply for a combined edit; the resize/add-disk persistence race is eliminated (one read + one write + one apply). The payload encodes the scope, so the Approvals UI derives the Type sub-label (`[Extend CPU/RAM, Add Disk]`) and color-coded Resources breakdown directly from it. The manual data-disk setup step (ADR-11/16) is unchanged.
+
+---
+
+## ADR-21 — A VM's lifetime is capped to its environment's expiry window
+
+**Context.** Renewal originally did `current_expiry + extension`, so a VM in a 30-day environment could be extended to 60+ days — drifting past the governance window the environment defines, and creating ambiguity about the real maximum lifetime.
+
+**Decision.** Expiry is **capped at `now + env-policy-window`**. A renewal tops the VM's expiry back *up toward* that cap (`min(current + extension, now + window)`), recomputed from `now` each time so headroom naturally reopens as the clock ticks down. When a VM is already at the cap there is no headroom: the renew request is rejected (422, "request Permanent instead") and the UI offers only "Make Permanent". The cap is authoritative in `LifecycleService` (covers both the approval path and admin-immediate), with the renew modal mirroring it (shows window / remaining / extendable headroom, limits the extension dropdown).
+
+**Consequences.** A VM can never silently outlive its environment's window; "more time than the policy allows" requires the explicit Permanent decision (its own approval). Headroom is dynamic (a VM at the cap becomes extendable again only after time passes).
+
+---
+
 ## Decision summary table
 
 | ID | Decision | Primary invariant it protects |
@@ -201,3 +264,8 @@ Both secrets are stored **encrypted**. Proxmox auth header form: `Authorization:
 | 14 | Ansible hardening after apply | Config decoupled from infra lifecycle |
 | 15 | cloud-init identity/disk bootstrap | Hostname/disk without SSH or Ansible |
 | 16 | Data disks: boot at create, data gated | Common case easy; rare case auditable |
+| 17 | Node is a published abstraction | Users never see raw node names |
+| 18 | Pinned provider, gated upgrades | Provider bumps never break running VMs |
+| 19 | Scheduled per-provider auto-discovery + 24h prune | Source-of-truth snapshot never goes stale; one provider-read point |
+| 20 | Bundled "Edit Resources" → one apply | One approval + one hotplug apply; no resize/disk race |
+| 21 | Lifetime capped to env window | VM never outlives its environment's policy |

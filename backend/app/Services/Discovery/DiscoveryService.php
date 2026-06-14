@@ -38,6 +38,9 @@ class DiscoveryService
                         'cpu_count' => $n['maxcpu'] ?? null,
                         'total_memory' => $n['maxmem'] ?? null,
                         'total_storage' => $n['maxdisk'] ?? null,
+                        // Point-in-time utilization snapshot (§2.2) — same math as provider_vms.
+                        'cpu_utilization' => isset($n['cpu']) ? round(((float) $n['cpu']) * 100, 4) : null,
+                        'ram_usage_mb' => isset($n['mem']) ? intdiv((int) $n['mem'], 1048576) : null,
                         'discovered_status' => 'Active',
                         'last_sync_at' => $runAt,
                     ],
@@ -158,9 +161,94 @@ class DiscoveryService
         }
 
         $counts = $this->activeCounts($provider);
-        $this->audit->log(auth()->user(), 'SYNC_PROVIDER', "Discovered {$provider->provider_name}: ".json_encode($counts));
+        // Audit only human-initiated discovery (Provider Management "Discover"); the scheduled
+        // discovery:refresh runs with no auth user — auditing every tick would flood the log (ADR-12).
+        if (auth()->user()) {
+            $this->audit->log(auth()->user(), 'SYNC_PROVIDER', "Discovered {$provider->provider_name}: ".json_encode($counts));
+        }
 
         return $counts;
+    }
+
+    /**
+     * Scoped re-sync of a single discovered node — refreshes its status + utilization
+     * snapshot from /cluster/resources?type=node (published-node "Sync now" action).
+     * Returns the fresh ProviderNode, or null if the provider no longer reports it.
+     */
+    public function syncNode(ProviderNode $node): ?ProviderNode
+    {
+        $driver = ProviderFactory::make($node->provider);
+        $runAt = now();
+
+        foreach ($driver->getClusterResources('node') as $n) {
+            if (($n['node'] ?? null) !== $node->node_name) {
+                continue;
+            }
+            $node->update([
+                'status' => $n['status'] ?? null,
+                'cpu_count' => $n['maxcpu'] ?? $node->cpu_count,
+                'total_memory' => $n['maxmem'] ?? $node->total_memory,
+                'total_storage' => $n['maxdisk'] ?? $node->total_storage,
+                'cpu_utilization' => isset($n['cpu']) ? round(((float) $n['cpu']) * 100, 4) : null,
+                'ram_usage_mb' => isset($n['mem']) ? intdiv((int) $n['mem'], 1048576) : null,
+                'discovered_status' => 'Active',
+                'last_sync_at' => $runAt,
+            ]);
+
+            return $node->fresh();
+        }
+
+        return null;
+    }
+
+    /**
+     * Scoped single-VM discovery (Stage 6 post-provision): upsert one provider_vms row
+     * for the just-created VM so VmFactSyncService can mirror its IP/power into inventory.
+     */
+    public function syncVm(Provider $provider, string $node, string $vmid): ?ProviderVm
+    {
+        $driver = ProviderFactory::make($provider);
+        $runAt = now();
+        $nodeId = ProviderNode::where('provider_id', $provider->id)->where('node_name', $node)->value('id');
+
+        $match = null;
+        foreach ($driver->getClusterResources('vm') as $vm) {
+            if ((string) ($vm['vmid'] ?? '') === (string) $vmid) {
+                $match = $vm;
+                break;
+            }
+        }
+        if (! $match) {
+            return null;
+        }
+
+        $alloc = ['vcpu' => null, 'ram_mb' => null, 'disk_allocated_gb' => null, 'disks' => []];
+        try {
+            $alloc = ConfigParser::parse($driver->getVmConfig($node, $vmid));
+        } catch (\Throwable) {
+            // leave allocation null
+        }
+        $ip = ($match['status'] ?? '') === 'running'
+            ? $this->firstIpv4($driver->getVmInterfaces($node, $vmid))
+            : null;
+
+        return ProviderVm::updateOrCreate(
+            ['provider_id' => $provider->id, 'external_vmid' => (string) $vmid],
+            [
+                'provider_node_id' => $nodeId,
+                'vm_name' => $match['name'] ?? null,
+                'power_state' => $match['status'] ?? null,
+                'ip_address' => $ip,
+                'vcpu' => $alloc['vcpu'],
+                'ram_mb' => $alloc['ram_mb'],
+                'disk_allocated_gb' => $alloc['disk_allocated_gb'],
+                'disks_json' => $alloc['disks'],
+                'cpu_utilization' => isset($match['cpu']) ? round(((float) $match['cpu']) * 100, 4) : null,
+                'ram_usage_mb' => isset($match['mem']) ? intdiv((int) $match['mem'], 1048576) : null,
+                'discovered_status' => 'Active',
+                'last_sync_at' => $runAt,
+            ],
+        );
     }
 
     public function activeCounts(Provider $provider): array

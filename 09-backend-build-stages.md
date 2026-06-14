@@ -56,8 +56,9 @@ client-side) — contract in `07-api-contract.md`, schema in `06-database-schema
 - **Exit:** request → pending approval → approve/reject/revert with reasons; reverted edit+resubmit.
 
 ## Stage 6 — Provisioning & Terraform (Module 07) → execution
-- `ProvisionVmJob` (queued): workspace → resolve IDs → render `provider.tf`/`tfvars` → copy stubs (`storage/app/master-provisioning/terraform/`) → init/validate/plan/apply.
-- On success: inventory row (Active) + capture `external_vmid` → scoped discovery → `VmFactSyncService` (IP/power). On fail: Failed + retained workspace.
+- Migration: `inventory` (+`inventory_disks`) is created **here** (rows written on provision); lifecycle **actions** on those rows are Stage 7.
+- `ProvisionVmJob` (queued, **one per VM** — ADR-08; `instance_count = N` fans out to N jobs running in **parallel** on the queue): per-VM workspace → resolve IDs → render `provider.tf`/`tfvars` → copy stubs (`storage/app/master-provisioning/terraform/`) → init/validate/plan/apply.
+- On success: inventory row (Active) + capture `external_vmid` → scoped discovery (`DiscoveryService::syncVm`) → `VmFactSyncService` (IP/power). On fail: Failed + retained workspace (retry is a Stage-7 action).
 - **Exit:** approved request → running VM with discovered IP; failures retryable.
 
 ## Stage 7 — Inventory & lifecycle → unlocks **Inventory actions**
@@ -71,6 +72,36 @@ client-side) — contract in `07-api-contract.md`, schema in `06-database-schema
 - `/audit-logs` + CSV export (RBAC-scoped); verify audit on every mutation; credential-leak security pass.
 - Reconcile any remaining frontend gaps (provider/template/node by ID; remove leftover optimistic paths); full smoke test (`08-deployment-workflow.md`).
 - **Exit:** end-to-end flow green; zero credential exposure; go-live checklist passed.
+
+---
+
+## Post-Stage-7 refinements (DONE — live-verified vs real Proxmox)
+Stages 0–7 are complete. The following were added/changed after Stage 7 and are all live-verified. Stage 8
+(Ansible hardening) remains the main not-started stage.
+
+**Lifecycle & approvals**
+- **Expiry engine** (`LifecycleEngineService` + scheduled `vms:lifecycle`): Active → Expired → grace → auto-destroy;
+  provisioning stamps `expiry_date` from the env policy; per-environment grace (`grace_period_type/value`); live countdown in Inventory.
+- **Expiry capped to the environment window (ADR-21):** renewal tops a VM's expiry back up toward `now + env window`,
+  never stacks past it; at the cap only "Make Permanent" is offered.
+- **Unified "Edit Resources" (ADR-20):** ONE approval + ONE Terraform apply bundles CPU/RAM resize **and** data-disk
+  adds — new `EDIT_RESOURCES` type + `EditResourcesVmJob`; replaces the old split RESIZE + ADD_DISK two-request flow.
+- **add-disk flow** (gated RAW data disks, admin completes) + two-tier data-disk caps (physical slot ceiling > env `max_data_disks`).
+- **Admin/Manager bypass approval** (`User::isPrivileged()`); **Revert restricted to PROVISION** (live-asset changes are Approve/Reject only).
+- **Approvals UI:** role-scoped (all roles see own; actions manager-only); Type column shows `Edit Resources [scope]`;
+  Resources column color-codes net-new vs existing; instance-count badge; sortable dates.
+- **Inventory UI:** "Waiting approval (…)" badge beside Active; live expiry/grace countdown; realtime auto-refresh + instant-open cache.
+
+**Discovery & provider (source of truth)**
+- **Auto-discovery scheduled per-provider, ON by default (ADR-19):** `discovery:refresh` (30s tick, self-throttled to each
+  provider's `discovery_interval` ∈ 30s/1m/2m) re-discovers + mirrors facts into inventory; `discovery:prune` (hourly) deletes
+  resources Missing > 24h (published-referenced ones kept). New providers default auto-on @ 2m.
+- **Single API collection point:** only Provider Management + the discovery engine call Proxmox; Inventory & all other menus read
+  the DB. Global Inventory sync = `POST /inventory/sync-all` (DB mirror); the per-VM "Provider Sync" was removed.
+- **Discovery accuracy:** one consolidated VM status (Running/Stopped/Missing); `provider_vms` node resolved (Node column);
+  vCPU reports the ONLINE `vcpus`, not the hotplug topology ceiling; a stopped VM flushes its IP.
+- **Provisioning hardening:** live CPU+RAM hotplug (vcpus-max + numa + balloon=0); `automatic_reboot=false` (no reboot storm);
+  serial-console fix; structured-disks stub is the default (ADR-18 §4); provider-upgrade compat gate.
 
 ---
 

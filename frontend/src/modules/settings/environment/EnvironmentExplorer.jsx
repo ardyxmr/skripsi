@@ -1,16 +1,14 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  X, Box, Database, Network, Grid, Clock, Shield, Server, FileText, Share2, ShieldCheck
+import {
+  X, Box, Clock, Shield, Server, Cloud, Share2, ShieldCheck
 } from 'lucide-react';
-import { useCatalogContext } from '../../../contexts/CatalogContext';
-import { useNetworkContext } from '../../../contexts/NetworkContext';
-import { useDatastoreContext } from '../../../contexts/DatastoreContext';
+import { useProviderContext } from '../../../contexts/ProviderContext';
+import { useNodeContext } from '../../../contexts/NodeContext';
 
 export default function EnvironmentExplorer({ envDrawer, setEnvDrawer }) {
-  const { catalogs } = useCatalogContext();
-  const { networks } = useNetworkContext();
-  const { datastores } = useDatastoreContext();
+  const { providers } = useProviderContext();
+  const { nodes } = useNodeContext();
 
   const env = envDrawer.environment || {};
 
@@ -24,10 +22,12 @@ export default function EnvironmentExplorer({ envDrawer, setEnvDrawer }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [envDrawer.isOpen, setEnvDrawer]);
 
-  // Calculate Associated Resources
-  const assignedCatalogs = catalogs.filter(c => Array.isArray(c.environment) ? c.environment.includes(env.name) : c.environment === env.name);
-  const assignedNetworks = networks.filter(n => Array.isArray(n.environment) ? n.environment.includes(env.name) : n.environment === env.name);
-  const assignedDatastores = datastores.filter(d => Array.isArray(d.environment) ? d.environment.includes(env.name) : d.environment === env.name);
+  // Associated Provider + Node, derived from the environment's allow-lists (etc.txt items 5 & 6).
+  const assignedProviders = providers.filter(p => (env.allowedProviderIds || []).includes(p.id));
+  const assignedNodes = nodes.filter(n => (env.allowedNodeIds || []).includes(n.id));
+  // Counts follow live status: a disconnected provider / offline node drops out of the active tally.
+  const activeProviders = assignedProviders.filter(p => p.status === 'Connected').length;
+  const activeNodes = assignedNodes.filter(n => n.operational === 'Online' && n.status === 'Active').length;
 
   const formatExpiry = (type, value) => {
     if (type === 'lifetime') return 'Lifetime';
@@ -80,7 +80,14 @@ export default function EnvironmentExplorer({ envDrawer, setEnvDrawer }) {
                 <span className="text-xl font-bold text-slate-800 dark:text-slate-200">{formatExpiry(env.expiryType, env.expiryValue)}</span>
                 {env.expiryType === 'lifetime' && <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">No Expiration</span>}
               </div>
-              <p className="text-[12px] text-slate-500 mt-2">Maximum duration allowed for VMs provisioned under this environment.</p>
+              {env.expiryType !== 'lifetime' && (
+                <div className="mt-2 flex items-center gap-2 text-[12px] text-slate-600 dark:text-slate-400">
+                  <span className="font-medium">Grace period:</span>
+                  <span className="px-2 py-0.5 rounded font-medium bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">{formatExpiry(env.gracePeriodType ?? 'days', env.gracePeriodValue ?? 7)}</span>
+                  <span className="text-slate-400">before auto-destroy</span>
+                </div>
+              )}
+              <p className="text-[12px] text-slate-500 mt-2">Maximum duration allowed for VMs provisioned under this environment, then a grace window before the VM is automatically destroyed.</p>
             </div>
             
             <div className="bg-white dark:bg-card border border-slate-200 dark:border-theme rounded-card p-5 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-both delay-200">
@@ -122,74 +129,53 @@ export default function EnvironmentExplorer({ envDrawer, setEnvDrawer }) {
                   </div>
                 </div>
 
-                {/* Catalogs Node */}
+                {/* Associated Providers (etc.txt item 5) */}
                 <div className="relative z-10 flex items-start gap-4 mb-8 animate-in fade-in slide-in-from-left-4 duration-500 fill-mode-both delay-[500ms]">
-                  <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900/40 border-4 border-white dark:border-[#17243E] flex items-center justify-center shrink-0 shadow-sm text-purple-600 dark:text-purple-400">
-                    <Grid size={20} />
-                  </div>
-                  <div className="flex-1 bg-slate-50 dark:bg-surface border border-slate-200 dark:border-theme rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Associated Catalogs</div>
-                      <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400">{assignedCatalogs.length} Active</span>
-                    </div>
-                    {assignedCatalogs.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {assignedCatalogs.map(cat => (
-                          <span key={cat.id} className="px-2.5 py-1 text-[12px] font-medium rounded-md border bg-white dark:bg-card text-slate-700 dark:text-slate-300 border-slate-200 dark:border-theme">
-                            {cat.name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[12px] text-slate-500 italic">No catalogs assigned to this environment.</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Networks Node */}
-                <div className="relative z-10 flex items-start gap-4 mb-8 animate-in fade-in slide-in-from-left-4 duration-500 fill-mode-both delay-[600ms]">
                   <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/40 border-4 border-white dark:border-[#17243E] flex items-center justify-center shrink-0 shadow-sm text-blue-600 dark:text-blue-400">
-                    <Network size={20} />
+                    <Cloud size={20} />
                   </div>
                   <div className="flex-1 bg-slate-50 dark:bg-surface border border-slate-200 dark:border-theme rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Associated Networks</div>
-                      <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">{assignedNetworks.length} Active</span>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Associated Providers</div>
+                      <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">{activeProviders} Active</span>
                     </div>
-                    {assignedNetworks.length > 0 ? (
+                    {assignedProviders.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
-                        {assignedNetworks.map(net => (
-                          <span key={net.id} className="px-2.5 py-1 text-[12px] font-medium rounded-md border bg-white dark:bg-card text-slate-700 dark:text-slate-300 border-slate-200 dark:border-theme">
-                            {net.name}
+                        {assignedProviders.map(p => (
+                          <span key={p.id} className={`px-2.5 py-1 text-[12px] font-medium rounded-md border ${p.status === 'Connected' ? 'bg-white dark:bg-card text-slate-700 dark:text-slate-300 border-slate-200 dark:border-theme' : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'}`}>
+                            {p.providerName ?? p.name}{p.status !== 'Connected' ? ' · offline' : ''}
                           </span>
                         ))}
                       </div>
                     ) : (
-                      <span className="text-[12px] text-slate-500 italic">No networks assigned to this environment.</span>
+                      <span className="text-[12px] text-slate-500 italic">No providers allowed in this environment.</span>
                     )}
                   </div>
                 </div>
 
-                {/* Datastores Node */}
-                <div className="relative z-10 flex items-start gap-4 animate-in fade-in slide-in-from-left-4 duration-500 fill-mode-both delay-[700ms]">
-                  <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/40 border-4 border-white dark:border-[#17243E] flex items-center justify-center shrink-0 shadow-sm text-amber-600 dark:text-amber-400">
-                    <Database size={20} />
+                {/* Associated Nodes (etc.txt items 5 & 6) — count follows online/active status */}
+                <div className="relative z-10 flex items-start gap-4 animate-in fade-in slide-in-from-left-4 duration-500 fill-mode-both delay-[600ms]">
+                  <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/40 border-4 border-white dark:border-[#17243E] flex items-center justify-center shrink-0 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    <Server size={20} />
                   </div>
                   <div className="flex-1 bg-slate-50 dark:bg-surface border border-slate-200 dark:border-theme rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Associated Datastores</div>
-                      <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">{assignedDatastores.length} Active</span>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Associated Nodes</div>
+                      <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">{activeNodes} Online</span>
                     </div>
-                    {assignedDatastores.length > 0 ? (
+                    {assignedNodes.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
-                        {assignedDatastores.map(ds => (
-                          <span key={ds.id} className="px-2.5 py-1 text-[12px] font-medium rounded-md border bg-white dark:bg-card text-slate-700 dark:text-slate-300 border-slate-200 dark:border-theme">
-                            {ds.name}
-                          </span>
-                        ))}
+                        {assignedNodes.map(n => {
+                          const ok = n.operational === 'Online' && n.status === 'Active';
+                          return (
+                            <span key={n.id} className={`px-2.5 py-1 text-[12px] font-medium rounded-md border ${ok ? 'bg-white dark:bg-card text-slate-700 dark:text-slate-300 border-slate-200 dark:border-theme' : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'}`}>
+                              {n.name}{n.rawNode ? ` · ${n.rawNode}` : ''}{!ok ? ` · ${n.operational === 'Online' ? n.status : n.operational}` : ''}
+                            </span>
+                          );
+                        })}
                       </div>
                     ) : (
-                      <span className="text-[12px] text-slate-500 italic">No datastores assigned to this environment.</span>
+                      <span className="text-[12px] text-slate-500 italic">No nodes allowed in this environment.</span>
                     )}
                   </div>
                 </div>

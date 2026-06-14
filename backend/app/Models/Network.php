@@ -29,6 +29,13 @@ class Network extends Model
         if ($this->providerNetwork && $this->providerNetwork->discovered_status === 'Missing') {
             return 'Missing';
         }
+        // Health follows the bound node (etc.txt): node down -> resource offline even if provider Connected.
+        if ($this->providerNode && $this->providerNode->discovered_status === 'Missing') {
+            return 'Missing';
+        }
+        if ($this->providerNode && $this->providerNode->status === 'offline') {
+            return 'Node Offline';
+        }
         if ($this->provider && $this->provider->status !== 'Connected') {
             return 'Provider Offline';
         }

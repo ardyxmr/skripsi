@@ -8,13 +8,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([
     'environment_name', 'description', 'expiry_type', 'expiry_value',
-    'approval_required', 'allow_data_disk', 'status', 'display_order', 'created_by',
+    'grace_period_type', 'grace_period_value',
+    'approval_required', 'allow_data_disk', 'max_data_disks', 'status', 'display_order', 'created_by',
 ])]
 class Environment extends Model
 {
     protected $casts = [
         'approval_required' => 'boolean',
         'allow_data_disk' => 'boolean',
+        'max_data_disks' => 'integer',
     ];
 
     public function providers(): BelongsToMany
@@ -25,6 +27,11 @@ class Environment extends Model
     public function tiers(): BelongsToMany
     {
         return $this->belongsToMany(Tier::class, 'environment_tier_rules');
+    }
+
+    public function nodes(): BelongsToMany
+    {
+        return $this->belongsToMany(Node::class, 'environment_node_rules');
     }
 
     public function networks(): BelongsToMany

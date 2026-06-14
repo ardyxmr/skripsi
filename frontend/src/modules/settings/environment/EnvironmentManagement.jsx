@@ -6,6 +6,7 @@ import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
 import { useCatalogContext } from '../../../contexts/CatalogContext';
 import { useNetworkContext } from '../../../contexts/NetworkContext';
 import { useDatastoreContext } from '../../../contexts/DatastoreContext';
+import { useNodeContext } from '../../../contexts/NodeContext';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useTierContext } from '../../../contexts/TierContext';
 import ResizableTh from '../../../components/ResizableTh';
@@ -19,6 +20,7 @@ export default function EnvironmentManagement() {
   const { catalogs } = useCatalogContext();
   const { networks } = useNetworkContext();
   const { datastores } = useDatastoreContext();
+  const { nodes } = useNodeContext();
   const { providers } = useProviderContext();
   const { tiers } = useTierContext();
   
@@ -135,13 +137,18 @@ export default function EnvironmentManagement() {
       description: envData.description,
       expiryType: envData.expiryType,
       expiryValue: envData.expiryType === 'lifetime' ? null : envData.expiryValue,
+      gracePeriodType: envData.gracePeriodType ?? 'days',
+      gracePeriodValue: envData.gracePeriodValue ?? 7,
       approvalRequired: envData.approvalRequired,
       allowDataDisk: envData.allowDataDisk,
+      maxDataDisks: envData.allowDataDisk ? (envData.maxDataDisks ?? 6) : 0,
       status: envData.status,
+      // Allow-list is now Providers + Nodes + Tiers (etc.txt item 3). Networks/datastores
+      // follow the selected nodes, so they're no longer sent; their dormant rule tables are
+      // left untouched (syncRules only syncs keys present in the request).
       allowedProviderIds: envData.allowedProviderIds ?? [],
       allowedTierIds: envData.allowedTierIds ?? [],
-      allowedNetworkIds: envData.allowedNetworkIds ?? [],
-      allowedDatastoreIds: envData.allowedDatastoreIds ?? [],
+      allowedNodeIds: envData.allowedNodeIds ?? [],
     };
     try {
       if (formMode === 'create') {
@@ -432,7 +439,7 @@ export default function EnvironmentManagement() {
         initialData={editingEnv}
         title={formMode === 'create' ? "Create Environment" : "Edit Environment"}
         onChange={() => setHasUnsavedChanges(true)}
-        lists={{ providers, tiers, networks, datastores }}
+        lists={{ providers, tiers, nodes, networks, datastores }}
       />
 
       {/* Unified Action Modal */}

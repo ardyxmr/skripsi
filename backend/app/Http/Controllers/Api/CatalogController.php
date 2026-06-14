@@ -9,6 +9,7 @@ use App\Services\AuditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class CatalogController extends Controller
@@ -59,21 +60,56 @@ class CatalogController extends Controller
         return response()->json(null, 204);
     }
 
-    // Multipart image upload: png/jpg/jpeg/webp, exactly 512x512, ≤2 MB (§3.2).
+    // Multipart image upload: png/jpg/jpeg/webp, ANY size up to 8 MB. The server normalizes every
+    // upload to a 512×512 PNG (fit-and-center, transparent padding — preserves the whole image, no
+    // distortion or cropping), so the catalog display is always consistent regardless of source size.
     public function uploadImage(Request $request, Catalog $catalog): JsonResponse
     {
         $request->validate([
-            'image' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048', 'dimensions:width=512,height=512'],
+            'image' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:8192'],
         ]);
+
+        $png = $this->normalizeToSquarePng($request->file('image'), 512);
 
         if ($catalog->catalog_image) {
             Storage::disk('public')->delete($catalog->catalog_image);
         }
-        $path = $request->file('image')->store('catalog-images', 'public');
+        $path = 'catalog-images/'.Str::random(40).'.png';
+        Storage::disk('public')->put($path, $png);
         $catalog->update(['catalog_image' => $path]);
         $this->audit->log($request->user(), 'UPDATE_CATALOG', "Uploaded image for {$catalog->catalog_name}", $request);
 
         return response()->json(['catalog_image' => $this->imageUrl($path)]);
+    }
+
+    // Resize any uploaded image into a {size}×{size} PNG: scale to FIT (the whole image stays
+    // visible), center it, and pad the remainder transparently. Uses GD; never upscales beyond fit.
+    private function normalizeToSquarePng($file, int $size): string
+    {
+        $src = @imagecreatefromstring($file->get());
+        if ($src === false) {
+            abort(422, 'Unsupported or corrupt image file.');
+        }
+        $w = imagesx($src);
+        $h = imagesy($src);
+        $scale = min($size / $w, $size / $h);           // FIT (contain) — no cropping
+        $nw = max(1, (int) round($w * $scale));
+        $nh = max(1, (int) round($h * $scale));
+
+        $dst = imagecreatetruecolor($size, $size);
+        imagealphablending($dst, false);
+        imagesavealpha($dst, true);
+        imagefilledrectangle($dst, 0, 0, $size, $size, imagecolorallocatealpha($dst, 0, 0, 0, 127));
+        imagecopyresampled($dst, $src, (int) (($size - $nw) / 2), (int) (($size - $nh) / 2), 0, 0, $nw, $nh, $w, $h);
+
+        ob_start();
+        imagepng($dst);
+        $bin = ob_get_clean();
+
+        imagedestroy($src);
+        imagedestroy($dst);
+
+        return $bin;
     }
 
     private function transform(Catalog $c): array

@@ -31,6 +31,12 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class);
     }
 
+    /** Administrators and Managers provision/act without approval (their actions go straight through). */
+    public function isPrivileged(): bool
+    {
+        return in_array($this->role?->role_name, ['Administrator', 'Manager'], true);
+    }
+
     public function group(): BelongsTo
     {
         return $this->belongsTo(Group::class);

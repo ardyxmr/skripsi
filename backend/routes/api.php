@@ -5,8 +5,12 @@ use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\DatastoreController;
 use App\Http\Controllers\Api\EnvironmentController;
 use App\Http\Controllers\Api\GroupController;
+use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\NetworkController;
+use App\Http\Controllers\Api\NodeController;
+use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\ProviderController;
+use App\Http\Controllers\Api\ProvisionRequestController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TierController;
 use App\Http\Controllers\Api\UserController;
@@ -24,12 +28,41 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Published resources — user-facing reads (any authenticated role).
     Route::get('catalogs', [CatalogController::class, 'index']);
+    Route::get('nodes', [NodeController::class, 'index']);
     Route::get('networks', [NetworkController::class, 'index']);
     Route::get('datastores', [DatastoreController::class, 'index']);
     Route::get('tiers', [TierController::class, 'index']);
     Route::get('tiers/stats', [TierController::class, 'stats']);
     Route::get('environments', [EnvironmentController::class, 'index']);
     Route::get('environments/{environment}/allowed-resources', [EnvironmentController::class, 'allowedResources']);
+
+    // Provision requests — any authenticated user may submit (Stage 5 / Module 12).
+    Route::post('provision-requests', [ProvisionRequestController::class, 'store']);
+    Route::put('provision-requests/{provisionRequest}', [ProvisionRequestController::class, 'update']); // resubmit a reverted request
+
+    // Requests list — any authenticated user (controller scopes: privileged see all, users see own).
+    Route::get('approvals', [ApprovalController::class, 'index']);
+
+    // Inventory & lifecycle (Stage 7) — RBAC-scoped reads; mutations route through LifecycleService.
+    Route::get('inventory', [InventoryController::class, 'index']);
+    Route::post('inventory/sync-all', [InventoryController::class, 'syncAll']); // global DB mirror — defined before {inventory} routes
+    Route::get('inventory/{inventory}', [InventoryController::class, 'show']);
+    Route::post('inventory/{inventory}/retry', [InventoryController::class, 'retry']);
+    Route::post('inventory/{inventory}/renew', [InventoryController::class, 'renew']);
+    Route::post('inventory/{inventory}/permanent', [InventoryController::class, 'permanent']);
+    Route::post('inventory/{inventory}/resize', [InventoryController::class, 'resize']);
+    Route::post('inventory/{inventory}/edit-resources', [InventoryController::class, 'editResources']); // unified CPU/RAM + add-disk bundle
+    Route::post('inventory/{inventory}/delete', [InventoryController::class, 'destroyVm']);
+    Route::post('inventory/{inventory}/add-disk', [InventoryController::class, 'addDisk']);                       // gated by environment.allow_data_disk
+    Route::post('inventory/{inventory}/disks/{disk}/complete', [InventoryController::class, 'completeDisk']);     // Administrator only — marks data disk Ready
+
+    // Approval ACTIONS (Module 09) — Manager or Administrator only. (The list above is open to all, scoped.)
+    Route::middleware('role:Manager,Administrator')->group(function () {
+        Route::get('approvals/stats', [ApprovalController::class, 'stats']);
+        Route::post('approvals/{approval}/approve', [ApprovalController::class, 'approve']);
+        Route::post('approvals/{approval}/reject', [ApprovalController::class, 'reject']);
+        Route::post('approvals/{approval}/revert', [ApprovalController::class, 'revert']);
+    });
 
     // Admin-only IAM CRUD (07-api-contract §10).
     Route::middleware('role:Administrator')->group(function () {
@@ -38,6 +71,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('catalogs/{catalog}', [CatalogController::class, 'update']);
         Route::delete('catalogs/{catalog}', [CatalogController::class, 'destroy']);
         Route::post('catalogs/{catalog}/image', [CatalogController::class, 'uploadImage']);
+
+        // Published node publishing (write) + scoped sync/explorer. Specific routes
+        // before the apiResource so /sync and /explorer aren't captured as {node}.
+        Route::post('nodes/{node}/sync', [NodeController::class, 'sync']);
+        Route::get('nodes/{node}/explorer', [NodeController::class, 'explorer']);
+        Route::post('nodes', [NodeController::class, 'store']);
+        Route::put('nodes/{node}', [NodeController::class, 'update']);
+        Route::delete('nodes/{node}', [NodeController::class, 'destroy']);
 
         // Network + Datastore publishing (write).
         Route::post('networks', [NetworkController::class, 'store']);

@@ -1,0 +1,51 @@
+Good catch — and part of that one's on me. An empty `/etc/netplan/` means **cloud-init isn't managing the network**, so it never wrote a config and Proxmox's `ip=dhcp` never got applied. Two things cause it on a hand-installed Ubuntu:
+
+1. **My bad line.** I had you write `network: {config: disabled}` into `/etc/cloud/cloud.cfg.d/99-pve.cfg` — that tells cloud-init to *stop* managing networking. That was wrong; remove it.
+2. **Ubuntu's installer (Subiquity) also disables cloud-init networking** by default after a manual install (it drops a `*installer*` file in `/etc/cloud/cloud.cfg.d/` and writes a static `/etc/netplan/00-installer-config.yaml`). So a manually-installed Ubuntu needs cloud-init networking explicitly re-enabled to work as a clone template.
+
+## Fix on the test clone, then verify
+Run inside the Ubuntu VM (console or SSH):
+```bash
+# 1. remove everything that disables cloud-init networking (installer's + my bad file)
+sudo rm -f /etc/cloud/cloud.cfg.d/*installer*.cfg \
+           /etc/cloud/cloud.cfg.d/subiquity-disable-cloudinit-networking.cfg \
+           /etc/cloud/cloud.cfg.d/99-pve.cfg
+
+# 2. remove the static installer netplan so cloud-init owns networking
+sudo rm -f /etc/netplan/00-installer-config.yaml /etc/netplan/50-cloud-init.yaml
+
+# 3. confirm it's no longer disabled
+grep -rl "config: disabled" /etc/cloud/ && echo "STILL disabled ^" || echo "cloud-init net ENABLED (good)"
+
+# 4. regenerate and reboot
+sudo cloud-init clean --logs
+sudo reboot
+```
+After it comes back:
+```bash
+ls /etc/netplan/      # → 50-cloud-init.yaml should now exist
+ip a                  # → eth0 should have a DHCP IP
+# or from the Proxmox node:  qm agent <vmid> network-get-interfaces
+```
+
+## Then re-seal the template from this fixed VM
+Since the template `9001` was sealed with the networking disabled, fix it once by promoting this corrected clone into the template:
+```bash
+# final cleanup on the fixed clone, then power off
+sudo cloud-init clean --logs
+sudo truncate -s 0 /etc/machine-id
+sudo rm -f /etc/ssh/ssh_host_*
+sudo shutdown -h now
+
+# on the Proxmox node: replace the broken template with the fixed one
+qm destroy 9001
+qm template <fixed-clone-vmid>      # this becomes the good ubuntu24-lvm template
+```
+
+That's purely the **network** layer — your LVM boot is fine now (it booted and you got a shell), so this is the last piece for the Ubuntu template.
+
+---
+
+Meanwhile the **Rocky 3-VM parallel batch is still running** in the background (I'll report vmids/IPs when it finishes). Rocky is already proven end-to-end (the single came up Active with IP `192.168.200.145`), so once you get the Ubuntu clone pulling a DHCP IP, both templates will be solid and I'll publish an Ubuntu catalog too.
+
+The Rocky parallel batch finished — let me check the result:

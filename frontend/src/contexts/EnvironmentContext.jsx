@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../lib/api';
 import { makeCrud } from '../lib/crud';
+import { getToken } from '../lib/auth';
 
 const EnvironmentContext = createContext();
 const RESOURCE = '/environments';
@@ -13,8 +14,11 @@ export function normalizeEnvironment(row = {}) {
     description: row.description ?? '',
     expiryType: row.expiryType ?? 'days',
     expiryValue: row.expiryValue ?? null,
+    gracePeriodType: row.gracePeriodType ?? 'days',
+    gracePeriodValue: row.gracePeriodValue ?? 7,
     approvalRequired: row.approvalRequired ?? false,
     allowDataDisk: row.allowDataDisk ?? false,
+    maxDataDisks: row.maxDataDisks ?? 6,
     status: row.status ?? '',
     type: row.type ?? 'Custom',
     lastUpdated: row.updatedAt ?? row.lastUpdated ?? '',
@@ -40,7 +44,7 @@ export function EnvironmentProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    refetch();
+    if (getToken()) refetch(); // wait for auth — DataBootstrap re-fetches on login
   }, [refetch]);
 
   const { create, update, remove } = makeCrud(RESOURCE, setEnvironments, refetch, normalizeEnvironment);

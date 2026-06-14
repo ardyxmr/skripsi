@@ -1,0 +1,173 @@
+<?php
+
+namespace App\Services;
+
+use App\Jobs\ProvisionVmJob;
+use App\Models\ApprovalRequest;
+use App\Models\Catalog;
+use App\Models\Datastore;
+use App\Models\Environment;
+use App\Models\Network;
+use App\Models\Node;
+use App\Models\Provider;
+use App\Models\ProvisionRequest;
+use App\Models\Tier;
+use App\Models\User;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Captures a provision request and routes it for approval (04-backend-services.md §5.1).
+ * Validates the selection against the (node-centric) environment policy, persists the
+ * IDs-only row, and — when the environment requires approval — opens a Pending
+ * approval_requests row with the auto-resolved approver. No Terraform here (Stage 6).
+ */
+class ProvisionRequestService
+{
+    public function __construct(
+        private AuditService $audit,
+        private ApproverResolutionService $approverResolution,
+    ) {}
+
+    public function create(User $requester, array $data): ProvisionRequest
+    {
+        $env = Environment::with(['providers:id', 'nodes:id', 'tiers:id'])->findOrFail($data['environment_id']);
+        $node = Node::findOrFail($data['node_id']);
+        $this->validatePolicy($env, $node, $data);
+
+        $data['requester_id'] = $requester->id;
+        $pr = ProvisionRequest::create($data);
+
+        // Admins/Managers bypass approval entirely; regular users still go through it when the env requires it.
+        if ($env->approval_required && ! $requester->isPrivileged()) {
+            ApprovalRequest::create([
+                'request_type' => 'PROVISION',
+                'reference_id' => $pr->id,
+                'requester_id' => $requester->id,
+                'approver_id' => $this->approverResolution->resolve($requester)?->id,
+                'group_id' => $requester->group_id,
+                'status' => 'Pending',
+            ]);
+        } else {
+            // No approval needed → provision immediately (Stage 6).
+            $this->dispatchProvisioning($pr);
+        }
+
+        $this->audit->log($requester, 'CREATE_PROVISION_REQUEST', "Requested {$pr->instance_count}× {$pr->vm_name} in {$env->environment_name}");
+
+        return $pr;
+    }
+
+    /**
+     * Re-submit a REVERTED provision request (revert→edit→resubmit). Updates the request
+     * in place and re-opens the SAME approval back to Pending — no duplicate request is
+     * created — so the original entry stops showing as "Reverted / needs edit".
+     */
+    public function resubmit(ProvisionRequest $pr, User $actor, array $data): ProvisionRequest
+    {
+        abort_unless($actor->id === $pr->requester_id || $actor->isPrivileged(), 403, 'You cannot edit this request.');
+
+        $env = Environment::with(['providers:id', 'nodes:id', 'tiers:id'])->findOrFail($data['environment_id']);
+        $node = Node::findOrFail($data['node_id']);
+        $this->validatePolicy($env, $node, $data);
+
+        $approval = ApprovalRequest::where('request_type', 'PROVISION')->where('reference_id', $pr->id)->latest('id')->first();
+        abort_if($approval && $approval->status !== 'Reverted', 422, 'Only reverted requests can be edited and resubmitted.');
+
+        // Update the request fields (the original requester is preserved).
+        $pr->update(collect($data)->except('requester_id')->all());
+
+        if ($env->approval_required && ! $pr->requester->isPrivileged()) {
+            // Re-open the same approval for a fresh decision (back to Pending).
+            $payload = [
+                'status' => 'Pending', 'action_type' => null, 'action_reason' => null, 'action_date' => null,
+                'approver_id' => $this->approverResolution->resolve($pr->requester)?->id,
+            ];
+            $approval
+                ? $approval->update($payload)
+                : ApprovalRequest::create(array_merge($payload, [
+                    'request_type' => 'PROVISION', 'reference_id' => $pr->id,
+                    'requester_id' => $pr->requester_id, 'group_id' => $pr->requester?->group_id,
+                ]));
+        } else {
+            // Privileged requester / no approval → provision now; close the approval.
+            $approval?->update(['status' => 'Approved', 'action_type' => 'Approve', 'action_reason' => 'Resubmitted (no approval required)', 'action_date' => now(), 'approver_id' => $actor->id]);
+            $this->dispatchProvisioning($pr);
+        }
+
+        $this->audit->log($actor, 'RESUBMIT_PROVISION_REQUEST', "Resubmitted {$pr->instance_count}× {$pr->vm_name}");
+
+        return $pr;
+    }
+
+    /**
+     * Fan a request out to one ProvisionVmJob per instance (ADR-08 per-VM, parallel on
+     * the queue). instance_count==1 keeps the exact name; a batch gets -01..-0N suffixes.
+     */
+    public function dispatchProvisioning(ProvisionRequest $pr): void
+    {
+        $n = max(1, (int) $pr->instance_count);
+
+        if ($n === 1) {
+            ProvisionVmJob::dispatch($pr->id, $pr->vm_name);
+
+            return;
+        }
+
+        for ($i = 1; $i <= $n; $i++) {
+            ProvisionVmJob::dispatch($pr->id, sprintf('%s-%02d', $pr->vm_name, $i));
+        }
+    }
+
+    /** Node-centric policy check: provider/node/tier ∈ env; catalog/network/datastore Active & on the node. */
+    private function validatePolicy(Environment $env, Node $node, array $data): void
+    {
+        $errors = [];
+
+        if ($env->status !== 'Active') {
+            $errors['environment_id'] = 'Environment is not active.';
+        }
+
+        $provider = Provider::find($data['provider_id']);
+        if (! $env->providers->contains('id', (int) $data['provider_id'])) {
+            $errors['provider_id'] = 'Provider is not allowed in this environment.';
+        } elseif (! $provider || $provider->status !== 'Connected') {
+            $errors['provider_id'] = 'Provider is not connected.';
+        }
+
+        if (! $env->nodes->contains('id', $node->id)) {
+            $errors['node_id'] = 'Node is not allowed in this environment.';
+        } elseif ($node->effectiveStatus() !== 'Active') {
+            $errors['node_id'] = 'Node is not active.';
+        } elseif ((int) $node->provider_id !== (int) $data['provider_id']) {
+            $errors['node_id'] = 'Node does not belong to the selected provider.';
+        }
+
+        $tier = Tier::find($data['tier_id']);
+        if (! $env->tiers->contains('id', (int) $data['tier_id'])) {
+            $errors['tier_id'] = 'Tier is not allowed in this environment.';
+        } elseif (! $tier || $tier->status !== 'Active') {
+            $errors['tier_id'] = 'Tier is not active.';
+        }
+
+        $pnid = $node->provider_node_id;
+        $this->checkNodeResource($errors, 'catalog_id', 'Catalog', Catalog::find($data['catalog_id']), $pnid);
+        $this->checkNodeResource($errors, 'network_id', 'Network', Network::find($data['network_id']), $pnid);
+        $this->checkNodeResource($errors, 'datastore_id', 'Datastore', Datastore::find($data['datastore_id']), $pnid);
+
+        if ($errors) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    /** A published catalog/network/datastore must be Active and live on the chosen node. */
+    private function checkNodeResource(array &$errors, string $key, string $label, $resource, ?int $providerNodeId): void
+    {
+        if (! $resource) {
+            $errors[$key] = "{$label} not found.";
+        } elseif ($resource->effectiveStatus() !== 'Active') {
+            $errors[$key] = "{$label} is not active.";
+        } elseif ((int) $resource->provider_node_id !== (int) $providerNodeId) {
+            $errors[$key] = "{$label} is not on the selected node.";
+        }
+    }
+}

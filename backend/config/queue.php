@@ -40,7 +40,10 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Must exceed the longest job runtime + worker --timeout. Provisioning jobs
+            // (terraform clone+apply) run for minutes; 90s caused parallel re-dispatch
+            // of in-flight jobs (MaxAttemptsExceededException). 30 min is safe.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 1800),
             'after_commit' => false,
         ],
 

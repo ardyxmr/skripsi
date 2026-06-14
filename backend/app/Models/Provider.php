@@ -18,6 +18,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Hidden(['discovery_token_secret', 'provision_token_secret'])]
 class Provider extends Model
 {
+    // Surface the computed schedule so the UI can show "Next Discovery" instead of "Manual Only".
+    protected $appends = ['next_discovery_at'];
+
     protected function casts(): array
     {
         return [
@@ -28,6 +31,29 @@ class Provider extends Model
             'last_discovery_at' => 'datetime',
             'last_sync_at' => 'datetime',
         ];
+    }
+
+    /** Background sync cadence in seconds for a stored interval label ('30s' | '1m' | '2m'). */
+    public static function intervalSeconds(?string $interval): int
+    {
+        return match ($interval) {
+            '30s' => 30,
+            '1m' => 60,
+            '2m' => 120,
+            // tolerate legacy labels so an un-migrated row still behaves sanely
+            '15m' => 900, '30m' => 1800, '1h' => 3600, '6h' => 21600, '12h' => 43200, '24h' => 86400,
+            default => 120,
+        };
+    }
+
+    /** When the scheduler will next auto-discover this provider — null if auto-discovery is off. */
+    public function getNextDiscoveryAtAttribute(): ?string
+    {
+        if (! $this->auto_discovery_enabled || ! $this->last_discovery_at) {
+            return null;
+        }
+
+        return $this->last_discovery_at->copy()->addSeconds(self::intervalSeconds($this->discovery_interval))->toIso8601String();
     }
 
     public function nodes(): HasMany

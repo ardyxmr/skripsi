@@ -2,18 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
 import api from '../../../lib/api';
+import { useNodeContext } from '../../../contexts/NodeContext';
 
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
-const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
-const REQUIRED_DIM = 512; // 512x512
+const MAX_BYTES = 8 * 1024 * 1024; // 8 MB — any size is accepted; the server resizes to 512×512
 
 export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmit, providers, onChange }) {
   const fileInputRef = useRef(null);
   const [preview, setPreview] = useState(null);
   const [imgError, setImgError] = useState('');
 
-  // Provider → Template cascade (templates come from the provider's discovered resources).
+  // Provider → Node → Template cascade (a catalog is bound to a published node;
+  // templates are filtered to that node's discovered resources).
+  const { nodes } = useNodeContext();
   const [providerId, setProviderId] = useState('');
+  const [nodeId, setNodeId] = useState('');
   const [templates, setTemplates] = useState([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
@@ -24,8 +27,11 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
       setImgError('');
       if (fileInputRef.current) fileInputRef.current.value = '';
       setProviderId(modal.data?.providerId ?? '');
+      // Pre-select the published node that abstracts this catalog's discovered node.
+      const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
+      setNodeId(match ? match.id : '');
     }
-  }, [modal.isOpen, modal.type, modal.data]);
+  }, [modal.isOpen, modal.type, modal.data, nodes]);
 
   // Load discovered templates for the selected provider.
   useEffect(() => {
@@ -41,7 +47,8 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
 
   const resetToExisting = () => setPreview(modal.data?.catalogImage || modal.data?.catalog_image || null);
 
-  // Validate type, size, and exact 512x512 dimensions per the catalog spec.
+  // Validate type + size only. ANY dimensions are accepted — the server normalizes the upload to a
+  // 512×512 PNG (fit-and-center), so we just preview whatever the user picked.
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
     setImgError('');
@@ -54,7 +61,7 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
       return;
     }
     if (file.size > MAX_BYTES) {
-      setImgError('Image must be 2 MB or smaller.');
+      setImgError('Image must be 8 MB or smaller.');
       e.target.value = '';
       resetToExisting();
       return;
@@ -63,14 +70,7 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      if (img.naturalWidth !== REQUIRED_DIM || img.naturalHeight !== REQUIRED_DIM) {
-        setImgError(`Image must be exactly ${REQUIRED_DIM}×${REQUIRED_DIM}px (got ${img.naturalWidth}×${img.naturalHeight}).`);
-        URL.revokeObjectURL(url);
-        e.target.value = '';
-        resetToExisting();
-      } else {
-        setPreview(url);
-      }
+      setPreview(url); // any size — server resizes on upload
     };
     img.onerror = () => {
       setImgError('Could not read that image file.');
@@ -88,6 +88,11 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
   };
 
   if (!modal.isOpen || modal.type !== 'catalog') return null;
+
+  // Published nodes for the chosen provider; the selected one filters the templates.
+  const providerNodes = nodes.filter((n) => String(n.providerId) === String(providerId));
+  const selectedNode = nodes.find((n) => String(n.id) === String(nodeId));
+  const visibleTemplates = templates.filter((t) => selectedNode == null || t.providerNodeId === selectedNode.providerNodeId);
 
   return createPortal(
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -123,7 +128,7 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
                   </div>
                   <div>
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Provider <span className="text-rose-500">*</span></label>
-                    <select name="providerId" value={providerId} onChange={(e) => setProviderId(e.target.value)} required className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer">
+                    <select name="providerId" value={providerId} onChange={(e) => { setProviderId(e.target.value); setNodeId(''); }} required className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer">
                       <option value="" disabled>Select provider</option>
                       {providers.map(p => (
                         <option key={p.id} value={p.id}>{p.providerName ?? p.name}</option>
@@ -131,10 +136,19 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
                     </select>
                   </div>
                   <div>
+                    <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Published Node <span className="text-rose-500">*</span></label>
+                    <select value={nodeId} onChange={(e) => setNodeId(e.target.value)} required disabled={!providerId} className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer disabled:opacity-50">
+                      <option value="" disabled>{!providerId ? 'Select a provider first' : providerNodes.length === 0 ? 'No published nodes — publish one first' : 'Select published node'}</option>
+                      {providerNodes.map((n) => (
+                        <option key={n.id} value={n.id}>{n.name}{n.rawNode ? ` (${n.rawNode})` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Template <span className="text-rose-500">*</span></label>
-                    <select name="providerTemplateId" defaultValue={modal.data?.providerTemplateId || ''} required disabled={!providerId || loadingTemplates} className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer disabled:opacity-50">
-                      <option value="" disabled>{!providerId ? 'Select a provider first' : loadingTemplates ? 'Loading…' : 'Select discovered template'}</option>
-                      {templates.map(t => (
+                    <select name="providerTemplateId" defaultValue={modal.data?.providerTemplateId || ''} required disabled={!nodeId || loadingTemplates} className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer disabled:opacity-50">
+                      <option value="" disabled>{!providerId ? 'Select a provider first' : !nodeId ? 'Select a node first' : loadingTemplates ? 'Loading…' : 'Select discovered template'}</option>
+                      {visibleTemplates.map(t => (
                         <option key={t.id} value={t.id}>{t.templateName} ({t.nodeName})</option>
                       ))}
                     </select>
@@ -188,7 +202,7 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
                         </button>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">PNG, JPG/JPEG or WEBP · exactly 512×512px · max 2 MB.</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">PNG, JPG/JPEG or WEBP · any size (auto-resized to 512×512) · max 8 MB.</p>
                     {imgError && <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{imgError}</p>}
                   </div>
                 </div>

@@ -1,5 +1,44 @@
-import React, { useState, useEffect } from 'react';
-import { Box, X, Save, Shield, Clock } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Shield, ChevronDown } from 'lucide-react';
+
+// Reusable multi-select dropdown: a button (summary) that opens a checkbox popover.
+// Scales cleanly to many providers/nodes without a long inline list.
+function MultiSelectDropdown({ summary, disabled, children }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <span className="truncate text-left">{summary}</span>
+        <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && !disabled && (
+        <div className="absolute z-30 mt-1 w-full max-h-[220px] overflow-y-auto custom-scrollbar border border-slate-200 dark:border-theme rounded-md bg-white dark:bg-card shadow-lg p-2 flex flex-col gap-0.5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CheckRow({ checked, onChange, children }) {
+  return (
+    <label className="flex items-center gap-2 text-[12px] text-slate-700 dark:text-slate-300 cursor-pointer px-1.5 py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-700/40">
+      <input type="checkbox" checked={checked} onChange={onChange} className="rounded border-slate-300 dark:border-theme text-blue-600 focus:ring-blue-500" />
+      <span className="truncate">{children}</span>
+    </label>
+  );
+}
 
 export default function EnvironmentForm({
   isOpen,
@@ -8,19 +47,23 @@ export default function EnvironmentForm({
   initialData = null,
   title = "Create Environment",
   onChange,
-  lists = { providers: [], tiers: [], networks: [], datastores: [] },
+  lists = { providers: [], tiers: [], nodes: [], networks: [], datastores: [] },
 }) {
   const EMPTY = {
     name: '',
     description: '',
     expiryType: 'days',
     expiryValue: 30,
+    gracePeriodType: 'days',
+    gracePeriodValue: 7,
     approvalRequired: true,
     allowDataDisk: false,
+    maxDataDisks: 6,
     status: 'Active',
     type: 'Custom',
     allowedProviderIds: [],
     allowedTierIds: [],
+    allowedNodeIds: [],
     allowedNetworkIds: [],
     allowedDatastoreIds: [],
   };
@@ -39,11 +82,36 @@ export default function EnvironmentForm({
 
   if (!isOpen) return null;
 
-  // Toggle an id within one of the four allow-list arrays.
+  // Toggle an id within one of the allow-list arrays.
   const toggleAllow = (key, id) => setFormData((f) => {
     const arr = f[key] || [];
     return { ...f, [key]: arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id] };
   });
+
+  // Toggling a provider also prunes that provider's nodes from the node allow-list
+  // (a node can't stay allowed once its provider is deselected) — etc.txt item 3.
+  const toggleProvider = (providerId) => setFormData((f) => {
+    const has = (f.allowedProviderIds || []).includes(providerId);
+    const providers = has
+      ? (f.allowedProviderIds || []).filter((x) => x !== providerId)
+      : [...(f.allowedProviderIds || []), providerId];
+    const nodeIdsOnProvider = (lists.nodes || []).filter((n) => n.providerId === providerId).map((n) => n.id);
+    const allowedNodeIds = has
+      ? (f.allowedNodeIds || []).filter((id) => !nodeIdsOnProvider.includes(id))
+      : (f.allowedNodeIds || []);
+    return { ...f, allowedProviderIds: providers, allowedNodeIds };
+  });
+
+  // Providers currently checked — their published nodes are offered in the Node dropdown.
+  const selectedProviders = (lists.providers || []).filter((p) => (formData.allowedProviderIds || []).includes(p.id));
+
+  // Button label for a multi-select: placeholder when empty, names when few, count when many.
+  const summarize = (ids, items, nameFn, placeholder) => {
+    const sel = (items || []).filter((i) => (ids || []).includes(i.id));
+    if (sel.length === 0) return placeholder;
+    if (sel.length <= 2) return sel.map(nameFn).join(', ');
+    return `${sel.length} selected`;
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -144,6 +212,34 @@ export default function EnvironmentForm({
                 </div>
 
                 <div>
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Grace Period Type</label>
+                  <select
+                    value={formData.gracePeriodType || 'days'}
+                    onChange={(e) => setFormData({ ...formData, gracePeriodType: e.target.value })}
+                    disabled={formData.expiryType === 'lifetime'}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <option value="days">Days</option>
+                    <option value="hours">Hours</option>
+                    <option value="minutes">Minutes</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Grace Period Value</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.gracePeriodValue ?? ''}
+                    onChange={(e) => setFormData({ ...formData, gracePeriodValue: parseInt(e.target.value) || 0 })}
+                    placeholder={formData.expiryType === 'lifetime' ? 'Not Applicable' : 'e.g. 7'}
+                    disabled={formData.expiryType === 'lifetime'}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50"
+                  />
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Time after expiry before the VM is auto-destroyed.</p>
+                </div>
+
+                <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Approval Policy</label>
                   <select 
                     value={formData.approvalRequired ? 'required' : 'optional'}
@@ -182,41 +278,85 @@ export default function EnvironmentForm({
                   </label>
                 </div>
 
+                <div>
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Max Data Disks / VM</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="6"
+                    value={formData.maxDataDisks ?? 6}
+                    onChange={(e) => setFormData({ ...formData, maxDataDisks: parseInt(e.target.value, 10) || 0 })}
+                    disabled={!formData.allowDataDisk}
+                    placeholder={formData.allowDataDisk ? 'e.g. 2' : 'Enable data disks first'}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-1">Policy cap, 0–6 (the infrastructure ceiling). VMs in this environment can hold at most this many data disks.</span>
+                </div>
+
               </div>
             </div>
 
-            {/* Allow-lists — only these resources appear in the provision wizard. */}
+            {/* Allowed Resources — Tiers + Providers, then per-provider published Nodes (etc.txt item 3).
+                Catalogs, networks and datastores follow the selected nodes, so they aren't listed here. */}
             <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
               <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">Allowed Resources</label>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">Only the selected resources are offered when provisioning in this environment.</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">Pick the tiers and providers allowed here, then choose which published nodes on each provider this environment may deploy to. Catalogs, networks and datastores follow the selected nodes.</p>
+
               <div className="grid grid-cols-2 gap-4">
-                {[
-                  ['Providers', 'allowedProviderIds', lists.providers, (p) => p.providerName ?? p.name],
-                  ['Tiers', 'allowedTierIds', lists.tiers, (t) => t.tierName ?? t.name],
-                  ['Networks', 'allowedNetworkIds', lists.networks, (n) => n.networkName ?? n.name],
-                  ['Datastores', 'allowedDatastoreIds', lists.datastores, (d) => d.datastoreName ?? d.name],
-                ].map(([label, key, items, labelFn]) => (
-                  <div key={key}>
-                    <div className="text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">{label}</div>
-                    <div className="flex flex-col gap-1.5 max-h-[130px] overflow-y-auto custom-scrollbar pr-1">
-                      {(items || []).length === 0 ? (
-                        <span className="text-[11px] text-slate-400 italic">None available</span>
-                      ) : (
-                        (items || []).map((it) => (
-                          <label key={it.id} className="flex items-center gap-2 text-[12px] text-slate-700 dark:text-slate-300 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={(formData[key] || []).includes(it.id)}
-                              onChange={() => toggleAllow(key, it.id)}
-                              className="rounded border-slate-300 dark:border-theme text-blue-600 focus:ring-blue-500"
-                            />
-                            {labelFn(it)}
-                          </label>
-                        ))
-                      )}
-                    </div>
+                {/* Tiers */}
+                <div>
+                  <div className="text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">Tiers</div>
+                  <MultiSelectDropdown summary={summarize(formData.allowedTierIds, lists.tiers, (t) => t.tierName ?? t.name, 'Select tiers')}>
+                    {(lists.tiers || []).length === 0 ? (
+                      <span className="text-[11px] text-slate-400 italic px-1.5 py-1">None available</span>
+                    ) : (lists.tiers || []).map((t) => (
+                      <CheckRow key={t.id} checked={(formData.allowedTierIds || []).includes(t.id)} onChange={() => toggleAllow('allowedTierIds', t.id)}>
+                        {t.tierName ?? t.name}
+                      </CheckRow>
+                    ))}
+                  </MultiSelectDropdown>
+                </div>
+                {/* Providers — auto-listed from published providers (scales to many) */}
+                <div>
+                  <div className="text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">Providers</div>
+                  <MultiSelectDropdown summary={summarize(formData.allowedProviderIds, lists.providers, (p) => p.providerName ?? p.name, 'Select providers')}>
+                    {(lists.providers || []).length === 0 ? (
+                      <span className="text-[11px] text-slate-400 italic px-1.5 py-1">None available</span>
+                    ) : (lists.providers || []).map((p) => (
+                      <CheckRow key={p.id} checked={(formData.allowedProviderIds || []).includes(p.id)} onChange={() => toggleProvider(p.id)}>
+                        {p.providerName ?? p.name}
+                      </CheckRow>
+                    ))}
+                  </MultiSelectDropdown>
+                </div>
+                {/* Nodes — grouped under the selected providers; same dropdown behavior */}
+                <div className="col-span-2">
+                  <div className="text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                    Nodes <span className="text-[11px] font-normal text-slate-400">— on the selected providers</span>
                   </div>
-                ))}
+                  <MultiSelectDropdown
+                    disabled={selectedProviders.length === 0}
+                    summary={selectedProviders.length === 0
+                      ? 'Select one or more providers first'
+                      : summarize(formData.allowedNodeIds, lists.nodes, (n) => n.nodeName ?? n.name, 'Select nodes')}
+                  >
+                    {selectedProviders.map((p) => {
+                      const provNodes = (lists.nodes || []).filter((n) => n.providerId === p.id);
+                      return (
+                        <div key={p.id}>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1.5 pt-1.5 pb-0.5">{p.providerName ?? p.name}</div>
+                          {provNodes.length === 0 ? (
+                            <span className="text-[11px] text-slate-400 italic px-1.5 py-1 block">No published nodes</span>
+                          ) : provNodes.map((n) => (
+                            <CheckRow key={n.id} checked={(formData.allowedNodeIds || []).includes(n.id)} onChange={() => toggleAllow('allowedNodeIds', n.id)}>
+                              {n.nodeName ?? n.name}{n.rawNode ? <span className="text-slate-400"> · {n.rawNode}</span> : null}
+                            </CheckRow>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </MultiSelectDropdown>
+                </div>
               </div>
             </div>
 

@@ -15,7 +15,6 @@ export default function NetworkManagement() {
   // Search & Filters
   const [networkSearch, setNetworkSearch] = useState('');
   const [networkProviderFilter, setNetworkProviderFilter] = useState('All Providers');
-  const [networkEnvironmentFilter, setNetworkEnvironmentFilter] = useState('All Environments');
   const [networkStatusFilter, setNetworkStatusFilter] = useState('All Status');
   const [networkSortConfig, setNetworkSortConfig] = useState({ key: 'name', direction: 'asc' });
   const [isRefreshingNetwork, setIsRefreshingNetwork] = useState(false);
@@ -171,10 +170,9 @@ export default function NetworkManagement() {
                             n.provider.toLowerCase().includes(networkSearch.toLowerCase());
       
       const matchesProvider = networkProviderFilter === 'All Providers' || n.provider === networkProviderFilter;
-      const matchesEnvironment = networkEnvironmentFilter === 'All Environments' || n.environment.includes(networkEnvironmentFilter);
       const matchesStatus = networkStatusFilter === 'All Status' || n.status === networkStatusFilter;
-      
-      return matchesSearch && matchesProvider && matchesEnvironment && matchesStatus;
+
+      return matchesSearch && matchesProvider && matchesStatus;
     }).sort((a, b) => {
       if (networkSortConfig.key === 'activeVMs') {
         return networkSortConfig.direction === 'asc' ? a.activeVMs - b.activeVMs : b.activeVMs - a.activeVMs;
@@ -183,7 +181,7 @@ export default function NetworkManagement() {
       if (a[networkSortConfig.key] > b[networkSortConfig.key]) return networkSortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [networks, networkSearch, networkProviderFilter, networkEnvironmentFilter, networkStatusFilter, networkSortConfig]);
+  }, [networks, networkSearch, networkProviderFilter, networkStatusFilter, networkSortConfig]);
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -270,18 +268,7 @@ export default function NetworkManagement() {
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
-            <select 
-              value={networkEnvironmentFilter}
-              onChange={e => setNetworkEnvironmentFilter(e.target.value)}
-              className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-lg px-3 py-2 outline-none cursor-pointer min-w-[140px]"
-            >
-              <option value="All Environments">All Environments</option>
-              <option value="Production">Production</option>
-              <option value="Development">Development</option>
-              <option value="Staging">Staging</option>
-              <option value="Testing">Testing</option>
-            </select>
-            <select 
+            <select
               value={networkStatusFilter}
               onChange={e => setNetworkStatusFilter(e.target.value)}
               className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-lg px-3 py-2 outline-none cursor-pointer min-w-[140px]"
@@ -319,12 +306,6 @@ export default function NetworkManagement() {
                     <ResizableTh width={160} storageKey="network_management_column_widths" columnKey="cidr">
                       CIDR
                     </ResizableTh>
-                    <ResizableTh width={140} storageKey="network_management_column_widths" columnKey="environment" onClick={() => handleNetworkSort('environment')}>
-                      Environment {networkSortConfig.key === 'environment' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                    </ResizableTh>
-                    <ResizableTh width={140} storageKey="network_management_column_widths" columnKey="tiers">
-                      Tier
-                    </ResizableTh>
                     <ResizableTh width={100} storageKey="network_management_column_widths" columnKey="status">
                       Status
                     </ResizableTh>
@@ -349,33 +330,10 @@ export default function NetworkManagement() {
                       <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-[13px] font-mono">{network.providerNetwork}</td>
                       <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-[13px] font-mono">{network.cidr || '192.168.1.0/24'}</td>
                       <td className="px-5 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {(Array.isArray(network.environment) ? network.environment : [network.environment]).map(env => (
-                            <span key={env} className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                              env === 'Production' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20' :
-                              env === 'Development' ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20' :
-                              env === 'Testing' ? 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/20' :
-                              'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                            }`}>
-                              {env}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {network.tiers?.map(tier => (
-                            <span key={tier} className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded border bg-slate-50 dark:bg-surface text-slate-600 dark:text-slate-400 border-slate-200 dark:border-theme">
-                              {tier}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
                         <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                          network.status === 'Active' 
-                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' 
-                            : network.status === 'Offline / Missing'
+                          network.status === 'Active'
+                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
+                            : (network.status === 'Offline / Missing' || network.status === 'Node Offline' || network.status === 'Missing' || network.status === 'Provider Offline')
                             ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
                             : 'bg-slate-100 dark:bg-surface text-slate-600 dark:text-slate-400 border-slate-200 dark:border-theme'
                         }`}>

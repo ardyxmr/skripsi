@@ -481,3 +481,13 @@ Break the work into small reviewable PRs in this order. Each PR should land gree
 8. **approvals:** queue, widgets, Approve / Reject / Revert with reasons.
 9. **audit:** API-backed list + CSV export.
 10. **polish:** confirm modal promotion, naming normalization, NotFound, acceptance checklist green.
+
+---
+
+## Post-Stage-7 frontend changes (delivered, live)
+
+- **Realtime + instant-open tables:** Inventory & Approvals seed from an app-startup cache (`src/lib/liveCache.js`) so they paint instantly, then silently auto-refresh every 7s (skeleton only on a true cold load). The refresh button doubles as the green pulsing "Live" indicator; the per-VM "Provider Sync" was removed in favor of one global Sync (`POST /inventory/sync-all`, DB mirror).
+- **Inventory:** "Waiting approval (Resize/Extend Expiry/…)" badge beside the Active pill; live per-second expiry/grace countdown; modal fields restyled to the wizard's `inputCls` (visible caret in both themes, clearable number inputs); renew modal enforces the env expiry cap (ADR-21) — shows window/remaining/headroom, "Permanent only" at cap.
+- **Edit Resources is one bundled request (ADR-20):** the modal submits a single `POST /inventory/{id}/edit-resources` (CPU/RAM + disks) instead of separate resize + add-disk calls.
+- **Approvals:** role-scoped (users see own, actions manager-only); **Revert** shown only for `PROVISION`; **Type** column shows `Edit Resources [Extend CPU/RAM, Add Disk]` (scope from payload); **Resources** column color-codes net-new (green) vs existing (gray); instance-count badge + sortable date columns; expanded-row layout (Request Info left, Description/History right).
+- **Provider/Discovery:** Add/Edit Provider form interval dropdown is `30s / 1m / 2m` (default 2m) with auto-discovery on; Discovery Explorer shows a real "Next Discovery" time, a populated **Node** column, and one consolidated VM **Status** (Running/Stopped/Missing); Node Explorer mirrors those columns (minus Node) with the same colored badges.

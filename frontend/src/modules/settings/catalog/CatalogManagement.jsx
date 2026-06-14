@@ -16,7 +16,6 @@ export default function CatalogManagement() {
   // Search & Filters
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogProviderFilter, setCatalogProviderFilter] = useState('All Providers');
-  const [catalogEnvironmentFilter, setCatalogEnvironmentFilter] = useState('All Environments');
   const [catalogStatusFilter, setCatalogStatusFilter] = useState('All Status');
   const [catalogSortConfig, setCatalogSortConfig] = useState({ key: 'name', direction: 'asc' });
   const [isRefreshingCatalog, setIsRefreshingCatalog] = useState(false);
@@ -190,10 +189,9 @@ export default function CatalogManagement() {
                           c.template.toLowerCase().includes(catalogSearch.toLowerCase());
     
     const matchesProvider = catalogProviderFilter === 'All Providers' || c.provider === catalogProviderFilter;
-    const matchesEnvironment = catalogEnvironmentFilter === 'All Environments' || (c.environments && c.environments.includes(catalogEnvironmentFilter));
     const matchesStatus = catalogStatusFilter === 'All Status' || c.status === catalogStatusFilter;
 
-    return matchesSearch && matchesProvider && matchesEnvironment && matchesStatus;
+    return matchesSearch && matchesProvider && matchesStatus;
   });
 
   const sortedCatalogs = [...filteredCatalogs].sort((a, b) => {
@@ -294,17 +292,7 @@ export default function CatalogManagement() {
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
-            <select 
-              value={catalogEnvironmentFilter}
-              onChange={e => setCatalogEnvironmentFilter(e.target.value)}
-              className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-lg px-3 py-2 outline-none cursor-pointer min-w-[140px]"
-            >
-              <option value="All Environments">All Environments</option>
-              <option value="Production">Production</option>
-              <option value="Development">Development</option>
-              <option value="Staging">Staging</option>
-            </select>
-            <select 
+            <select
               value={catalogStatusFilter}
               onChange={e => setCatalogStatusFilter(e.target.value)}
               className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-lg px-3 py-2 outline-none cursor-pointer min-w-[140px]"
@@ -333,14 +321,11 @@ export default function CatalogManagement() {
                     <ResizableTh width={160} storageKey="catalog_management_column_widths" columnKey="provider" onClick={() => handleCatalogSort('provider')}>
                       Provider {catalogSortConfig.key === 'provider' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                     </ResizableTh>
+                    <ResizableTh width={140} storageKey="catalog_management_column_widths" columnKey="node" onClick={() => handleCatalogSort('node')}>
+                      Node {catalogSortConfig.key === 'node' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                    </ResizableTh>
                     <ResizableTh width={180} storageKey="catalog_management_column_widths" columnKey="template" onClick={() => handleCatalogSort('template')}>
                       Source Template {catalogSortConfig.key === 'template' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                    </ResizableTh>
-                    <ResizableTh width={180} storageKey="catalog_management_column_widths" columnKey="environment">
-                      Environments
-                    </ResizableTh>
-                    <ResizableTh width={140} storageKey="catalog_management_column_widths" columnKey="tiers">
-                      Tiers
                     </ResizableTh>
                     <ResizableTh width={100} storageKey="catalog_management_column_widths" columnKey="activeVMs">
                       Usage
@@ -364,29 +349,10 @@ export default function CatalogManagement() {
                         <div className="text-slate-800 dark:text-slate-200 font-medium text-[13px]">{catalog.provider}</div>
                       </td>
                       <td className="px-5 py-3">
+                        <div className="text-slate-600 dark:text-slate-300 text-[13px]">{catalog.node || '—'}</div>
+                      </td>
+                      <td className="px-5 py-3">
                         <div className="text-slate-600 dark:text-slate-300 text-[13px]">{catalog.template}</div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {catalog.environments?.map(env => (
-                            <span key={env} className={`inline-flex px-2 py-0.5 text-[10px] font-medium rounded border ${
-                              env === 'Production' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20' :
-                              env === 'Development' ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20' :
-                              'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                            }`}>
-                              {env}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {catalog.tiers?.map(tier => (
-                            <span key={tier} className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded border bg-slate-50 dark:bg-surface text-slate-600 dark:text-slate-400 border-slate-200 dark:border-theme">
-                              {tier}
-                            </span>
-                          ))}
-                        </div>
                       </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 text-[12px]">
@@ -396,9 +362,9 @@ export default function CatalogManagement() {
                       </td>
                       <td className="px-5 py-3">
                         <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                          catalog.status === 'Active' 
-                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' 
-                            : catalog.status === 'Offline / Missing'
+                          catalog.status === 'Active'
+                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
+                            : (catalog.status === 'Offline / Missing' || catalog.status === 'Node Offline' || catalog.status === 'Missing' || catalog.status === 'Template Missing' || catalog.status === 'Provider Offline')
                             ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
                             : 'bg-slate-100 dark:bg-surface text-slate-600 dark:text-slate-400 border-slate-200 dark:border-theme'
                         }`}>

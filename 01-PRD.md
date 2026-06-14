@@ -58,7 +58,7 @@ Approver assignment is automatic via group ownership (User → Group → Group M
 - **Run Discovery Now** (manual) and **auto-discovery** on a configurable interval (15m/30m/1h/6h/12h/24h).
 - Discovery results persist in `provider_nodes`, `provider_templates`, `provider_networks`, `provider_datastores`, and `provider_vms`. Missing resources are flagged `Missing`, not deleted. Discovered VM runtime facts (observed power, IP, allocation, utilization snapshot) are synced into `inventory` by `external_vmid`, which also enables drift detection (provider VMs with no inventory row; inventory rows whose provider VM went `Missing`).
 - **How discovery reads Proxmox:** one cheap `/cluster/resources` call returns nodes, storage, and all VMs/templates (classified by the `template` flag) with power state and a utilization snapshot; `/nodes/{node}/qemu/{vmid}/config` is parsed (lazily) for allocation — vCPU (sockets × cores), RAM, and per-disk sizes across all buses (cdrom/efi/tpm/unused excluded). See backend doc for the parsing rules and the 2-tier sync cadence.
-- **Admin utilization dashboard:** live utilization (per-VM CPU %/RAM used, node capacity, datastore cluster capacity) is surfaced to Admins for capacity planning, sourced from the same `/cluster/resources` data — kept out of the user-facing inventory.
+- **Admin utilization dashboard:** live utilization (per-VM CPU %/RAM used, node capacity, datastore cluster capacity) is surfaced to Admins for capacity planning, sourced from the same `/cluster/resources` data — kept out of the user-facing inventory. The **Node Preview panel** (§3.2a) surfaces the per-node CPU%/RAM% snapshot for capacity-at-a-glance.
 - **Discovery Explorer**: read-only inspection of discovered resources (incl. VMs) and discovery health. Cannot modify, publish, or provision.
 - Statistics widgets: Providers, Connected, Discovery Success, Templates, Networks, Datastores, VMs (all from DB, never live API calls).
 
@@ -68,6 +68,11 @@ Approver assignment is automatic via group ownership (User → Group → Group M
 - Catalog image upload: PNG/JPG/JPEG/WEBP, 512×512, max 2 MB, stored under `storage/app/catalog-images/`.
 - Status: Active / Inactive / Provider Offline / Template Missing.
 - The user-facing Catalog page reads only from `catalogs` — never from `provider_templates`.
+
+### 3.2a Node Management (Published Nodes, ADR-17) — Admin
+- Publish a **node** that abstracts a discovered provider node (e.g. "Jakarta Zone A" → `pve01`). Backend resolves `node_id` → `provider_node_id` → node name at provisioning time. The wizard's node selector reads only `nodes`; raw node names never reach the user.
+- The **Node Preview panel** (at the bottom of Provider Management) lists published nodes with their synced CPU%/RAM% and operational status, a `+ Add Node` action, and per-row Edit / Sync now / Node Explorer / Delete — Admin-only, from the DB snapshot. **Node Explorer** is a read-only, node-scoped Discovery Explorer drawer.
+- Governance state uses the canonical published-layer enum **Active / Inactive / Provider Offline / Missing** (surfaced as an inline *Inactive* tag), distinct from the operational **Online / Offline / Maintenance** status. Delete is blocked (409) when referenced → admin **unpublishes** instead.
 
 ### 3.3 Network Management — Admin
 - Publish a **network** that abstracts a discovered provider network (e.g. "Development Network" → `vmbr0`).
@@ -84,13 +89,14 @@ Approver assignment is automatic via group ownership (User → Group → Group M
 - Delete blocked if used by any environment, inventory VM, or provision request.
 
 ### 3.6 Environment Management (Module 05) — Admin
-- Environment is a **policy layer**, not just a label. Each environment defines: expiry policy, approval policy (`approval_required`), the data-disk policy (`allow_data_disk`), and allow-lists for providers, tiers, networks, datastores.
+- Environment is a **policy layer**, not just a label. Each environment defines: expiry policy, approval policy (`approval_required`), the data-disk policy (`allow_data_disk`), and allow-lists for providers, tiers, nodes (ADR-17), networks, datastores.
 - Drives Step 1 of the provision wizard: only allowed resources are shown.
 - **`allow_data_disk`** (checkbox in environment create/edit, default off): gates the whole additional-data-disk capability for VMs in this environment. When off, the "Add data disk" section in Edit Resources is hidden, and the future creation-time data-disk field (§4) does not appear. When on, the Add Data Disk action is available today; the creation-time field appears once that feature is built.
 
 ### 3.7 Provision Request Management (Module 12) — User
 - Three-step wizard: **Environment → Configuration → Review**.
-- Stores **IDs only**: `environment_id`, `provider_id`, `provider_node_id`, `catalog_id`, `tier_id`, `network_id`, `datastore_id`, plus VM name, instance count, `security_hardening` flag, boot-disk size, and requested expiry.
+- Step 1: the user selects Environment → Provider → **published Node (friendly name)**, not a raw hypervisor node (ADR-17); the chosen node filters catalogs/networks/datastores.
+- Stores **IDs only**: `environment_id`, `provider_id`, `node_id` (published, ADR-17), `catalog_id`, `tier_id`, `network_id`, `datastore_id`, plus VM name, instance count, `security_hardening` flag, boot-disk size, and requested expiry.
 - **VM naming:** the VM name entered by the user becomes **both the provider VM name and the guest OS hostname**; the hostname is applied automatically by **cloud-init (Linux) / cloudbase-init (Windows)** on first boot (not by Ansible). The system appends a two-digit sequence starting at `01` (e.g. `WIN11PRD` → `WIN11PRD01`, `WIN11PRD02`, … for a multi-instance batch).
 - **Customizable boot disk:** the user may set the boot/root (`/` on Linux, `C:` on Windows) disk size at provisioning, with a floor equal to the catalog template's size. cloud-init `growpart`/`cloudbase-init` grows the filesystem to fill the disk on first boot — no manual step. The disk is modeled as a **disk list** (the boot disk is entry 0) so additional disks can be added later without a schema change (see §4 and the data-disk feature flag in §3.6).
 - **Security Hardening** is a checkbox on the configuration step; its value is persisted on the request and drives the Ansible step (§3.9a).
@@ -190,3 +196,11 @@ An optional data-disk field on the provision wizard, gated by the same `environm
 - Backend stack: **Laravel** (queues + Jobs) + **Terraform** (provisioning) + **Ansible** (post-provision hardening) + **Proxmox VE** token auth, with **PostgreSQL** as the database — consistent with the original project spec, the architecture specs, and the frontend's `apiSimulationPlugin` mock.
 - Runtime facts (IP/power/status) are read only by the discovery layer via the Proxmox guest agent, cached in `provider_vms`, and synced into `inventory` by `external_vmid`; if the agent is absent, IP remains pending and a retry discovery runs until available. No other layer calls the provider, and the UI reads inventory only.
 - **Template prerequisites:** OS templates must ship with cloud-init (Linux) / cloudbase-init (Windows) for hostname + boot-disk growth; use a **virtio-scsi** controller with **disk hotplug enabled** so data disks can be added without a reboot; Windows templates must have the **virtio drivers** installed. These are one-time, per-template setup steps.
+
+## 8. Post-Stage-7 product refinements (delivered, live-verified)
+
+- **Auto-discovery on by default (ADR-19):** since Provider Management is the source of truth, each provider auto-refreshes on a configurable interval (30s / 1m / 2m, default 2m) and the UI shows the next-discovery time; stale resources self-clean after 24h. Operators no longer click "Discover" to keep downstream menus accurate.
+- **Unified "Edit Resources" (ADR-20):** changing CPU/RAM and adding a data disk in the same edit is **one** approval and **one** zero-downtime apply (live hotplug), not two sequential requests. The approval table shows the bundle scope + a color-coded breakdown.
+- **Lifetime capped to the environment window (ADR-21):** renewal tops a VM's expiry up toward the env maximum but never beyond it; exceeding it requires the explicit "Make Permanent" decision.
+- **Provider-truth fidelity:** a stopped VM shows no IP; vCPU reflects the online count; one consolidated VM status (Running/Stopped/Missing) across all discovery views.
+- **Realtime, single-source UI:** Inventory & Approvals auto-refresh and open instantly from cache; Inventory is a pure DB reader (one global Sync mirrors the latest snapshot).

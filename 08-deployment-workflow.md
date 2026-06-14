@@ -29,7 +29,7 @@ Both are specified below.
 - Terraform CLI installed and on `PATH`.
 - The required Terraform provider downloadable (e.g. `Telmate/proxmox` at the version stored on each provider).
 - **Ansible installed and on `PATH`** (for the post-provision hardening step), with the hardening playbook present under `storage/app/master-provisioning/ansible/`.
-- **OS templates prepared for self-service:** cloud-init (Linux) / cloudbase-init (Windows) installed (hostname + boot-disk growth on first boot); **virtio-scsi** controller with **disk hotplug enabled** (so data disks attach without reboot); **virtio drivers** installed in Windows templates.
+- **OS templates prepared for self-service:** cloud-init (Linux) / cloudbase-init (Windows) installed (hostname + boot-disk growth on first boot); **virtio-scsi** controller with **disk hotplug enabled** (so data disks attach without reboot); **virtio drivers** installed in Windows templates. **→ Full step-by-step + gotchas: [`docs/template-preparation.md`](docs/template-preparation.md)** (CPU `host` for EL9, qemu-guest-agent, thin storage, lvm2-in-initramfs, cloud-init networking, verify-by-clone).
 - Network reachability + TLS trust to each Proxmox endpoint (e.g. `https://<host>:8006`).
 - Write access to `storage/app/provisioning/` and `storage/app/master-provisioning/terraform/`.
 
@@ -45,13 +45,21 @@ Both are specified below.
 4. Build and deploy the frontend; deploy the backend API.
 5. Start the queue worker and the scheduler.
 6. Admin logs in and configures the first provider (both credential pairs) → Test Connection → Run Discovery Now.
-7. Admin publishes catalog/networks/datastores, defines tiers/environments.
+7. Admin publishes nodes, catalog, networks, datastores, defines tiers/environments.
 8. Smoke test (Part B end-to-end).
 
 ### A.5 Ongoing operations
 - **Auto-discovery** runs per provider on its interval; "Run Discovery Now" forces a sync.
 - **Lifecycle engine** runs on schedule: expiry warnings → Expired → grace → auto-destroy.
 - **Backups:** database + `storage/app/provisioning/` (workspaces/state) + `storage/app/catalog-images/`. Terraform state lives only on disk, so workspace backup is essential for destroy/recovery.
+- **Worker hygiene:** the `database` queue persists jobs across sessions. **Before starting `queue:work` on a host, check `DB::table('jobs')->count()` / `php artisan queue:clear database`** — an old worker will otherwise drain stale `ProvisionVmJob`s and spin up unintended VMs.
+
+### A.6 Upgrading the Terraform provider (ADR-18)
+The provider version is configuration (per-provider, in the DB), and existing VMs are **frozen** to the version in their own workspace (`provider.tf` + `.terraform.lock.hcl`); `TerraformRunner` uses plain `terraform init` (never `-upgrade`), so a bump only affects **new** provisions. To upgrade safely:
+1. **Gate the candidate offline:** `backend/scripts/check-provider-compat.sh <version>` — validates the master stub against the new provider in a throwaway workspace (catches schema breaks, e.g. the legacy `disk` list block being removed). Must exit `PASS` before proceeding.
+2. **Smoke-test one VM:** on a throwaway environment, bump that provider's version, then provision → add-disk → resize → destroy one VM and confirm a clean re-plan.
+3. **Roll forward:** only then set the real `terraform_provider_version`. New VMs use it; running VMs are untouched.
+4. **Never** introduce `init -upgrade` into `TerraformRunner` (it would un-freeze existing workspaces). A schema change instead gets a **new stub variant selected by version** in `WorkspaceService` (ADR-18 §4). A *forced* migration of existing VMs is done **one workspace at a time** (snapshot → `plan`, never auto-apply → `moved {}`/`state mv`/`import`).
 
 ---
 
@@ -77,10 +85,11 @@ environment.approval_required ?
 ```
 
 ### B.2 Terraform execution (`ProvisionVmJob`)
+A request with `instance_count = N` **fans out to N `ProvisionVmJob`s** (one per VM, parallel on the queue); each job below provisions **one** VM into its **own** workspace/state and creates **one** inventory row (ADR-08, per-VM). Batch VM names are suffixed `-01..-0N`.
 ```
-1. Create workspace:  storage/app/provisioning/{username}/date_pr{DDMMYYYY_His}/
+1. Create workspace:  storage/app/provisioning/{username}/date_pr{DDMMYYYY_His}/{vm_name}/
 2. Resolve resources (IDs → provider values):
-      provider_node_id → target_node
+      node_id (published) → provider_node_id → target_node   # ADR-17
       catalog_id       → template
       network_id       → network (bridge)
       datastore_id     → storage
@@ -166,6 +175,7 @@ storage/app/provisioning/user01/date_pr19062026_154501/
 - [ ] First provider configured; Test Connection = Connected; discovery populated all four `provider_*` tables.
 - [ ] No credential field appears in any API response (verified against API contract §13).
 - [ ] Catalog/network/datastore published; environment + tier policies defined.
+- [ ] Published nodes created; wizard node list shows friendly names only (never raw `provider_nodes`).
 - [ ] End-to-end: request (with approval) → approve → ProvisionVmJob → Active VM + discovered IP + observed power synced.
 - [ ] Failure path: forced failure retains workspace and is retryable.
 - [ ] Resize path: CPU/RAM only, auto-applied on approval, VM-name confirmation.
@@ -173,3 +183,10 @@ storage/app/provisioning/user01/date_pr19062026_154501/
 - [ ] Delete path: terraform destroy, status Deleted, workspace retained.
 - [ ] Audit rows present for every mutating action; CSV export respects filters + visibility.
 - [ ] Queue worker + scheduler running; lifecycle/expiry engine verified.
+
+### Post-Stage-7 ops notes (live)
+- **Run set:** `php artisan serve` + `php artisan queue:work --timeout=600 --tries=1` + `php artisan schedule:work`. The worker MUST use `--timeout=600` (a ~80s Terraform apply exceeds the default 60s). Before starting a worker, check `DB::table('jobs')->count()` — stale jobs auto-drain into real VMs.
+- **Scheduler (routes/console.php):** `vms:lifecycle` (1m — expiry/grace), `discovery:refresh` (30s — per-provider auto-discovery, ADR-19), `discovery:prune` (hourly — deletes resources Missing > 24h). `schedule:work` must run for auto-discovery to fire; without it the DB snapshot goes stale.
+- **Edit Resources (ADR-20):** the unified `EDIT_RESOURCES` request runs one `EditResourcesVmJob` = one Terraform apply (CPU/RAM + disk hotplug). Restart `queue:work` after editing job/service/config code (the worker caches at startup).
+- [ ] Auto-discovery: a provider with `auto_discovery_enabled` shows a real "Next Discovery" time and refreshes on its interval; stale Missing rows prune after 24h.
+- [ ] Edit Resources bundle: CPU/RAM + add-disk in one modal → one approval → one apply (live hotplug, no reboot).

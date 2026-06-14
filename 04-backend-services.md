@@ -16,6 +16,7 @@ Discovery Layer
 
 Published / Service Layer
   CatalogService
+  NodePublishService          (ADR-17 — CRUD for published nodes)
   NetworkPublishService
   DatastorePublishService
   ResourceResolutionService   (also used by Orchestration)
@@ -71,7 +72,7 @@ Uses the **discovery credential** for all of the above. Endpoints (from `config/
 | Operation | Method + path | Notes |
 |---|---|---|
 | testConnection | `GET /api2/json/version` | Connected/Disconnected |
-| discoverNodes | `GET /api2/json/cluster/resources?type=node` | node capacity (cpu/mem/storage) → `provider_nodes` + Admin capacity view |
+| discoverNodes | `GET /api2/json/cluster/resources?type=node` | node capacity (cpu/mem/storage) **and the per-node utilization snapshot** (`cpu`→`cpu_utilization`, `mem`→`ram_usage_mb`, ADR-17) → `provider_nodes` + Admin capacity view + Node Preview panel |
 | discoverVms + classify | `GET /api2/json/cluster/resources?type=vm` | one cluster call: `template==1` → `provider_templates`, else → `provider_vms`. Yields `vmid, node, name, status (power), maxcpu, maxmem, cpu (util), mem (used)` |
 | VM/template allocation | `GET /api2/json/nodes/{node}/qemu/{vmid}/config` | structural allocation: `sockets`,`cores`,`memory`, disk strings (parsed per §2.2a) |
 | discoverNetworks | `GET /api2/json/nodes/{node}/network` | bridges → `provider_networks` (cidr, gateway) |
@@ -84,14 +85,14 @@ The driver never persists; it returns DTOs. It must not be called by any non-dis
 
 ### 2.2a Config parsing rules (apply to VMs *and* templates)
 When parsing `/config`:
-- **vCPU = `sockets` × `cores`** (default `sockets=1`); don't read `cores` alone.
+- **vCPU = online `vcpus` when set, else `sockets` × `cores`** (default `sockets=1`); don't read `cores` alone. Proxmox stores `vcpus` = the *online* count when fewer than the full topology are hot-plugged (the reboot-free headroom model: a Bronze VM is built `cores=8` but `vcpus=2`). Reporting `vcpus` keeps inventory aligned to the tier allocation (2), not the max ceiling (8), and tracks live resizes; the topology fallback covers VMs with no `vcpus` cap.
 - **Scan all disk buses:** `scsiX`, `virtioX`, `sataX`, `ideX` — the boot/data disks may sit on any of them.
 - **Include rule:** keep a line only if it contains `size=` **and** is **not** `media=cdrom`, **and** the key is **not** `efidisk0`, `tpmstate0`, or `unusedX` (cloud-init/ISO/EFI/TPM/detached are excluded).
 - **Normalize units:** parse `size=NN[K/M/G/T]` and convert to **GB** (integer) consistently.
 - Template `/config` is parsed the same way; its boot-disk size is the **floor** for the customizable boot disk at provisioning.
 
 ### 2.3 `DiscoveryService`
-Orchestrates sync for a provider. **Status tier (cheap, frequent):** one `GET /cluster/resources` call returns nodes, storage, and all VMs/templates; classify `type=vm` rows by `template` flag (`1`→`provider_templates`, else→`provider_vms`), capturing power state + utilization snapshot (`cpu`, `mem`). **Allocation tier (heavier, lazy):** call `/config` per VM/template only when the vmid is newly discovered or its allocation changed (the portal knows this, since it owns resizes) or on demand — parse per §2.2a into `vcpu`, `ram_mb`, `disk_allocated_gb`, `disks_json`. Then discover networks (per node). Upsert into `provider_*` tables; mark absent rows `discovered_status = Missing` (never delete); update `discovery_status`, `last_discovery_at`, `last_sync_at`; write a `SYNC_PROVIDER` audit row. Exposes "Run Discovery Now" (full) and a **scoped VM discovery** (single node/`external_vmid`) used right after provisioning and by Provider Sync. After upserting `provider_vms`, invokes `VmFactSyncService`.
+Orchestrates sync for a provider. **Status tier (cheap, frequent):** one `GET /cluster/resources` call returns nodes, storage, and all VMs/templates; classify `type=vm` rows by `template` flag (`1`→`provider_templates`, else→`provider_vms`), capturing power state + utilization snapshot (`cpu`, `mem`). **Allocation tier (heavier, lazy):** call `/config` per VM/template only when the vmid is newly discovered or its allocation changed (the portal knows this, since it owns resizes) or on demand — parse per §2.2a into `vcpu`, `ram_mb`, `disk_allocated_gb`, `disks_json`. Then discover networks (per node). Upsert into `provider_*` tables; mark absent rows `discovered_status = Missing` (never delete); update `discovery_status`, `last_discovery_at`, `last_sync_at`; write a `SYNC_PROVIDER` audit row. Exposes "Run Discovery Now" (full) and a **scoped VM discovery** (single node/`external_vmid`) used right after provisioning and by Provider Sync. Also exposes a **scoped node sync** (`syncNode`, ADR-17) that refreshes a single `provider_nodes` row's operational status + utilization snapshot (`cpu_utilization`/`ram_usage_mb`) and `last_sync_at` — backing the published Node "Sync now" action. After upserting `provider_vms`, invokes `VmFactSyncService`.
 
 ### 2.3a `VmFactSyncService`
 Maps discovered facts from `provider_vms` into `inventory` by `external_vmid`: copies `ip_address`, the **observed power state** (→ `inventory.observed_power_state`), the allocation (`vcpu`, `ram_mb`, `disk_allocated_gb` + reconciles `inventory_disks` sizes from `disks_json`), and the **utilization snapshot** (`cpu_utilization`, `ram_usage_mb`), then stamps `last_sync_at`. It **never** touches portal-owned columns — the **lifecycle `status`** (Provisioning/Active/Failed/Expired/Deleted), owner, tier, expiry, workspace are untouched. If the provider is unreachable, it sets `observed_power_state = unknown` and leaves the last snapshot in place (UI shows staleness via `last_sync_at`). Also flags **drift**: inventory rows whose `provider_vms` entry is `Missing`, and `provider_vms` rows with no inventory match.
@@ -106,13 +107,13 @@ Scheduled task; for each provider with `auto_discovery_enabled = true`, runs the
 ### 3.1 `CatalogService`
 CRUD for `catalogs`. Validates the linked `provider_template_id` exists and is Active; derives status (Active / Inactive / Provider Offline / Template Missing). Handles image upload (type ∈ {png,jpg,jpeg,webp}, 512×512, ≤2 MB → `storage/app/catalog-images/`). Exposes a user-facing read that reads only `catalogs`.
 
-### 3.2 `NetworkPublishService` / `DatastorePublishService`
-CRUD for published networks/datastores, each referencing a discovered provider resource and exposing a friendly name. Derive status from the linked discovered resource.
+### 3.2 `NodePublishService` / `NetworkPublishService` / `DatastorePublishService`
+CRUD for published nodes/networks/datastores, each referencing one discovered provider resource and exposing a friendly name. Derive status from the linked discovered resource (`provider_*.status`/`discovered_status`) + provider connection. **`NodePublishService`** (ADR-17): delete is blocked (409) if the published node is referenced by any provision request, inventory row, or `environment_node_rules` entry — admin **unpublishes** (status Inactive) instead; exposes a scoped re-sync that refreshes the node's operational status + utilization snapshot ("Sync now").
 
 ### 3.3 `ResourceResolutionService` (critical, shared)
 Single place that converts business IDs → provider values. Inputs: a provision request (or resize payload). Outputs:
 ```
-target_node  ← provider_nodes.node_name        (from provider_node_id)
+target_node  ← provider_nodes.node_name        (via node_id → nodes.provider_node_id — ADR-17)
 template     ← provider_templates.template_name (via catalog_id → provider_template_id)
 network      ← provider_networks.network_name   (via network_id → provider_network_id)
 storage      ← provider_datastores.datastore_name (via datastore_id → provider_datastore_id)
@@ -130,7 +131,7 @@ Guarantees: Terraform never receives any `*_id`. Used by `ProvisionVmJob` and `R
 CRUD for `tiers`; status toggle; delete validation (block if referenced by environment/inventory/provision request). Seeds Bronze/Silver/Gold on install (authoritative values); Platinum admin-creatable.
 
 ### 4.2 `EnvironmentService` + `EnvironmentPolicyService`
-CRUD for `environments` and the four rule tables. `EnvironmentPolicyService.allowedResources(environment_id)` returns the filtered providers/tiers/networks/datastores for the wizard, intersected with each resource's Active status.
+CRUD for `environments` and the five rule tables (providers/tiers/**nodes**/networks/datastores, per ADR-17). `EnvironmentPolicyService.allowedResources(environment_id)` returns the filtered providers/tiers/**nodes**/networks/datastores for the wizard, intersected with each resource's Active status.
 
 ### 4.3 `ApprovalWorkflowService` (engine)
 Type-agnostic. Operations: `submit(request_type, reference_id, requester)`, `approve(id, reason)`, `reject(id, reason)`, `revert(id, reason)`. Enforces:
@@ -242,7 +243,27 @@ ProvisionVmJob → WorkspaceService.create
 ## 9. Configuration files (backend)
 
 - `config/provider_endpoints.php` — per-provider-type endpoint map (Proxmox paths above; placeholders for openstack/olvm).
-- `storage/app/master-provisioning/terraform/main.tf.stub`, `variables.tf.stub` — Terraform templates (support a disk list; cloud-init params rendered into tfvars).
+- `storage/app/master-provisioning/terraform/{main.tf,variables.tf}` (legacy `disk` list) and `…/terraform-structured/…` (default, structured `disks` block) — Terraform stub variants selected by `config('provisioning.stub_variant')`; cloud-init params rendered into tfvars.
 - `storage/app/master-provisioning/ansible/` — hardening playbook + role/templates (copied/rendered into each request workspace when `security_hardening` is on).
 - `storage/app/catalog-images/` — catalog images.
 - `storage/app/provisioning/{username}/date_pr{...}/` — per-request workspaces.
+- `config/provisioning.php` — `stub_variant`, `max_data_disk_slots`, `max_cpu_cores`, `grace_minutes`, `discovery_stale_hours`.
+
+---
+
+## 10. Post-Stage-7 services, jobs & scheduled commands (live)
+
+**Discovery / facts (ADR-19, ADR-10 amendments)**
+- `RefreshDiscovery` (`discovery:refresh`, scheduled every 30s) — re-discovers each provider whose `discovery_interval` (30s/1m/2m) has elapsed and `auto_discovery_enabled`, then mirrors its facts to inventory.
+- `PruneDiscovery` (`discovery:prune`, hourly) — deletes discovered rows `Missing` longer than `discovery_stale_hours` (24h); `provider_vms` always, others only if not referenced by a published row.
+- `ConfigParser` — `vcpu` = online `vcpus` when set, else `sockets × cores`.
+- `VmFactSyncService` — `sync()` clears `ip_address` when not running (keeps last-known only for a running VM); `syncProvider()` mirrors all of one provider's inventory rows (used by the manual Discover + the scheduler).
+- `Provider::intervalSeconds()` + `next_discovery_at` accessor (= `last_discovery_at + interval`, null if auto off).
+
+**Lifecycle**
+- `LifecycleService` — renewal **capped to the env window** (ADR-21; `cappedRenewal`/`envExpiryCap`, 422 when at cap); admin/manager bypass approval; `applyChange` dispatches per type incl. the new `EDIT_RESOURCES`.
+- `EditResourcesVmJob` (ADR-20) — merges resize + add-disk into ONE apply: read workspace once → set `vcpus`/`memory` + append cap-checked `data_disks` → persist tfvars **and** deployment.json → single `terraform apply` → update vcpu/ram + create disk rows.
+- `LifecycleEngineService` (`vms:lifecycle`, every minute) — Active → Expired → grace → auto-destroy; per-env grace window.
+- `InventoryController` — RBAC-scoped reads; global `syncAll` (DB mirror); `editResources` (bundle); pending-approval + env-expiry surfaced in the transform.
+
+Scheduled (routes/console.php): `vms:lifecycle` (1m), `discovery:refresh` (30s), `discovery:prune` (hourly). Run with `php artisan schedule:work` + `queue:work --timeout=600` + `serve`.

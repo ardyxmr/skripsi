@@ -6,6 +6,7 @@ import ResizableTh from '../../../components/ResizableTh';
 import ProviderForm from './ProviderForm';
 import ProviderDiscovery from './ProviderDiscovery';
 import ProviderActionModal from './ProviderActionModal';
+import NodePreview from './NodePreview';
 import ErrorBoundary from './ErrorBoundary';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import api from '../../../lib/api';
@@ -413,6 +414,9 @@ export default function ProviderManagement() {
                     </div>
                   </div>
                 </div>
+
+                  {/* Published Node Preview — fourth published abstraction (ADR-17), below Providers */}
+                  <NodePreview />
               </div>
             </div>
           )}

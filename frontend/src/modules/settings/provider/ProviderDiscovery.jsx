@@ -5,6 +5,16 @@ import api from '../../../lib/api';
 
 const EMPTY = { nodes: [], templates: [], networks: [], datastores: [], vms: [] };
 
+// One consolidated VM status (replaces the confusing Power + Discovered-status pair):
+// a present VM shows its power (Running/Stopped); a VM no longer in Proxmox shows Missing
+// (pruned automatically after 24h).
+const vmStatusBadge = (item) => {
+  if (item.discoveredStatus !== 'Active') return { label: 'Missing', cls: 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400' };
+  if (item.powerState === 'running') return { label: 'Running', cls: 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' };
+  if (item.powerState === 'stopped') return { label: 'Stopped', cls: 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400' };
+  return { label: 'Unknown', cls: 'bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400' };
+};
+
 export default function ProviderDiscovery({ isOpen, provider, onClose }) {
   const [resourceNavSelection, setResourceNavSelection] = useState('nodes');
   const [resourceSearch, setResourceSearch] = useState('');
@@ -287,7 +297,6 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                             <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">VM Name</th>
                             <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">VMID</th>
                             <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">Node</th>
-                            <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">Power</th>
                             <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">IP Address</th>
                             <th className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-400">Status</th>
                           </>
@@ -331,9 +340,8 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{item.vmName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400 font-mono">{item.externalVmid}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{item.nodeName}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.powerState === 'running' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : item.powerState === 'stopped' ? 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-slate-400' : 'bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400'}`}>{item.powerState || 'unknown'}</span></td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400 font-mono">{item.ipAddress || '—'}</td>
-                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${item.discoveredStatus === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400'}`}>{item.discoveredStatus}</span></td>
+                          <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${vmStatusBadge(item).cls}`}>{vmStatusBadge(item).label}</span></td>
                         </tr>
                       ))}
                     </tbody>

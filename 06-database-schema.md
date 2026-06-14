@@ -84,6 +84,8 @@ provider_nodes (
   cpu_count        INTEGER,
   total_memory     BIGINT,
   total_storage    BIGINT,
+  cpu_utilization  DECIMAL NULL,   -- point-in-time % (from /cluster/resources?type=node `cpu`) — ADR-17
+  ram_usage_mb     BIGINT  NULL,   -- point-in-time used MB (from `mem`); RAM% = ram_usage_mb / (total_memory/1024/1024)
   discovered_status VARCHAR,       -- Active | Missing
   last_sync_at     DATETIME
 );
@@ -188,8 +190,21 @@ datastores (                          -- PUBLISHED datastores
   created_at            TIMESTAMP,
   updated_at            TIMESTAMP
 );
+
+nodes (                               -- PUBLISHED nodes (ADR-17)
+  id               BIGINT PK,
+  node_name        VARCHAR,           -- friendly, e.g. "Jakarta Zone A"
+  description      TEXT NULL,
+  provider_id      BIGINT FK -> providers.id,
+  provider_node_id BIGINT FK -> provider_nodes.id,   -- the discovered node it abstracts
+  status           VARCHAR,           -- Active | Inactive | Provider Offline | Missing
+  created_by       BIGINT FK -> users.id,
+  created_at       TIMESTAMP,
+  updated_at       TIMESTAMP,
+  UNIQUE (provider_id, node_name)      -- friendly name unique within a provider
+);
 ```
-**Rule:** user-facing reads use these published tables only — never `provider_*`.
+**Rule:** user-facing reads use these published tables (`catalogs`, `networks`, `datastores`, **and `nodes`**) only — never `provider_*`. A published node's `status` mirrors networks/datastores: `Active` = published & provider connected & discovered node Active; `Inactive` = admin-disabled; `Provider Offline` = provider disconnected; `Missing` = the discovered node went `Missing`. Selecting a published node simply *filters* catalogs/networks/datastores to the matching `provider_node_id`.
 
 ---
 
@@ -218,6 +233,7 @@ environments (
   expiry_value      INTEGER NULL,  -- e.g. 30 (null/ignored for lifetime)
   approval_required BOOLEAN,
   allow_data_disk   BOOLEAN DEFAULT false,  -- gates the additional data-disk capability for VMs in this environment
+  max_data_disks    INTEGER DEFAULT 6,      -- policy cap on data disks/VM (ADR-18); 0..config(provisioning.max_data_disk_slots)
   status            VARCHAR,    -- Active | Inactive
   display_order     INTEGER,
   created_by        BIGINT FK -> users.id,
@@ -228,6 +244,7 @@ environments (
 -- Allow-list join tables (the environment policy)
 environment_provider_rules  ( id PK, environment_id FK, provider_id FK );
 environment_tier_rules      ( id PK, environment_id FK, tier_id FK );
+environment_node_rules      ( id PK, environment_id FK, node_id FK );        -- references published nodes.id (ADR-17)
 environment_network_rules   ( id PK, environment_id FK, network_id FK );    -- references published networks.id
 environment_datastore_rules ( id PK, environment_id FK, datastore_id FK );  -- references published datastores.id
 ```
@@ -244,11 +261,13 @@ provision_requests (
   vm_name          VARCHAR,
   environment_id   BIGINT FK -> environments.id,
   provider_id      BIGINT FK -> providers.id,
-  provider_node_id BIGINT FK -> provider_nodes.id,
+  node_id          BIGINT FK -> nodes.id,            -- PUBLISHED node (ADR-17), not raw provider_node_id
   catalog_id       BIGINT FK -> catalogs.id,
   tier_id          BIGINT FK -> tiers.id,
-  network_id       BIGINT FK -> networks.id,        -- published
-  datastore_id     BIGINT FK -> datastores.id,      -- published
+  network_id       BIGINT FK -> networks.id,        -- published (must live on node_id's provider_node)
+  datastore_id     BIGINT FK -> datastores.id,      -- published (must live on node_id's provider_node)
+  instance_count   INTEGER DEFAULT 1,               -- batch size; Stage 6 creates N VMs (suffixed names)
+  description      TEXT NULL,                        -- requester's purpose/justification
   security_hardening BOOLEAN DEFAULT false,         -- drives the post-apply Ansible step
   boot_disk_gb     INTEGER NULL,                    -- customizable boot/root(C:) disk size (≥ template size); null = template default
   requested_expiry DATETIME NULL,
@@ -265,6 +284,7 @@ approval_requests (
   requester_id  BIGINT FK -> users.id,
   approver_id   BIGINT NULL FK -> users.id,   -- auto-resolved via group manager
   group_id      BIGINT FK -> groups.id,
+  payload       JSON NULL,  -- Stage 7: the pending change for lifecycle approvals (RESIZE cpu/ram, RENEWAL extension_period, …)
   status        VARCHAR,    -- Pending | Approved | Rejected | Reverted
   action_type   VARCHAR NULL,  -- Approve | Reject | Revert
   action_reason TEXT NULL,     -- MANDATORY when an action is taken
@@ -282,11 +302,12 @@ approval_requests (
 ```sql
 inventory (
   id                  BIGINT PK,
+  provision_request_id BIGINT NULL FK -> provision_requests.id,  -- Stage 7: lineage; retry re-dispatches the originating request
   vm_name             VARCHAR,
   owner_user_id       BIGINT FK -> users.id,
   environment_id      BIGINT FK -> environments.id,
   provider_id         BIGINT FK -> providers.id,
-  provider_node_id    BIGINT FK -> provider_nodes.id,
+  node_id             BIGINT FK -> nodes.id,            -- PUBLISHED node (ADR-17), not raw provider_node_id
   catalog_id          BIGINT FK -> catalogs.id,
   tier_id             BIGINT FK -> tiers.id,
   network_id          BIGINT FK -> networks.id,
@@ -361,8 +382,9 @@ providers ──< provider_nodes ──< provider_templates / provider_networks 
 provider_templates  ─1:1─ catalogs
 provider_networks   ─1:1─ networks (published)
 provider_datastores ─1:1─ datastores (published)
-environments ──< environment_(provider|tier|network|datastore)_rules >── (providers|tiers|networks|datastores)
-users ──< provision_requests >── (environment, provider, node, catalog, tier, network, datastore)
+provider_nodes      ─1:1─ nodes (published)
+environments ──< environment_(provider|tier|node|network|datastore)_rules >── (providers|tiers|nodes|networks|datastores)
+users ──< provision_requests >── (environment, provider, node[published], catalog, tier, network, datastore)
 provision_requests ─ref─ approval_requests (request_type=PROVISION)
 inventory ─ref─ approval_requests (request_type ∈ RENEWAL|PERMANENT|RESIZE|ADD_DISK|DESTROY)
 inventory ──< inventory_disks
@@ -376,7 +398,14 @@ users ──< audit_logs
 
 - **Tier values:** seed authoritative spec values; update frontend mock to match.
 - **Published vs discovered:** `provision_requests.network_id`/`datastore_id` reference **published** tables; resolution to provider values happens only at provisioning time via the discovered FKs on those published rows.
+- **Published node (ADR-17):** `provision_requests.node_id`/`inventory.node_id` reference the **published** `nodes` table; resolution to `provider_nodes.node_name` (`target_node`) happens only at provisioning time via the discovered FK on the published row. Selecting a node filters catalogs/networks/datastores to the matching `provider_node_id`. The node utilization snapshot (`provider_nodes.cpu_utilization`/`ram_usage_mb`) follows the same snapshot-not-series contract as `provider_vms`.
 - **No terraform state in DB:** state lives only in the workspace; the DB stores `workspace_path` + `terraform_state_path` references.
 - **Runtime facts via discovery:** the discovery layer reads the provider (`/cluster/resources?type=vm` for ground truth + power/utilization, `/config` for allocation), writes `provider_vms`, and syncs into `inventory` by `external_vmid`. No service outside discovery calls the provider; the UI reads inventory only. `provider_vms` also enables drift detection (Missing entries / unmanaged VMs).
 - **Dual status:** `inventory.status` is the **portal lifecycle** (Provisioning/Active/Failed/Expired/Deleted) and is portal-owned; `inventory.observed_power_state` is **provider-synced** (running/stopped/paused/unknown). When the provider is unreachable, `observed_power_state = unknown` with `last_sync_at` shown for honesty; the lifecycle status and expiry are unaffected.
 - **Snapshot, not time-series:** utilization is a point-in-time snapshot (`cpu_utilization`, `ram_usage_mb`) cached for logic. **User inventory** shows allocation only (vCPU, RAM capacity, per-disk sizes); **live utilization** (CPU%/RAM used, plus node/datastore capacity) is surfaced in the Admin dashboard. No historical/time-series store.
+
+### Post-Stage-7 schema notes (no new tables/columns required)
+- **Auto-discovery (ADR-19):** `providers.auto_discovery_enabled` now defaults **true** and `providers.discovery_interval` holds `30s` | `1m` | `2m` (default `2m`); a data migration set existing providers to auto-on @ `2m`. `last_discovery_at` drives the computed `next_discovery_at`. Discovered rows are deleted once `discovered_status='Missing'` AND `last_sync_at` is older than `discovery_stale_hours` (24h) — `last_sync_at` doubles as "last seen present" (no `missing_since` column needed).
+- **Bundled Edit Resources (ADR-20):** new `approval_requests.request_type` value `EDIT_RESOURCES`; its `payload` JSON carries `{cpu?, ram_mb?, disks:[{size_gb, setup_description}]}`. No column change — `payload` was already JSON.
+- **`provider_vms`** still stores only `provider_node_id` (no `node_name`); the Node column is resolved at read time via the `providerNode` relation. `vcpu` holds the **online** count (Proxmox `vcpus`), and `ip_address` is nulled when the VM is not running.
+- **Inventory reads** surface derived (not stored) `pending_actions` (open lifecycle approvals on the VM) and the env `expiry_type`/`expiry_value` for the renewal-cap UI.

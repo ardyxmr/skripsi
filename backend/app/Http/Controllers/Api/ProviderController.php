@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Node;
 use App\Models\Provider;
 use App\Models\ProviderDatastore;
 use App\Models\ProviderNetwork;
@@ -12,6 +13,7 @@ use App\Models\ProviderVm;
 use App\Services\AuditService;
 use App\Services\Discovery\DiscoveryService;
 use App\Services\Discovery\ProviderFactory;
+use App\Services\VmFactSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -39,6 +41,11 @@ class ProviderController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validateData($request, creating: true);
+
+        // Provider Management is the source of truth → a new provider auto-discovers ON by default
+        // (2-minute cadence) unless the form explicitly says otherwise, so its DB snapshot never goes stale.
+        $data['auto_discovery_enabled'] = $data['auto_discovery_enabled'] ?? true;
+        $data['discovery_interval'] = $data['discovery_interval'] ?? '2m';
 
         $provider = Provider::create($data);
         $this->audit->log($request->user(), 'CREATE_PROVIDER', "Registered provider {$provider->provider_name}", $request);
@@ -90,9 +97,12 @@ class ProviderController extends Controller
     }
 
     // Run discovery now (full sync via the driver → provider_* tables).
-    public function discover(Request $request, Provider $provider, DiscoveryService $discovery): JsonResponse
+    public function discover(Request $request, Provider $provider, DiscoveryService $discovery, VmFactSyncService $facts): JsonResponse
     {
         $counts = $discovery->discover($provider);
+        // Mirror the fresh facts into inventory too, so a manual Discover updates the Inventory
+        // power state immediately — not only the Discovery Explorer (which reads provider_*).
+        $facts->syncProvider($provider);
 
         return response()->json([
             'discovery_status' => $provider->fresh()->discovery_status,
@@ -106,13 +116,15 @@ class ProviderController extends Controller
         return response()->json([
             'connection_status' => $provider->status,
             'discovery_status' => $provider->discovery_status,
+            'auto_discovery_enabled' => $provider->auto_discovery_enabled,
+            'discovery_interval' => $provider->discovery_interval,
             'last_discovery_at' => $provider->last_discovery_at,
-            'next_discovery_at' => null,
+            'next_discovery_at' => $provider->next_discovery_at, // computed accessor (null if auto off)
             'nodes' => ProviderNode::where('provider_id', $provider->id)->get(),
             'templates' => ProviderTemplate::where('provider_id', $provider->id)->get(),
             'networks' => ProviderNetwork::where('provider_id', $provider->id)->get(),
             'datastores' => ProviderDatastore::where('provider_id', $provider->id)->get(),
-            'vms' => ProviderVm::where('provider_id', $provider->id)->get(),
+            'vms' => ProviderVm::with('providerNode')->where('provider_id', $provider->id)->get(),
         ]);
     }
 
@@ -125,6 +137,7 @@ class ProviderController extends Controller
             'providers' => Provider::count(),
             'connected' => Provider::where('status', 'Connected')->count(),
             'discovery_success' => Provider::where('discovery_status', 'success')->count(),
+            'nodes' => Node::count(),   // published nodes (ADR-17 / §3.4)
             'templates' => $active(ProviderTemplate::class),
             'networks' => $active(ProviderNetwork::class),
             'datastores' => $active(ProviderDatastore::class),
@@ -154,7 +167,7 @@ class ProviderController extends Controller
             'terraform_provider_version' => ['required', 'string'],
 
             'auto_discovery_enabled' => ['boolean'],
-            'discovery_interval' => ['nullable', Rule::in(['15m', '30m', '1h', '6h', '12h', '24h'])],
+            'discovery_interval' => ['nullable', Rule::in(['30s', '1m', '2m'])],
         ]);
     }
 }

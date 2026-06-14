@@ -17,8 +17,6 @@ export default function DatastoreManagement() {
   const { datastores, refetch, create, update, remove } = useDatastoreContext();
   const [datastoreSearchQuery, setDatastoreSearchQuery] = useState('');
   const [datastoreProviderFilter, setDatastoreProviderFilter] = useState('All Providers');
-  const [datastoreEnvironmentFilter, setDatastoreEnvironmentFilter] = useState('All Environments');
-  const [datastoreTierFilter, setDatastoreTierFilter] = useState('All Tiers');
   const [datastoreStatusFilter, setDatastoreStatusFilter] = useState('All Status');
   const [datastoreSortConfig, setDatastoreSortConfig] = useState({ key: 'name', direction: 'asc' });
   const [datastoreActionModal, setDatastoreActionModal] = useState({ isOpen: false, action: null, datastore: null, isBlocking: false });
@@ -173,8 +171,6 @@ export default function DatastoreManagement() {
       );
     }
     if (datastoreProviderFilter !== 'All Providers') sortableData = sortableData.filter(d => d.provider === datastoreProviderFilter);
-    if (datastoreEnvironmentFilter !== 'All Environments') sortableData = sortableData.filter(d => Array.isArray(d.environment) ? d.environment.includes(datastoreEnvironmentFilter) : d.environment === datastoreEnvironmentFilter);
-    if (datastoreTierFilter !== 'All Tiers') sortableData = sortableData.filter(d => Array.isArray(d.tiers) ? d.tiers.includes(datastoreTierFilter) : d.tiers === datastoreTierFilter);
     if (datastoreStatusFilter !== 'All Status') sortableData = sortableData.filter(d => d.status === datastoreStatusFilter);
 
     if (datastoreSortConfig.key !== null) {
@@ -191,7 +187,7 @@ export default function DatastoreManagement() {
       });
     }
     return sortableData;
-  }, [datastores, datastoreSearchQuery, datastoreProviderFilter, datastoreEnvironmentFilter, datastoreTierFilter, datastoreStatusFilter, datastoreSortConfig]);
+  }, [datastores, datastoreSearchQuery, datastoreProviderFilter, datastoreStatusFilter, datastoreSortConfig]);
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -281,28 +277,7 @@ export default function DatastoreManagement() {
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
-            <select 
-              value={datastoreEnvironmentFilter}
-              onChange={e => setDatastoreEnvironmentFilter(e.target.value)}
-              className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-lg px-3 py-2 outline-none cursor-pointer min-w-[140px]"
-            >
-              <option value="All Environments">All Environments</option>
-              <option value="Production">Production</option>
-              <option value="Development">Development</option>
-              <option value="Staging">Staging</option>
-              <option value="Testing">Testing</option>
-            </select>
-            <select 
-              value={datastoreTierFilter}
-              onChange={e => setDatastoreTierFilter(e.target.value)}
-              className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-lg px-3 py-2 outline-none cursor-pointer min-w-[140px]"
-            >
-              <option value="All Tiers">All Tiers</option>
-              <option value="Bronze">Bronze</option>
-              <option value="Silver">Silver</option>
-              <option value="Gold">Gold</option>
-            </select>
-            <select 
+            <select
               value={datastoreStatusFilter}
               onChange={e => setDatastoreStatusFilter(e.target.value)}
               className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-lg px-3 py-2 outline-none cursor-pointer min-w-[140px]"
@@ -311,6 +286,7 @@ export default function DatastoreManagement() {
               <option value="Active">Active</option>
               <option value="Disabled">Disabled</option>
               <option value="Offline / Missing">Offline / Missing</option>
+              <option value="Node Offline">Node Offline</option>
               <option value="Low Capacity">Low Capacity</option>
             </select>
           </div>
@@ -343,12 +319,6 @@ export default function DatastoreManagement() {
                     </ResizableTh>
                     <ResizableTh width={200} storageKey="datastore_management_column_widths" columnKey="capacity" onClick={() => handleDatastoreSort('capacity')}>
                       Capacity {datastoreSortConfig.key === 'capacity' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                    </ResizableTh>
-                    <ResizableTh width={140} storageKey="datastore_management_column_widths" columnKey="environment" onClick={() => handleDatastoreSort('environment')}>
-                      Environment {datastoreSortConfig.key === 'environment' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                    </ResizableTh>
-                    <ResizableTh width={100} storageKey="datastore_management_column_widths" columnKey="tiers">
-                      Tier
                     </ResizableTh>
                     <ResizableTh width={120} storageKey="datastore_management_column_widths" columnKey="status">
                       Status
@@ -388,33 +358,10 @@ export default function DatastoreManagement() {
                         </div>
                       </td>
                       <td className="px-5 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {(Array.isArray(datastore.environment) ? datastore.environment : [datastore.environment]).map(env => (
-                            <span key={env} className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                              env === 'Production' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20' :
-                              env === 'Development' ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20' :
-                              env === 'Testing' ? 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/20' :
-                              'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                            }`}>
-                              {env}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {datastore.tiers?.map(tier => (
-                            <span key={tier} className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded border bg-slate-50 dark:bg-surface text-slate-600 dark:text-slate-400 border-slate-200 dark:border-theme">
-                              {tier}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
                         <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                          datastore.status === 'Active' 
-                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' 
-                            : datastore.status === 'Offline / Missing'
+                          datastore.status === 'Active'
+                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
+                            : (datastore.status === 'Offline / Missing' || datastore.status === 'Node Offline' || datastore.status === 'Missing' || datastore.status === 'Provider Offline')
                             ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'
                             : datastore.status === 'Low Capacity'
                             ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'

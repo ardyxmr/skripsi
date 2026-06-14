@@ -4,12 +4,23 @@ import {
   X, Calendar, Server, Clock, AlertCircle, Shield, FileText, CheckCircle2,
   Settings, Cpu, HardDrive, Plus
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import { getCached, setCached } from '../lib/liveCache';
 import { useUI } from '../stores/uiStore';
 import { useUserContext } from '../contexts/UserContext';
 import { isAdmin } from '../lib/rbac';
 
 // Map an API inventory row onto the field names this page renders, keeping
+// Friendly labels for a pending lifecycle approval shown beside the VM status.
+const PENDING_LABEL = {
+  RESIZE: 'Resize',
+  RENEWAL: 'Extend Expiry',
+  PERMANENT: 'Make Permanent',
+  ADD_DISK: 'Add Disk',
+  DESTROY: 'Delete',
+};
+
 // the provider-synced dual-status + per-disk facts available.
 function normalizeVm(row) {
   return {
@@ -33,27 +44,108 @@ function normalizeVm(row) {
     observedPowerState: row.observedPowerState ?? 'unknown',
     disks: row.disks ?? [],
     allowDataDisk: row.allowDataDisk ?? false,
+    maxDataDisks: row.maxDataDisks ?? 0,
     lastSyncAt: row.lastSyncAt ?? null,
+    pendingActions: row.pendingActions ?? [],          // lifecycle requests awaiting approval
+    expiryType: row.expiryType ?? null,                // env expiry policy (for the renew cap)
+    expiryValue: row.expiryValue ?? null,
+  };
+}
+
+// Shimmer placeholder rows shown during the very first load so the table never
+// flashes its empty-state ("No VMs Found") before the data arrives.
+function SkeletonRows({ cols, rows = 6 }) {
+  return Array.from({ length: rows }).map((_, i) => (
+    <tr key={`sk-${i}`} className="animate-pulse">
+      <td colSpan={cols} className="px-4 py-4">
+        <div className="flex items-center gap-4">
+          <div className="h-4 w-4 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 flex-1 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 w-28 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 w-24 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 w-20 rounded bg-gray-100 dark:bg-slate-700/40" />
+          <div className="h-4 w-16 rounded bg-gray-100 dark:bg-slate-700/40" />
+        </div>
+      </td>
+    </tr>
+  ));
+}
+
+// Renewal is capped to the environment window (now + policy): you can only top a VM's expiry back
+// UP to that window, never beyond. Returns the selectable extension options (within headroom),
+// friendly window/remaining/headroom labels, and whether the VM is already at the cap.
+function computeRenewBounds(vm, nowTs) {
+  const unit = vm?.expiryType;
+  const val = Number(vm?.expiryValue) || 0;
+  const windowMin = unit === 'minutes' ? val : unit === 'hours' ? val * 60 : val * 1440; // days/custom/default
+  const remMin = vm?.expiryDate ? Math.max(0, (new Date(vm.expiryDate).getTime() - nowTs) / 60000) : 0;
+  const headMin = Math.max(0, Math.round(windowMin - remMin));
+  const headroomDays = Math.floor(headMin / 1440);
+  const fmt = (m) => (m >= 1440 ? `${Math.floor(m / 1440)} days` : m >= 60 ? `${Math.floor(m / 60)} hours` : `${m} min`);
+
+  let options = [7, 14, 21, 30, 45, 60].filter((d) => d <= headroomDays).map((d) => `${d} Days`);
+  if (headroomDays >= 1 && !options.includes(`${headroomDays} Days`)) options.push(`${headroomDays} Days`);
+  if (options.length === 0 && headMin >= 60) options.push(`${Math.floor(headMin / 60)} Hours`);
+  else if (options.length === 0 && headMin >= 1) options.push(`${headMin} Minutes`);
+  options = [...new Set(options)];
+
+  return {
+    windowLabel: fmt(windowMin),
+    remainingLabel: fmt(remMin),
+    headroomLabel: fmt(headMin),
+    atCap: options.length === 0,
+    options,
   };
 }
 
 export default function Inventory() {
+  const navigate = useNavigate();
   const pushToast = useUI((s) => s.pushToast);
   const { currentUser } = useUserContext();
   const admin = isAdmin(currentUser);
 
-  const [vms, setVms] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Shared field styling — mirrors the wizard's "Number of Instances" / "Description (Optional)"
+  // boxes: no explicit light-mode text color or caret override, so the caret follows the
+  // theme-correct text color (dark on light, light on dark) and never goes invisible.
+  const inputCls = 'w-full p-2.5 border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 bg-gray-50 dark:bg-surface dark:text-gray-100';
+  const selectCls = `${inputCls} appearance-none cursor-pointer`;
 
-  const loadInventory = useCallback(async () => {
-    setLoading(true);
+  // Seed from the app-startup cache so the table paints instantly on open; the
+  // mount fetch + polling below still refresh it. Skeleton only shows on a cold start.
+  const [vms, setVms] = useState(() => (getCached('/inventory') || []).map(normalizeVm));
+  const [loading, setLoading] = useState(() => !getCached('/inventory'));
+
+  // Ticks every second so expiry / grace-period countdowns update live.
+  const [nowTs, setNowTs] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Live "Xd Yh / Xh Ym / Xm Ys / Ys" countdown to a timestamp (recomputes each tick).
+  const formatCountdown = (targetIso) => {
+    if (!targetIso) return '';
+    const s = Math.floor((new Date(targetIso).getTime() - nowTs) / 1000);
+    if (s <= 0) return '0s';
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  };
+
+  // `silent` (background polling / manual refresh) skips the full-page loading
+  // state and the error toast, so the table just updates in place with no flash.
+  const loadInventory = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const rows = await api.get('/inventory');
+      setCached('/inventory', rows || []);
       setVms((rows || []).map(normalizeVm));
     } catch (e) {
-      pushToast({ kind: 'error', message: e.message || 'Failed to load inventory.' });
+      if (!silent) pushToast({ kind: 'error', message: e.message || 'Failed to load inventory.' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [pushToast]);
 
@@ -149,7 +241,9 @@ export default function Inventory() {
   const handleOpenRenew = (vm) => {
     setExtendModalVm(vm);
     setRenewReason('');
-    setRenewExtension('7 Days');
+    // Default the extension to the largest period that still fits within the env-window headroom.
+    const rb = computeRenewBounds(vm, Date.now());
+    setRenewExtension(rb.options[rb.options.length - 1] ?? 'N/A');
     setIsPermanentRequest(false);
     setRenewError('');
   };
@@ -180,22 +274,36 @@ export default function Inventory() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Pause background polling while the user is mid-interaction so a silent
+  // refresh can't disrupt an open modal, drawer, or action menu.
+  const pollPausedRef = useRef(false);
+  pollPausedRef.current = !!(editModalVm || extendModalVm || deleteModalVm || drawerOpen || openDropdownId);
+
+  // Live auto-refresh: silently re-fetch every 7s so provisioning / status /
+  // expiry changes appear without a manual refresh. Pauses while the tab is
+  // hidden or the user is mid-interaction (see pollPausedRef).
+  useEffect(() => {
+    const t = setInterval(async () => {
+      if (document.hidden || pollPausedRef.current) return;
+      await loadInventory({ silent: true });
+      setLastSync(new Date().toISOString());
+    }, 7000);
+    return () => clearInterval(t);
+  }, [loadInventory]);
+
+  // Global sync: force the latest discovered snapshot (provider_vms) to mirror into every VM the
+  // user can see — a DB-only mass refresh (no live Proxmox call; that lives in Provider Management).
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadInventory();
-    setLastSync(new Date().toISOString());
-    setIsRefreshing(false);
-  };
-
-  // Per-VM provider sync (scoped discovery → inventory).
-  const handleProviderSync = async (vm) => {
-    setOpenDropdownId(null);
     try {
-      await api.post(`/inventory/${vm.id}/sync`);
-      setToastMessage('Provider sync complete.');
-      await loadInventory();
+      const rows = await api.post('/inventory/sync-all');
+      setCached('/inventory', rows || []);
+      setVms((rows || []).map(normalizeVm));
+      setLastSync(new Date().toISOString());
     } catch (e) {
-      pushToast({ kind: 'error', message: e.message || 'Provider sync failed.' });
+      pushToast({ kind: 'error', message: e.message || 'Sync failed.' });
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -247,8 +355,7 @@ export default function Inventory() {
         const days = getDaysRemaining(vm.expiryDate);
         matchWidget = vm.expiryDate !== null && days <= 7 && days > 0 && vm.status !== 'Expired';
       } else if (activeWidgetFilter === 'Need Action') {
-        const graceLeft = 7 + getDaysRemaining(vm.expiryDate);
-        matchWidget = vm.status === 'Expired' && graceLeft > 0;
+        matchWidget = vm.status === 'Expired';
       }
       
       return matchSearch && matchEnv && matchStatus && matchWidget;
@@ -339,18 +446,16 @@ export default function Inventory() {
   const getExpiryDisplay = (expiryDate) => {
     if (!expiryDate) return { text: 'Lifetime', dateStr: '', badgeClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' };
     
-    const now = new Date();
     const expiry = new Date(expiryDate);
-    const diffTime = expiry - now;
+    const diffTime = expiry.getTime() - nowTs;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     const dateStr = `(${expiry.getDate().toString().padStart(2, '0')} ${expiry.toLocaleString('default', { month: 'short' })} ${expiry.getFullYear()})`;
-    
-    if (diffDays < 0) {
+
+    if (diffTime <= 0) {
       return { text: 'Expired', dateStr, badgeClass: 'bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-900/40 dark:text-rose-400 dark:border-rose-800' };
     } else if (diffDays <= 1) {
-      const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
-      return { text: `${diffHours} Hours Remaining`, dateStr, badgeClass: 'bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-900/40 dark:text-rose-400 dark:border-rose-800' };
+      return { text: `${formatCountdown(expiryDate)} Remaining`, dateStr, badgeClass: 'bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-900/40 dark:text-rose-400 dark:border-rose-800' };
     } else if (diffDays <= 7) {
       return { text: `${diffDays} Days Remaining`, dateStr, badgeClass: 'bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-900/40 dark:text-orange-400 dark:border-orange-800' };
     } else if (diffDays <= 14) {
@@ -361,24 +466,13 @@ export default function Inventory() {
   };
 
   const renderStatusText = (vm) => {
-    let text = vm.status;
     if (vm.status === 'Expired') {
-      const graceLeft = 7 + getDaysRemaining(vm.expiryDate);
-      if (graceLeft > 0) {
-        text = `Expired (Grace Period - ${graceLeft} Day${graceLeft === 1 ? '' : 's'} Remaining)`;
-      } else {
-        text = `Expired (Auto Destroying...)`;
-      }
+      const graceMs = vm.gracePeriodUntil ? new Date(vm.gracePeriodUntil).getTime() - nowTs : 0;
+      return graceMs > 0
+        ? `Expired (Grace Period - ${formatCountdown(vm.gracePeriodUntil)} Remaining)`
+        : `Expired (Auto Destroying...)`;
     }
-    
-    if (vm.pendingEditApproval) {
-      return `${text} (Waiting approval for Resources edited)`;
-    }
-    if (vm.pendingRenewApproval) {
-      return `${text} (Waiting approval for Extend Expiry)`;
-    }
-    
-    return text;
+    return vm.status;
   };
 
   const formatSimpleDate = (iso) => {
@@ -395,11 +489,10 @@ export default function Inventory() {
   const totalVmCount = vms.length;
   const healthyCount = vms.filter(v => v.status === 'Active').length;
   const expiringSoonCount = vms.filter(v => v.expiryDate && getDaysRemaining(v.expiryDate) <= 7 && getDaysRemaining(v.expiryDate) > 0 && v.status !== 'Expired').length;
-  const needActionCount = vms.filter(v => {
-    if (v.status !== 'Expired') return false;
-    const graceLeft = 7 + getDaysRemaining(v.expiryDate);
-    return graceLeft > 0;
-  }).length;
+  const needActionCount = vms.filter(v => v.status === 'Expired').length;
+
+  // Live renewal headroom for the open Renew modal (recomputes each tick via nowTs).
+  const renewBounds = extendModalVm ? computeRenewBounds(extendModalVm, nowTs) : null;
 
   return (
     <div className="animate-in fade-in duration-300 relative h-auto flex flex-col">
@@ -582,7 +675,7 @@ export default function Inventory() {
                   value={deleteConfirmName}
                   onChange={(e) => setDeleteConfirmName(e.target.value)}
                   placeholder={deleteModalVm.name}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500 transition-colors"
+                  className={`${inputCls} focus:border-rose-500 focus:ring-rose-500/20`}
                 />
               </div>
             </div>
@@ -634,7 +727,7 @@ export default function Inventory() {
                       if (renewError) setRenewError('');
                     }}
                     placeholder="Explain why this VM needs extension or permanent retention..."
-                    className={`w-full px-3 py-2 border rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:ring-2 transition-colors min-h-[80px] resize-none ${renewError ? 'border-rose-300 dark:border-rose-900/50 focus:ring-rose-500/50 focus:border-rose-500' : 'border-slate-300 dark:border-theme focus:ring-blue-500/50 focus:border-blue-500'}`}
+                    className={`${inputCls} min-h-[80px] resize-none ${renewError ? 'border-rose-400 dark:border-rose-900/50 focus:border-rose-500 focus:ring-rose-500/20' : ''}`}
                   ></textarea>
                   {renewError && (
                     <div className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium animate-in fade-in slide-in-from-top-1">
@@ -644,27 +737,32 @@ export default function Inventory() {
                   )}
                 </div>
 
-                {/* Extension Period Dropdown */}
+                {/* Expiry headroom — extension is capped to the environment window (now + policy) */}
+                <div className="text-[11px] bg-blue-50/60 dark:bg-blue-900/15 border border-blue-100 dark:border-blue-900/30 rounded-md p-2.5 flex flex-wrap gap-x-4 gap-y-1">
+                  <span className="text-gray-500 dark:text-gray-400">Environment max: <strong className="text-gray-700 dark:text-gray-200">{renewBounds?.windowLabel}</strong></span>
+                  <span className="text-gray-500 dark:text-gray-400">Remaining: <strong className="text-gray-700 dark:text-gray-200">{renewBounds?.remainingLabel}</strong></span>
+                  <span className="text-gray-500 dark:text-gray-400">Extendable: <strong className={renewBounds?.atCap ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>{renewBounds?.atCap ? 'at cap' : `up to ${renewBounds?.headroomLabel}`}</strong></span>
+                </div>
+
+                {/* Extension Period Dropdown — options limited to the available headroom */}
                 <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Extension Period</label>
-                  <select 
-                    value={renewExtension}
-                    onChange={(e) => setRenewExtension(e.target.value)}
-                    disabled={isPermanentRequest || extendModalVm.environment === 'Production'}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-slate-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="N/A">N/A</option>
-                    <option value="7 Days">7 Days</option>
-                    <option value="14 Days">14 Days</option>
-                    <option value="21 Days">21 Days</option>
-                    <option value="30 Days">30 Days</option>
-                    {extendModalVm.environment === 'Staging' && (
-                      <>
-                        <option value="45 Days">45 Days</option>
-                        <option value="60 Days">60 Days</option>
-                      </>
-                    )}
-                  </select>
+                  {renewBounds?.atCap ? (
+                    <div className="text-[12px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/40 rounded-md p-2.5">
+                      Already at the maximum expiry for this environment ({renewBounds.windowLabel}). You can only request <strong>Permanent</strong> below.
+                    </div>
+                  ) : (
+                    <select
+                      value={renewExtension}
+                      onChange={(e) => setRenewExtension(e.target.value)}
+                      disabled={isPermanentRequest}
+                      className={`${selectCls} disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {renewBounds?.options.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* Permanent Checkbox */}
@@ -693,6 +791,11 @@ export default function Inventory() {
                 onClick={async () => {
                   if (!renewReason.trim()) {
                     setRenewError('Reason / Business Justification is required.');
+                    return;
+                  }
+                  // At the env cap there's no headroom to extend — Permanent is the only option.
+                  if (renewBounds?.atCap && !isPermanentRequest) {
+                    setRenewError('This VM is already at the maximum expiry for its environment. Check "Request Permanent VM" instead.');
                     return;
                   }
                   const id = extendModalVm.id;
@@ -749,40 +852,66 @@ export default function Inventory() {
                   <div>
                     <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">CPU Cores (vCPU)</label>
                     <input 
-                      type="number" 
+                      type="number"
                       min="1" max="64"
                       value={editCpu}
-                      onChange={(e) => setEditCpu(parseInt(e.target.value) || 1)}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-colors"
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') { setEditCpu(''); return; }   // allow clearing to retype freely
+                        const n = parseInt(v, 10);
+                        if (!Number.isNaN(n)) setEditCpu(Math.min(64, Math.max(1, n)));
+                      }}
+                      className={inputCls}
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">Memory / RAM (GB)</label>
                     <input 
-                      type="number" 
+                      type="number"
                       min="1" max="256"
                       value={editRam}
-                      onChange={(e) => setEditRam(parseInt(e.target.value) || 1)}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-colors"
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') { setEditRam(''); return; }   // allow clearing to retype freely
+                        const n = parseInt(v, 10);
+                        if (!Number.isNaN(n)) setEditRam(Math.min(256, Math.max(1, n)));
+                      }}
+                      className={inputCls}
                     />
                   </div>
                 </div>
               </div>
 
-              {editModalVm.allowDataDisk && (
+              {editModalVm.allowDataDisk && (() => {
+                const existingData = (editModalVm.disks || []).filter((d) => (d.diskIndex ?? 0) > 0).length;
+                const maxDisks = editModalVm.maxDataDisks ?? 0;
+                const usedTotal = existingData + newDisks.length;
+                const atCap = usedTotal >= maxDisks;
+                return (
               <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
                 <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <HardDrive size={14} />
                     Add Data Disk
                   </div>
-                  <button
-                    onClick={() => setIsAddingDisk(true)}
-                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:underline flex items-center gap-1 normal-case tracking-normal"
-                  >
-                    <Plus size={12} /> Add data disk
-                  </button>
+                  <div className="flex items-center gap-3 normal-case tracking-normal">
+                    <span className={`text-[11px] font-semibold ${atCap ? 'text-rose-500' : 'text-slate-500 dark:text-slate-400'}`} title="Environment data-disk policy cap">
+                      {usedTotal}/{maxDisks} used
+                    </span>
+                    <button
+                      onClick={() => setIsAddingDisk(true)}
+                      disabled={atCap || isAddingDisk}
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:underline flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
+                    >
+                      <Plus size={12} /> Add data disk
+                    </button>
+                  </div>
                 </div>
+                {atCap && (
+                  <div className="text-[11px] text-rose-500 dark:text-rose-400 mb-3 -mt-2">
+                    Data-disk limit reached for this environment ({maxDisks}). An administrator can raise it in Settings → Environments.
+                  </div>
+                )}
                 
                 <div className="space-y-3">
                   {/* Existing Disk (Grayed Out) */}
@@ -835,8 +964,13 @@ export default function Inventory() {
                            type="number"
                            min="1"
                            value={newDiskSize}
-                           onChange={(e) => setNewDiskSize(parseInt(e.target.value) || 1)}
-                           className="w-24 px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-colors"
+                           onChange={(e) => {
+                             const v = e.target.value;
+                             if (v === '') { setNewDiskSize(''); return; }   // allow clearing to retype freely
+                             const n = parseInt(v, 10);
+                             if (!Number.isNaN(n)) setNewDiskSize(Math.max(1, n));
+                           }}
+                           className={inputCls.replace('w-full', 'w-24')}
                          />
                          <span className="text-[13px] font-medium text-slate-600 dark:text-slate-400">GB</span>
                        </div>
@@ -844,7 +978,7 @@ export default function Inventory() {
                          value={newDiskSetup}
                          onChange={(e) => setNewDiskSetup(e.target.value)}
                          placeholder="Setup intent — Linux: mount /data, fs ext4/xfs, optional LVM; Windows: drive D:, GPT/MBR, NTFS"
-                         className="w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-[12px] bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-colors min-h-[56px] resize-y"
+                         className={`${inputCls} min-h-[56px] resize-y`}
                        />
                        <div className="flex items-center justify-end gap-2">
                          <button
@@ -855,8 +989,9 @@ export default function Inventory() {
                          </button>
                          <button
                            onClick={() => {
-                             if (newDiskSize > 0) {
-                               setNewDisks([...newDisks, { size: newDiskSize, setup: newDiskSetup }]);
+                             const sz = parseInt(newDiskSize, 10);
+                             if (!Number.isNaN(sz) && sz > 0) {
+                               setNewDisks([...newDisks, { size: sz, setup: newDiskSetup }]);
                                setIsAddingDisk(false);
                                setNewDiskSize(50);
                                setNewDiskSetup('');
@@ -872,7 +1007,8 @@ export default function Inventory() {
 
                 </div>
               </div>
-              )}
+                );
+              })()}
 
               {/* Security Confirmation */}
               <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
@@ -884,7 +1020,7 @@ export default function Inventory() {
                   value={editConfirmName}
                   onChange={(e) => setEditConfirmName(e.target.value)}
                   placeholder={editModalVm.name}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-theme rounded-md text-sm bg-white dark:bg-page text-slate-900 dark:text-slate-100 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/50 transition-colors"
+                  className={`${inputCls} focus:border-rose-500 focus:ring-rose-500/20`}
                 />
               </div>
             </div>
@@ -899,23 +1035,18 @@ export default function Inventory() {
               <button
                 onClick={async () => {
                   const id = editModalVm.id;
-                  const cpuChanged = editCpu !== (editModalVm.cpu || 1);
-                  const ramChanged = editRam !== (editModalVm.ram || 1);
+                  // Parse the (possibly-empty) inputs; an empty/invalid field counts as "no change".
+                  const cpuVal = parseInt(editCpu, 10);
+                  const ramVal = parseInt(editRam, 10);
+                  const cpuChanged = !Number.isNaN(cpuVal) && cpuVal !== (editModalVm.cpu || 1);
+                  const ramChanged = !Number.isNaN(ramVal) && ramVal !== (editModalVm.ram || 1);
+                  // ONE unified request bundling CPU/RAM + any new disks → a single approval + apply.
+                  const payload = { vmNameConfirmation: editConfirmName };
+                  if (cpuChanged) payload.cpu = cpuVal;
+                  if (ramChanged) payload.ramMb = ramVal * 1024;
+                  if (newDisks.length) payload.disks = newDisks.map((d) => ({ sizeGb: d.size, setupDescription: d.setup || '' }));
                   try {
-                    if (cpuChanged || ramChanged) {
-                      await api.post(`/inventory/${id}/resize`, {
-                        cpu: cpuChanged ? editCpu : undefined,
-                        ramMb: ramChanged ? editRam * 1024 : undefined,
-                        vmNameConfirmation: editConfirmName,
-                      });
-                    }
-                    for (const d of newDisks) {
-                      await api.post(`/inventory/${id}/add-disk`, {
-                        sizeGb: d.size,
-                        setupDescription: d.setup || '',
-                        vmNameConfirmation: editConfirmName,
-                      });
-                    }
+                    await api.post(`/inventory/${id}/edit-resources`, payload);
                     setToastMessage('Edit Resources request submitted. Pending approval.');
                     setEditModalVm(null);
                     await loadInventory();
@@ -923,10 +1054,13 @@ export default function Inventory() {
                     pushToast({ kind: 'error', message: e.message || 'Request failed.' });
                   }
                 }}
-                disabled={
-                  editConfirmName !== editModalVm.name ||
-                  (editCpu === (editModalVm.cpu || 1) && editRam === (editModalVm.ram || 1) && newDisks.length === 0)
-                }
+                disabled={(() => {
+                  if (editConfirmName !== editModalVm.name) return true;
+                  const c = parseInt(editCpu, 10), r = parseInt(editRam, 10);
+                  const cpuChanged = !Number.isNaN(c) && c !== (editModalVm.cpu || 1);
+                  const ramChanged = !Number.isNaN(r) && r !== (editModalVm.ram || 1);
+                  return !(cpuChanged || ramChanged || newDisks.length > 0); // nothing actionable
+                })()}
                 className="px-4 py-2 text-[13px] font-medium bg-teal-600 hover:bg-teal-700 text-white rounded-input transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Submit Request
@@ -1016,12 +1150,18 @@ export default function Inventory() {
             <span className="text-[11px] text-gray-400 dark:text-gray-500 hidden md:block w-32 text-right">
               {isRefreshing ? 'Refreshing...' : `Last Sync: ${formatDateTime(lastSync)}`}
             </span>
-            <button 
+            {/* Refresh button doubles as the live indicator: the green pulsing dot + emerald tint
+                signals auto-refresh is on; clicking refreshes immediately (spins). */}
+            <button
               onClick={handleRefresh}
-              className={`p-2 bg-white dark:bg-surface border border-gray-200 dark:border-theme rounded-input text-gray-500 dark:text-gray-400 hover:text-teal-600 hover:border-teal-300 dark:hover:border-teal-600 shadow-sm ${isRefreshing ? 'animate-spin text-teal-600 border-teal-300' : ''}`}
-              title="Refresh Data"
+              title="Sync all VMs from the latest provider snapshot (auto-refreshes every few seconds; click to sync now)."
+              className="relative p-2 bg-white dark:bg-surface border border-gray-200 dark:border-theme rounded-input text-emerald-600 dark:text-emerald-400 hover:border-emerald-300 dark:hover:border-emerald-600 shadow-sm"
             >
-              <RefreshCw size={16} />
+              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface"></span>
+              </span>
             </button>
           </div>
         </div>
@@ -1048,7 +1188,9 @@ export default function Inventory() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-theme relative">
-              {filteredVms.length === 0 ? (
+              {loading && vms.length === 0 ? (
+                <SkeletonRows cols={10} />
+              ) : filteredVms.length === 0 ? (
                 <tr>
                   <td colSpan="10" className="px-6 py-16 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center justify-center py-10">
@@ -1057,7 +1199,10 @@ export default function Inventory() {
                       </div>
                       <div className="text-[14px] font-bold text-primary mb-1">No VMs Found</div>
                       <div className="text-[12px] text-secondary mb-4">Provision your first virtual machine to get started.</div>
-                      <button className="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-input text-[12px] font-medium transition-colors shadow-sm">
+                      <button
+                        onClick={() => navigate('/request-vm')}
+                        className="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-input text-[12px] font-medium transition-colors shadow-sm"
+                      >
                         + Provision VM
                       </button>
                     </div>
@@ -1112,8 +1257,20 @@ export default function Inventory() {
                           <div className="text-[12px] font-mono text-gray-600 dark:text-gray-400">{vm.ip}</div>
                         </td>
                         <td className="px-4 py-4">
-                          <div className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider ${statusConf.badge}`}>
-                            {renderStatusText(vm)}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <div className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider ${statusConf.badge}`}>
+                              {renderStatusText(vm)}
+                            </div>
+                            {/* Pending lifecycle approval(s) on this VM (resize/extend/permanent/…) */}
+                            {vm.pendingActions?.length > 0 && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 animate-pulse"
+                                title="A request on this VM is awaiting approval"
+                              >
+                                <Clock size={10} />
+                                Waiting approval ({vm.pendingActions.map((a) => PENDING_LABEL[a] || a).join(', ')})
+                              </span>
+                            )}
                           </div>
                           {/* Provider-synced observed power state (dual status). */}
                           <div className="mt-1.5">
@@ -1308,9 +1465,6 @@ export default function Inventory() {
               <>
                 <button onClick={() => { setOpenDropdownId(null); handleOpenEdit(activeVm); }} className="w-full px-4 py-2 text-[12px] font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2">
                   Edit Resources
-                </button>
-                <button onClick={() => handleProviderSync(activeVm)} className="w-full px-4 py-2 text-[12px] font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2">
-                  Provider Sync
                 </button>
                 <div className="my-1 border-t border-gray-100 dark:border-theme"></div>
               </>

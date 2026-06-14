@@ -1,10 +1,18 @@
 import React, { useEffect } from 'react';
-import { 
-  X, CheckCircle2, Box, Server, Database, Share2, ServerCrash, Zap, Settings2, Globe, Clock, Shield, AlertTriangle, AlertCircle, XCircle, Cloud, Cpu, HardDrive
+import {
+  X, CheckCircle2, Box, Server, Database, Share2, ServerCrash, Zap, Settings2, Globe, Clock, Shield, AlertTriangle, AlertCircle, XCircle, Cloud, HardDrive
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
+import { useNodeContext } from '../../../contexts/NodeContext';
+import { environmentsForNode } from '../../../lib/nodeAssignments';
 
 export default function DatastoreDiscovery({ datastoreDrawer, setDatastoreDrawer }) {
+  const { environments } = useEnvironmentContext();
+  const { nodes } = useNodeContext();
+  // Derived: a datastore belongs to an environment iff its node is in that env's allow-list (etc.txt item 4).
+  const assignedEnvs = environmentsForNode(datastoreDrawer.datastore?.providerNodeId, environments, nodes);
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && datastoreDrawer.isOpen) {
@@ -54,32 +62,15 @@ export default function DatastoreDiscovery({ datastoreDrawer, setDatastoreDrawer
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 flex flex-col gap-6">
             
-            {/* Assignments & Usage Section */}
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-card border border-slate-200 dark:border-theme rounded-card p-5 shadow-sm">
-                <h3 className="text-[13px] font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2"><Globe size={16} className="text-blue-500" /> Environment Assignments</h3>
-                <div className="flex flex-wrap gap-2">
-                  {(Array.isArray(datastoreDrawer.datastore.environment) ? datastoreDrawer.datastore.environment : [datastoreDrawer.datastore.environment]).map(env => (
-                    <span key={env} className={`px-2.5 py-1 text-[12px] font-medium rounded-md border ${
-                      env === 'Production' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20' :
-                      env === 'Development' ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20' :
-                      env === 'Testing' ? 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/20' :
-                      'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20'
-                    }`}>
-                      {env}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="bg-white dark:bg-card border border-slate-200 dark:border-theme rounded-card p-5 shadow-sm">
-                <h3 className="text-[13px] font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2"><Cpu size={16} className="text-blue-500" /> Tier Assignments</h3>
-                <div className="flex flex-wrap gap-2">
-                  {datastoreDrawer.datastore.tiers?.map(tier => (
-                    <span key={tier} className="px-2.5 py-1 text-[12px] font-medium rounded-md border bg-slate-50 dark:bg-surface text-slate-700 dark:text-slate-300 border-slate-200 dark:border-theme">
-                      {tier}
-                    </span>
-                  )) || <span className="text-[12px] text-slate-500">No tiers assigned</span>}
-                </div>
+            {/* Environment Assignments — derived from environment→node allow-lists (etc.txt item 4) */}
+            <div className="bg-white dark:bg-card border border-slate-200 dark:border-theme rounded-card p-5 shadow-sm">
+              <h3 className="text-[13px] font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2"><Globe size={16} className="text-blue-500" /> Environment Assignments</h3>
+              <div className="flex flex-wrap gap-2">
+                {assignedEnvs.length > 0 ? assignedEnvs.map(env => (
+                  <span key={env} className="px-2.5 py-1 text-[12px] font-medium rounded-md border bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20">
+                    {env}
+                  </span>
+                )) : <span className="text-[12px] text-slate-500">No environments assigned (this datastore's node is not in any environment's allow-list)</span>}
               </div>
             </div>
 

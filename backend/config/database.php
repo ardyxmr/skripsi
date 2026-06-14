@@ -179,6 +179,21 @@ return [
             'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
         ],
 
+        // SEPARATE instance (default :6380) for the job queue + Reverb pub/sub — `noeviction` + AOF,
+        // so jobs are NEVER silently evicted (the cache instance is `allkeys-lru` and would drop them).
+        'queue' => [
+            'url' => env('REDIS_QUEUE_URL'),
+            'host' => env('REDIS_QUEUE_HOST', '127.0.0.1'),
+            'username' => env('REDIS_QUEUE_USERNAME'),
+            'password' => env('REDIS_QUEUE_PASSWORD'),
+            'port' => env('REDIS_QUEUE_PORT', '6380'),
+            'database' => env('REDIS_QUEUE_DB', '0'),
+            'max_retries' => env('REDIS_MAX_RETRIES', 3),
+            'backoff_algorithm' => env('REDIS_BACKOFF_ALGORITHM', 'decorrelated_jitter'),
+            'backoff_base' => env('REDIS_BACKOFF_BASE', 100),
+            'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
+        ],
+
     ],
 
 ];

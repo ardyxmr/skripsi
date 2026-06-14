@@ -1,0 +1,19 @@
+# InfraProv scheduler — runs the per-provider discovery sweep, expiry/grace engine, and prune.
+# SINGLETON: run exactly ONE instance fleet-wide. Multiple schedulers would multiply the discovery
+# sweeps (and is the same reason a k8s deploy must use a single scheduler pod / CronJob).
+[Unit]
+Description=InfraProv scheduler (schedule:work)
+After=network-online.target redis-queue.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=appd
+Group=appd
+WorkingDirectory=/home/appd/my-project/backend
+ExecStart=/usr/bin/php artisan schedule:work
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

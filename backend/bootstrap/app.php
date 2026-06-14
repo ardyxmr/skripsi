@@ -19,6 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // Broadcasting auth on the SANCTUM guard + /api prefix (NOT the default `web`/cookie group that
+    // `withRouting(channels:)` would use), so the SPA's bearer token authenticates channel
+    // subscriptions and the route inherits the existing api/* CORS rule. The cookie-trap bypass.
+    ->withBroadcasting(
+        __DIR__.'/../routes/channels.php',
+        ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum']],
+    )
     ->withMiddleware(function (Middleware $middleware): void {
         // Every /api/* request is treated as JSON.
         $middleware->api(prepend: [ForceJsonAccept::class]);

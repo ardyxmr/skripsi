@@ -1,0 +1,27 @@
+# InfraProv queue worker (TEMPLATED — run N instances for parallel provisioning).
+# Processes BOTH the provisioning/lifecycle jobs AND the queued broadcasts off Redis :6380.
+# Run e.g. 3 instances:  sudo systemctl enable --now infraprov-worker@1 infraprov-worker@2 infraprov-worker@3
+#
+# Adjust User=, WorkingDirectory=, and the php path for your deploy.
+[Unit]
+Description=InfraProv queue worker %i
+After=network-online.target redis-queue.service postgresql.service
+Wants=network-online.target
+Requires=redis-queue.service
+
+[Service]
+Type=simple
+User=appd
+Group=appd
+WorkingDirectory=/home/appd/my-project/backend
+# --timeout MUST be < the redis queue retry_after (1800) or a slow job gets re-dispatched in parallel.
+# --max-time recycles the worker hourly (frees memory; picks up new code after a deploy + queue:restart).
+ExecStart=/usr/bin/php artisan queue:work redis --queue=default --sleep=1 --tries=1 --timeout=600 --max-time=3600
+Restart=always
+RestartSec=2
+# Let an in-flight terraform apply finish before SIGKILL (must exceed --timeout).
+TimeoutStopSec=620
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

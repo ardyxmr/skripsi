@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Observers\ApprovalObserver;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+#[ObservedBy([ApprovalObserver::class])]
 #[Fillable([
     'request_type', 'reference_id', 'requester_id', 'approver_id', 'group_id',
     'payload', 'status', 'action_type', 'action_reason', 'action_date',

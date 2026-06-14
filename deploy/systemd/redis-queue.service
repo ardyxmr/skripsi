@@ -1,0 +1,25 @@
+# InfraProv queue + Reverb pub/sub Redis instance (:6380).
+# Install: sudo cp deploy/systemd/redis-queue.service /etc/systemd/system/
+#          sudo cp deploy/redis/redis-queue.conf      /etc/redis/redis-queue.conf
+#          sudo mkdir -p /var/lib/redis-queue && sudo chown redis:redis /var/lib/redis-queue
+#          sudo systemctl daemon-reload && sudo systemctl enable --now redis-queue
+[Unit]
+Description=Redis — InfraProv queue + Reverb pub/sub (port 6380)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/redis-server /etc/redis/redis-queue.conf --supervised systemd --daemonize no
+ExecStop=/usr/bin/redis-cli -p 6380 shutdown
+Restart=always
+RestartSec=2
+User=redis
+Group=redis
+RuntimeDirectory=redis-queue
+RuntimeDirectoryMode=0755
+# Redis clients are file descriptors; keep this generous.
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

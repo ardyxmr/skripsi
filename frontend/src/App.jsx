@@ -245,7 +245,8 @@ function ProtectedLayout() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden text-[14px] font-sans text-primary bg-page">
-      {/* Single app-wide adaptive poller; Inventory/Approvals/bell consume LIVE_CACHE_EVENT. */}
+      {/* Single app-wide live driver: WebSocket (Reverb) + adaptive poll fallback; Inventory/
+          Approvals/bell consume LIVE_CACHE_EVENT. */}
       <LiveDataPoller />
       <Sidebar user={currentUser} />
       <div className="flex-1 flex flex-col min-w-0 bg-transparent transition-all duration-[250ms]">

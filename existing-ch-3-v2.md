@@ -66,20 +66,20 @@ VE [SITASI DIBUTUHKAN: spesifikasi perangkat keras laboratorium yang dipakai].
 
 Peneliti mengumpulkan data melalui observasi, wawancara, dan studi literatur.
 
-**Observasi.** Peneliti mengamati langsung proses provisioning mesin virtual yang berjalan manual.
+Observasi dilakukan dengan mengamati proses provisioning mesin virtual yang berjalan manual.
 Observasi memperlihatkan bahwa pembuatan satu mesin virtual menempuh banyak langkah berulang, mulai
 dari penentuan spesifikasi sumber daya, pemilihan template, konfigurasi jaringan, hingga konfigurasi
 sistem operasi. Proses tersebut memakan waktu dan membuka peluang kesalahan akibat campur tangan
 manusia.
 
-**Wawancara.** Peneliti mewawancarai pihak pengelola infrastruktur untuk menggali kebutuhan sistem
-dan proses bisnis. Hasil wawancara menunjukkan kebutuhan terhadap layanan pengajuan mandiri,
-mekanisme persetujuan, otomatisasi provisioning, monitoring inventaris, pencatatan aktivitas melalui
-audit trail, serta hardening otomatis setelah mesin virtual terbentuk.
+Wawancara dilakukan terhadap pihak pengelola infrastruktur untuk menggali kebutuhan sistem dan proses
+bisnis. Hasil wawancara menunjukkan kebutuhan terhadap layanan pengajuan mandiri, mekanisme
+persetujuan, otomatisasi provisioning, monitoring inventaris, pencatatan aktivitas melalui audit
+trail, serta hardening otomatis setelah mesin virtual terbentuk.
 
-**Studi literatur.** Peneliti mengkaji jurnal, skripsi, dan dokumentasi teknis tentang virtualisasi,
-Infrastructure as Code, Terraform, Ansible, Proxmox VE, orkestrasi infrastruktur, server hardening,
-kebergunaan, dan keamanan sebagai landasan teoretis serta acuan perancangan.
+Studi literatur dilakukan dengan mengkaji jurnal, skripsi, dan dokumentasi teknis tentang
+virtualisasi, Infrastructure as Code, Terraform, Ansible, Proxmox VE, orkestrasi infrastruktur, server
+hardening, kebergunaan, dan keamanan sebagai landasan teoretis serta acuan perancangan.
 
 ## 3.4 Analisis Kebutuhan
 
@@ -109,15 +109,15 @@ Peneliti membagi kebutuhan sistem menjadi kebutuhan fungsional dan nonfungsional
 
 ### 3.4.2 Kebutuhan Nonfungsional
 
-1. **Keamanan.** Sistem menerapkan autentikasi berbasis sesi (cookie), otorisasi berbasis peran,
+1. Aspek keamanan diwujudkan melalui autentikasi berbasis sesi (cookie), otorisasi berbasis peran,
    pembatasan percobaan login (throttle), enkripsi kredensial, dan audit trail.
-2. **Kinerja.** Sistem memproses permintaan provisioning serta menampilkan status tanpa mengganggu
-   responsivitas aplikasi.
-3. **Ketersediaan.** Sistem tersedia selama layanan infrastruktur berjalan.
-4. **Kompatibilitas.** Sistem berjalan pada peramban modern dan berintegrasi dengan PostgreSQL,
-   Redis, Terraform, Ansible, serta Proxmox VE.
-5. **Skalabilitas.** Sistem mendukung pertambahan pengguna, permintaan, dan provider tanpa mengubah
-   arsitektur secara berarti.
+2. Aspek kinerja mengharuskan sistem memproses permintaan provisioning dan menampilkan status tanpa
+   menurunkan responsivitas aplikasi.
+3. Aspek ketersediaan menuntut sistem tetap dapat diakses selama layanan infrastruktur berjalan.
+4. Aspek kompatibilitas mengharuskan sistem berjalan pada peramban modern dan berintegrasi dengan
+   PostgreSQL, Redis, Terraform, Ansible, serta Proxmox VE.
+5. Aspek skalabilitas menuntut sistem mendukung pertambahan pengguna, permintaan, dan provider tanpa
+   perubahan arsitektur yang berarti.
 
 ## 3.5 Perancangan Sistem
 
@@ -508,25 +508,21 @@ tersembunyi, sedangkan tata kelola tetap terjaga melalui saringan environment.
 ## 3.6 Pengembangan Sistem
 
 Peneliti membangun sistem secara iteratif dan incremental, menambah fungsi bertahap sambil menerapkan
-security-by-design. Implementasi mencakup komponen berikut.
+security-by-design. Implementasi mencakup komponen frontend, backend, basis data, Terraform, Ansible,
+serta integrasi antarbagian.
 
-**Frontend.** React.js dengan pendekatan Single Page Application menyajikan halaman login,
-dashboard, katalog, provisioning, approval, inventaris, dan settings.
+Pada sisi frontend, React.js dengan pendekatan Single Page Application menyajikan halaman login,
+dashboard, katalog, provisioning, approval, inventaris, dan settings. Pada sisi backend, Laravel
+menyediakan API, logika bisnis, autentikasi berbasis sesi, otorisasi berbasis peran, pengelolaan data
+master, alur persetujuan, pengelolaan inventaris, audit trail, serta integrasi Terraform dan Ansible.
+Basis data PostgreSQL menyimpan seluruh data sistem dan mendukung transaksi yang konsisten.
 
-**Backend.** Laravel menyediakan API, logika bisnis, autentikasi berbasis sesi, otorisasi berbasis
-peran, pengelolaan data master, alur persetujuan, pengelolaan inventaris, audit trail, serta
-integrasi Terraform dan Ansible.
+Terraform menerjemahkan parameter pengguna menjadi konfigurasi infrastruktur lalu menerapkannya ke
+Proxmox VE, dengan direktori kerja dan state terpisah untuk tiap permintaan. Ansible menjalankan
+playbook hardening atas mesin virtual yang terbentuk, memakai inventory dinamis dari hasil
+provisioning dan koneksi SSH berbasis kunci.
 
-**Basis data.** PostgreSQL menyimpan seluruh data sistem dan mendukung transaksi yang konsisten.
-
-**Terraform.** Terraform menerjemahkan parameter pengguna menjadi konfigurasi infrastruktur lalu
-menerapkannya ke Proxmox VE. Sistem membentuk direktori kerja dan state terpisah untuk tiap
-permintaan.
-
-**Ansible.** Ansible menjalankan playbook hardening atas mesin virtual yang terbentuk, memakai
-inventory dinamis dari hasil provisioning dan koneksi SSH berbasis kunci.
-
-**Integrasi.** Frontend memanggil backend melalui API. Saat provisioning, backend memanggil
+Pada sisi integrasi, frontend memanggil backend melalui API. Saat provisioning, backend memanggil
 Terraform untuk membuat mesin virtual, lalu menjalankan Ansible untuk hardening. Sistem mencatat
 seluruh aktivitas ke basis data dan menampilkannya kembali melalui halaman inventaris, approval,
 audit trail, serta notifikasi real-time.

@@ -16,7 +16,7 @@
 
 ## 3.1 Kerangka Metodologi Penelitian
 
-Penelitian ini memakai kerangka Design Science Research Methodology (DSRM) yang dirumuskan Peffers
+Penelitian ini memakai kerangka *Design Science Research Methodology* (DSRM) yang dirumuskan Peffers
 dkk. (2007). DSRM cocok karena penelitian membangun dan mengevaluasi sebuah artefak berupa aplikasi
 web self-service, sekaligus menghasilkan pengetahuan perancangan yang dapat dialihgunakan. DSRM
 menempuh enam aktivitas: identifikasi masalah dan motivasi, penetapan tujuan solusi, perancangan
@@ -49,11 +49,11 @@ Tabel 3.2 merinci perangkat lunak yang dipakai untuk membangun dan menjalankan s
 
 | Komponen | Perangkat lunak |
 |----------|-----------------|
-| Platform virtualisasi | Proxmox Virtual Environment 9.1 |
-| Provisioning (IaC) | Terraform |
+| Platform virtualisasi | Proxmox *Virtual Environment* (Proxmox VE) 9.1 |
+| Provisioning, *Infrastructure as Code* (IaC) | Terraform |
 | Konfigurasi & hardening | Ansible |
 | Frontend | React.js (Single Page Application) |
-| Backend | Laravel (PHP) |
+| Backend | Laravel (bahasa PHP) |
 | Basis data | PostgreSQL |
 | Sesi & real-time | Redis dan Laravel Reverb (WebSocket) |
 | Pengujian otomatis | PHPUnit |
@@ -94,7 +94,7 @@ Peneliti membagi kebutuhan sistem menjadi kebutuhan fungsional dan nonfungsional
 4. Sistem mengelola lebih dari satu provider Proxmox dari satu kendali terpusat (multi-provider).
 5. Administrator menyusun kebijakan lingkungan (environment) yang membatasi provider, node, tier,
    jaringan, dan datastore yang boleh dipakai, beserta masa berlaku, masa tenggang, dan kuota disk.
-6. Administrator menetapkan standar sumber daya (tier) untuk CPU, RAM, dan penyimpanan.
+6. Administrator menetapkan standar sumber daya (tier) untuk *Central Processing Unit* (CPU), *Random Access Memory* (RAM), dan penyimpanan.
 7. Pengguna mengajukan provisioning mesin virtual melalui portal self-service tanpa menulis kode.
 8. Approver menyetujui, menolak, atau mengembalikan (approve, reject, revert) permintaan, disertai
    alasan yang tercatat.
@@ -138,14 +138,14 @@ aplikasi, eksekusi asinkron, data, dan infrastruktur eksternal. Pemisahan lapisa
 tanggung jawab antarmuka pengguna, orkestrasi, eksekusi berdurasi panjang, dan penyimpanan, sehingga
 tiap lapisan dapat diuji dan diskalakan secara terpisah.
 
-Pada lapisan klien dan edge, antarmuka pengguna berupa aplikasi React (Single Page Application) yang
-berjalan di peramban. Seluruh trafik HTTPS melewati nginx sebagai reverse proxy dengan skema
-same-origin, yaitu permintaan ke rute /api diteruskan ke API Laravel, sedangkan koneksi WebSocket
+Pada lapisan klien dan edge, antarmuka pengguna berupa aplikasi React atau *Single Page Application* (SPA) yang
+berjalan di peramban. Seluruh trafik *HyperText Transfer Protocol Secure* (HTTPS) melewati nginx sebagai reverse proxy dengan skema
+same-origin, yaitu permintaan ke rute /api diteruskan ke *Application Programming Interface* (API) Laravel, sedangkan koneksi WebSocket
 diteruskan ke server Reverb. Pendekatan same-origin memungkinkan autentikasi Sanctum berbasis cookie
-HttpOnly tanpa menyimpan token pada sisi klien dan menghilangkan kebutuhan konfigurasi CORS lintas
+HttpOnly tanpa menyimpan token pada sisi klien dan menghilangkan kebutuhan konfigurasi *Cross-Origin Resource Sharing* (CORS) lintas
 domain.
 
-Pada lapisan aplikasi, inti sistem adalah API REST Laravel beserta layanan domain, yaitu layanan
+Pada lapisan aplikasi, inti sistem adalah API berarsitektur *Representational State Transfer* (REST) pada Laravel beserta layanan domain, yaitu layanan
 Provisioning, Approval, Lifecycle, dan Audit. Akses ke provider dipusatkan pada *DiscoveryService*
 melalui *ProviderFactory* yang memilih implementasi *ProviderDriver* sesuai tipe provider; pada
 penelitian ini implementasinya adalah *ProxmoxProvider* yang bersifat hanya-baca. Server Reverb berada
@@ -161,19 +161,19 @@ antrian system untuk memproses event broadcast dan sinkronisasi fakta mesin virt
 provisioning yang berat tidak menghambat pembaruan real-time.
 
 Pada lapisan data, PostgreSQL menjadi sumber kebenaran transaksional. Sistem memakai dua instance
-Redis dengan peran berbeda: instance pada porta 6379 melayani cache dengan kebijakan LRU yang boleh
+Redis dengan peran berbeda: instance pada porta 6379 melayani cache dengan kebijakan *Least Recently Used* (LRU) yang boleh
 menggugurkan entri saat memori penuh, sedangkan instance pada porta 6380 melayani antrian, sesi, dan
-pub/sub dengan kebijakan noeviction serta persistensi AOF. Pemisahan ini menjamin job dan sesi
+pub/sub dengan kebijakan noeviction serta persistensi *Append-Only File* (AOF). Pemisahan ini menjamin job dan sesi
 pengguna tidak ikut tergusur ketika cache penuh.
 
 Pada lapisan infrastruktur eksternal, Proxmox VE menjadi target orkestrasi. *DiscoveryService*
 membaca sumber daya Proxmox melalui API hanya-baca dan mencerminkannya ke tabel berprefiks
-provider_. Setelah provisioning, worker menulis fakta runtime berupa vmid, alamat IP, dan status daya
+provider_. Setelah provisioning, worker menulis fakta runtime berupa vmid, alamat *Internet Protocol* (IP), dan status daya
 kembali ke tabel inventory melalui sinkronisasi provider_vms.
 
-Gambar 3.2 memperlihatkan dua pola alur. Pada alur sinkron, permintaan baca dan operasi CRUD pendek
+Gambar 3.2 memperlihatkan dua pola alur. Pada alur sinkron, permintaan baca dan operasi *Create, Read, Update, Delete* (CRUD) pendek
 mengalir dari SPA, melewati nginx, menuju API Laravel, lalu API membaca atau menulis PostgreSQL dan
-mengembalikan respons JSON. Pada alur asinkron, pengguna mengirim permintaan provisioning; API
+mengembalikan respons *JavaScript Object Notation* (JSON). Pada alur asinkron, pengguna mengirim permintaan provisioning; API
 menyimpan entitas *ProvisionRequest* dan mengirim *ProvisionVmJob* ke antrian Redis. Worker kemudian
 meresolusi sumber daya, menyiapkan direktori kerja Terraform per mesin virtual, dan menjalankan
 terraform apply untuk clone template beserta cloud-init di Proxmox. Worker memperbarui status
@@ -190,7 +190,7 @@ klaim ekstensibilitas dan skalabilitas yang dibahas pada Rumusan Masalah 1 dan R
 
 ### 3.5.2 Pemodelan UML
 
-Pemodelan UML pada subbab ini mencakup empat jenis diagram, yaitu use case diagram untuk batasan
+Pemodelan *Unified Modeling Language* (UML) pada subbab ini mencakup empat jenis diagram, yaitu use case diagram untuk batasan
 fungsi dan aktor, activity diagram untuk alur kerja, sequence diagram untuk urutan interaksi
 antarkomponen, dan class diagram untuk struktur kelas domain.
 
@@ -375,7 +375,7 @@ direktori kerja dan berkas state Terraform sendiri, sehingga eksekusi satu mesin
 memengaruhi state mesin virtual lain.
 
 *TerraformRunner* menjalankan apply terhadap Proxmox. Proses ini melakukan clone template menjadi vmid
-baru, menulis konfigurasi cloud-init berupa pengguna, kunci SSH, jaringan, dan hostname, lalu
+baru, menulis konfigurasi cloud-init berupa pengguna, kunci *Secure Shell* (SSH), jaringan, dan hostname, lalu
 menyalakan mesin virtual. Proxmox mengembalikan vmid baru dan alamat IP awal yang terdeteksi.
 
 Diagram memuat fragmen alternatif untuk hasil apply. Pada keberhasilan, worker memperbarui status
@@ -390,12 +390,12 @@ system memastikan sinkronisasi fakta tidak menghambat antrian provisioning.
 [Gambar 3.9 Sequence Diagram Provisioning Terraform]
 
 Class diagram pada Gambar 3.10 menggambarkan struktur kelas domain, yaitu model Eloquent pada
-direktori backend/app/Models. Nama atribut diselaraskan dengan kolom kunci pada ERD Gambar 3.11,
+direktori backend/app/Models. Nama atribut diselaraskan dengan kolom kunci pada *Entity Relationship Diagram* (ERD) Gambar 3.11,
 sedangkan kolom foreign key tidak ditampilkan eksplisit karena diwakili relasi antarkelas. Kelas
 layanan tidak ditampilkan agar diagram fokus pada entitas data. Kelas dikelompokkan menjadi tujuh
 kelompok sesuai lapisan arsitektur.
 
-Kelompok IAM terdiri atas *User*, *Role*, dan *Group*, dengan *User* terhubung ke satu *Role* dan satu
+Kelompok *Identity and Access Management* (IAM) terdiri atas *User*, *Role*, dan *Group*, dengan *User* terhubung ke satu *Role* dan satu
 *Group*, serta *Group* dipimpin satu *User*. Kelompok mirror provider terdiri atas *Provider* beserta
 *ProviderNode*, *ProviderTemplate*, *ProviderNetwork*, *ProviderDatastore*, dan *ProviderVm*, yang
 menyimpan hasil discovery sumber daya provider, dan satu *Provider* memiliki banyak entitas pada tiap
@@ -471,7 +471,7 @@ daya mentah Proxmox (node, template, jaringan, datastore, mesin virtual) ke dala
 provider_. Publikasi memetakan sumber daya mentah tersebut menjadi alias ramah pengguna, misalnya
 template rocky-golden menjadi katalog rocky-linux-8, bridge vmbr0 menjadi jaringan VLAN-DEV,
 dan storage pool local-lvm menjadi datastore Disk-ssd-dev. Dengan demikian pengguna menyusun
-mesin virtual dari pilihan menu, tanpa menyentuh berkas HCL, identifier bridge, atau nama storage
+mesin virtual dari pilihan menu, tanpa menyentuh berkas *HashiCorp Configuration Language* (HCL), identifier bridge, atau nama storage
 pool.
 
 Lapisan kebijakan berpusat pada environment. Environment membatasi provider, node, tier, jaringan,
@@ -576,7 +576,7 @@ tertentu (lihat Bab I dan Bab II). Hasil pengujian disajikan pada Bab IV.
 ### 3.8.1 Verifikasi Fungsional
 
 Verifikasi fungsional memastikan logika aplikasi berjalan benar. Peneliti menyusun rangkaian
-pengujian otomatis (PHPUnit) yang menjalankan jalur HTTP nyata terhadap basis data PostgreSQL, dan
+pengujian otomatis (PHPUnit) yang menjalankan jalur *HyperText Transfer Protocol* (HTTP) nyata terhadap basis data PostgreSQL, dan
 memalsukan antrian pekerjaan (job bus) sehingga pengujian tidak menjalankan Terraform atau Ansible
 yang sesungguhnya. Selain pengujian otomatis, Tabel 3.3 mendefinisikan skenario pengujian fungsional
 beserta hasil yang diharapkan; hasil aktual dilaporkan pada Bab IV.
@@ -595,21 +595,21 @@ beserta hasil yang diharapkan; hasil aktual dilaporkan pada Bab IV.
 | 8 | Ansible | Opsi hardening aktif | Sistem menjalankan playbook hardening |
 | 9 | Inventaris | Pengguna membuka inventaris | Sistem menampilkan daftar mesin virtual |
 | 10 | Audit trail | Sistem mencatat aktivitas | Aktivitas tersimpan pada audit log |
-| 11 | Cloud-init hostname | Nama host disetel sama dengan nama VM | Hostname tamu sama dengan nama mesin virtual |
-| 12 | Cloud-init resize | Disk boot diperbesar dari 40 GB ke 41 GB | Sistem berkas tamu meluas otomatis ke 41 GB |
+| 11 | Cloud-init hostname | Nama host disetel sama dengan nama mesin virtual | Hostname tamu sama dengan nama mesin virtual |
+| 12 | Cloud-init resize | Disk boot diperbesar dari 40 *Gigabyte* (GB) ke 41 GB | Sistem berkas tamu meluas otomatis ke 41 GB |
 
 ### 3.8.2 Studi Komparatif Efisiensi Operasional
 
 Studi ini membandingkan upaya operasional dan perilaku penskalaan tiga metode orkestrasi dalam
 menyediakan mesin virtual yang identik. Metode A adalah provisioning manual melalui antarmuka web
-Proxmox VE. Metode B adalah eksekusi Infrastructure as Code berbasis CLI memakai Terraform native.
+Proxmox VE. Metode B adalah eksekusi Infrastructure as Code berbasis *Command Line Interface* (CLI) memakai Terraform native.
 Metode C adalah portal web yang dibangun pada penelitian ini, yaitu Laravel dengan antrian dan worker
 Redis serta isolasi direktori kerja Terraform per mesin virtual. Perbandingan A terhadap B mengisolasi
 efek Infrastructure as Code terhadap cara manual, sedangkan perbandingan B terhadap C mengisolasi
 kontribusi lapisan orkestrasi penelitian ini, yaitu antrian, kebijakan, persetujuan, isolasi workspace,
 dan pemantauan real-time.
 
-Variabel bebas adalah metode orkestrasi (A, B, atau C) dan ukuran batch N pada nilai 1, 4, dan 8. Nilai
+Variabel bebas adalah metode orkestrasi (A, B, atau C) dan ukuran batch N, yaitu jumlah mesin virtual per permintaan, pada nilai 1, 4, dan 8. Nilai
 N sama dengan 1 menjadi dasar pengamatan aksi konstan, N sama dengan 4 selaras dengan jumlah worker,
 dan N sama dengan 8 menjadi batch utama. Variabel terikat dibagi dua kelompok. Kelompok pertama
 mengukur upaya operator, yaitu jumlah aksi antarmuka per mesin virtual, jumlah baris kode HCL yang
@@ -634,11 +634,11 @@ sehingga batas empat worker portal terbaca sebagai pilihan perlindungan node Pro
 tekanan node pada Bab IV, bukan keterbatasan kinerja.
 
 Peneliti mengulang tiap kombinasi metode dan N minimal tiga kali, membuang jalannya pertama yang dingin
-akibat cache template dan ARC, lalu melaporkan rata-rata beserta rentang. Seluruh pengujian berjalan
+akibat cache template dan *Adaptive Replacement Cache* (ARC), lalu melaporkan rata-rata beserta rentang. Seluruh pengujian berjalan
 pada node, datastore zfspool thin, dan jendela waktu yang sama untuk menekan beban lain.
 
 Selama batch berjalan, peneliti merekam telemetri pendukung. Pada sisi Proxmox, peneliti mencatat
-penggunaan CPU node, IO delay, dan Pressure Stall Information, serta jumlah tugas clone yang berjalan
+penggunaan CPU node, *Input/Output* (IO) delay, dan Pressure Stall Information, serta jumlah tugas clone yang berjalan
 bersamaan untuk mengamati serialisasi pada kunci penyimpanan; metrik ini memakai metode yang sama
 dengan benchmark throughput backend pada Bab IV. Pada sisi portal, peneliti mencatat kedalaman antrian
 Redis, jumlah pekerjaan yang sedang berjalan, dan waktu tunggu antrian, untuk membuktikan antrian
@@ -661,13 +661,13 @@ benchmark throughput backend pada Bab IV.
 
 ### 3.8.3 Evaluasi Kebergunaan (SUS)
 
-Peneliti memakai System Usability Scale (Brooke, 1996) yang berisi sepuluh pernyataan dengan skala
+Peneliti memakai *System Usability Scale* (SUS; Brooke, 1996) yang berisi sepuluh pernyataan dengan skala
 Likert lima tingkat. Responden mengisi SUS segera setelah memakai tiap metode, baik aplikasi maupun
 antarmuka Proxmox bawaan, sehingga menghasilkan skor kebergunaan komparatif. Perhitungan mengikuti
 prosedur SUS dan menghasilkan skor 0 sampai 100. Evaluasi ini menguji H4.
 
 ### 3.8.4 Evaluasi Keamanan (STRIDE)
 
-Peneliti mengevaluasi keamanan melalui pemodelan ancaman STRIDE. Peneliti mendaftar aset dan batas
+Peneliti mengevaluasi keamanan melalui pemodelan ancaman STRIDE (*Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege*). Peneliti mendaftar aset dan batas
 kepercayaan, memetakan tiap ancaman ke kendali yang diterapkan beserta buktinya, lalu mencatat
 risiko sisa sebagai daftar pengerasan tahap produksi. Evaluasi ini mendukung jawaban atas Rumusan Masalah 2.

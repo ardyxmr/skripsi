@@ -1,4 +1,4 @@
-# BAB I — PENDAHULUAN
+# BAB I PENDAHULUAN
 <!--
   REVISI v2 (selaras dengan sistem final + kerangka DSRM).
   Perubahan utama vs v1:
@@ -35,11 +35,11 @@ jumlah server bertambah, dan proses berulang membuka peluang kesalahan konfigura
 yang menurunkan stabilitas, keamanan, serta konsistensi infrastruktur. Khumaidi (2021) mencatat
 bahwa pengelolaan server secara manual memaksa administrator mengulang konfigurasi yang sama
 sehingga tidak efisien, memakan waktu, dan menambah risiko kesalahan manusia. Nabila dan Indrawati
-(2025) menambahkan bahwa pengelolaan infrastruktur TI secara manual menempuh banyak tahap, memakan
+(2025) menambahkan bahwa pengelolaan infrastruktur teknologi informasi (TI) secara manual menempuh banyak tahap, memakan
 waktu, dan berisiko tinggi terhadap kesalahan konfigurasi yang berujung pada inefisiensi serta
 ketidakstabilan sistem.
 
-Infrastructure as Code (IaC) menjawab persoalan tersebut dengan mendefinisikan infrastruktur dalam
+*Infrastructure as Code* (IaC) menjawab persoalan tersebut dengan mendefinisikan infrastruktur dalam
 bentuk kode, sehingga penyediaan dan pengelolaan sumber daya berlangsung otomatis dan berulang
 dengan hasil yang konsisten. Jangam dan Muntala (2025) menyatakan bahwa IaC meningkatkan efisiensi,
 reliabilitas, dan skalabilitas pengelolaan infrastruktur karena seluruh konfigurasi dikelola
@@ -50,9 +50,8 @@ Ansible menangani konfigurasi lanjutan dan penguatan keamanan (hardening) sistem
 menghasilkan konfigurasi keamanan yang lebih konsisten.
 
 Kekuatan IaC menuntut harga berupa kompleksitas. Pemanfaatan Terraform dan Ansible mensyaratkan
-penguasaan sintaks kode, antarmuka baris perintah (command line interface/CLI), konsep state, serta
-pemahaman identifier teknis platform seperti nama node, bridge jaringan, storage pool, dan ID
-template. Bagi pengguna non-pakar dan organisasi skala kecil dan menengah (UKM) yang sumber dayanya
+penguasaan sintaks kode, antarmuka baris perintah atau *Command Line Interface* (CLI), konsep state, serta
+pemahaman identifier teknis platform seperti nama node, bridge jaringan, storage pool, dan identifier template. Bagi pengguna non-pakar dan usaha kecil dan menengah (UKM) yang sumber dayanya
 terbatas, kurva pembelajaran ini menghambat adopsi. Akibatnya pengguna tetap bergantung pada
 administrator untuk mengajukan kebutuhan mesin virtual, sehingga penyediaan layanan tidak efisien
 dan belum mandiri (self-service).
@@ -61,7 +60,7 @@ Tata kelola (governance) dan keamanan menjadi syarat penting bagi penyediaan lay
 Penyediaan mandiri yang tidak terkendali memicu pemborosan sumber daya, konfigurasi tak terstandar,
 dan hilangnya jejak pertanggungjawaban. Karena itu sistem memerlukan mekanisme persetujuan (approval
 workflow), kebijakan berbasis lingkungan berupa kuota, masa berlaku (expiry), dan daftar sumber daya
-yang diizinkan, kontrol akses berbasis peran (RBAC), serta jejak audit (audit trail). Pada sisi
+yang diizinkan, kontrol akses berbasis peran atau *Role-Based Access Control* (RBAC), serta jejak audit (audit trail). Pada sisi
 keamanan sistem operasi, Nelmiawati dkk. (2025) menjelaskan bahwa server hardening meningkatkan
 ketahanan sistem terhadap ancaman sekaligus menekan risiko akibat kesalahan konfigurasi manual.
 
@@ -76,7 +75,7 @@ Kajian tersebut memperlihatkan kesenjangan penelitian (research gap). Sebagian b
 terdahulu berfokus pada otomatisasi konfigurasi, jaringan virtual, atau hardening secara terpisah
 dan mengevaluasinya pada tataran CLI atau kinerja teknis, sehingga aspek kebergunaan dari sisi
 manusia (human usability) belum banyak dikaji. Solusi yang mengintegrasikan (a) self-service dengan
-approval workflow, (b) provisioning berbasis Proxmox VE, (c) orkestrasi Terraform, dan (d) hardening
+approval workflow, (b) provisioning berbasis Proxmox *Virtual Environment* (Proxmox VE), (c) orkestrasi Terraform, dan (d) hardening
 Ansible dalam satu aplikasi web berbasis sumber terbuka, yang mengabstraksikan kompleksitas IaC/CLI
 dan sesuai untuk UKM, masih terbatas. Perangkat manajemen kelas enterprise dengan kemampuan serupa
 umumnya bersifat proprietary dan berbiaya tinggi, sedangkan perkakas sumber terbuka yang tersedia
@@ -138,8 +137,8 @@ Agar penelitian terarah, peneliti menetapkan batasan berikut:
    infrastruktur.
 10. Evaluasi sistem menempuh empat cara: (a) verifikasi fungsional melalui pengujian otomatis;
     (b) studi komparatif efisiensi operasional terhadap antarmuka Proxmox bawaan; (c) evaluasi
-    kebergunaan menggunakan System Usability Scale (SUS); dan (d) evaluasi keamanan menggunakan
-    pemodelan ancaman STRIDE.
+    kebergunaan menggunakan *System Usability Scale* (SUS); dan (d) evaluasi keamanan menggunakan
+    pemodelan ancaman STRIDE (*Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege*).
 
 ## 1.4 Tujuan Penelitian
 
@@ -155,14 +154,13 @@ Sejalan dengan rumusan masalah, penelitian ini menetapkan tujuan khusus berikut:
 
 1. Merancang dan membangun aplikasi self-service yang mengabstraksikan kompleksitas IaC/CLI menjadi
    alur provisioning terpandu pada Proxmox VE, dengan tetap mempertahankan reproduktifitas dan state
-   IaC (menjawab RQ1).
+   IaC (menjawab Rumusan Masalah 1).
 2. Merancang dan mengevaluasi mekanisme tata kelola dan keamanan, yaitu otorisasi, persetujuan,
    siklus hidup, kuota, hardening otomatis, dan audit, agar layanan mandiri tetap aman serta dapat
-   diaudit (menjawab RQ2).
+   diaudit (menjawab Rumusan Masalah 2).
 3. Mengukur pengaruh aplikasi terhadap upaya operasional dan konsistensi konfigurasi dibandingkan
-   antarmuka Proxmox bawaan, termasuk provisioning batch (menjawab RQ3).
-4. Menilai persepsi kebergunaan (usability) aplikasi dibandingkan antarmuka Proxmox bawaan (menjawab
-   RQ4).
+   antarmuka Proxmox bawaan, termasuk provisioning batch (menjawab Rumusan Masalah 3).
+4. Menilai persepsi kebergunaan (usability) aplikasi dibandingkan antarmuka Proxmox bawaan (menjawab Rumusan Masalah 4).
 
 ## 1.5 Manfaat Penelitian
 
@@ -188,7 +186,7 @@ c. Bagi Pengguna: penelitian ini memungkinkan pengajuan mesin virtual secara man
 
 ## 1.6 Metode Penelitian
 
-Penelitian ini memakai kerangka Design Science Research Methodology (DSRM) sebagaimana dirumuskan
+Penelitian ini memakai kerangka *Design Science Research Methodology* (DSRM) sebagaimana dirumuskan
 Peffers dkk. (2007). DSRM cocok karena penelitian bersifat konstruktif: penelitian menghasilkan dan
 mengevaluasi sebuah artefak berupa aplikasi web self-service, sekaligus menghasilkan pengetahuan
 perancangan yang dapat dialihgunakan. DSRM menempuh enam aktivitas: (1) identifikasi masalah dan

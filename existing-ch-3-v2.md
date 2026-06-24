@@ -595,17 +595,69 @@ beserta hasil yang diharapkan; hasil aktual dilaporkan pada Bab IV.
 | 8 | Ansible | Opsi hardening aktif | Sistem menjalankan playbook hardening |
 | 9 | Inventaris | Pengguna membuka inventaris | Sistem menampilkan daftar mesin virtual |
 | 10 | Audit trail | Sistem mencatat aktivitas | Aktivitas tersimpan pada audit log |
+| 11 | Cloud-init hostname | Nama host disetel sama dengan nama VM | Hostname tamu sama dengan nama mesin virtual |
+| 12 | Cloud-init resize | Disk boot diperbesar dari 40 GB ke 41 GB | Sistem berkas tamu meluas otomatis ke 41 GB |
 
 ### 3.8.2 Studi Komparatif Efisiensi Operasional
 
-Studi ini membandingkan upaya operasional aplikasi terhadap antarmuka Proxmox bawaan. Studi ini
-bukan perbandingan kecepatan hypervisor karena kedua jalur memanggil API Proxmox yang sama; fokusnya
-pada upaya operator, konsistensi, dan penskalaan batch. Variabel bebas adalah metode (aplikasi atau
-antarmuka Proxmox) dan ukuran batch N pada nilai 1, 5, dan 10. Variabel terikat adalah jumlah aksi
-operator, waktu interaksi aktif (detik), dan tingkat inkonsistensi konfigurasi. Variabel kontrol
-mencakup template, node, spesifikasi, jaringan, operator, serta kondisi cluster yang sama. Peneliti
-mengulang tiap kombinasi minimal tiga kali dan melaporkan rata-rata beserta simpangan baku. Studi
-ini menguji H1, H2, dan H3.
+Studi ini membandingkan upaya operasional dan perilaku penskalaan tiga metode orkestrasi dalam
+menyediakan mesin virtual yang identik. Metode A adalah provisioning manual melalui antarmuka web
+Proxmox VE. Metode B adalah eksekusi Infrastructure as Code berbasis CLI memakai Terraform native.
+Metode C adalah portal web yang dibangun pada penelitian ini, yaitu Laravel dengan antrian dan worker
+Redis serta isolasi direktori kerja Terraform per mesin virtual. Perbandingan A terhadap B mengisolasi
+efek Infrastructure as Code terhadap cara manual, sedangkan perbandingan B terhadap C mengisolasi
+kontribusi lapisan orkestrasi penelitian ini, yaitu antrian, kebijakan, persetujuan, isolasi workspace,
+dan pemantauan real-time.
+
+Variabel bebas adalah metode orkestrasi (A, B, atau C) dan ukuran batch N pada nilai 1, 4, dan 8. Nilai
+N sama dengan 1 menjadi dasar pengamatan aksi konstan, N sama dengan 4 selaras dengan jumlah worker,
+dan N sama dengan 8 menjadi batch utama. Variabel terikat dibagi dua kelompok. Kelompok pertama
+mengukur upaya operator, yaitu jumlah aksi antarmuka per mesin virtual, jumlah baris kode HCL yang
+ditulis (nol pada Metode C), waktu memulai permintaan, dan pengetahuan prasyarat yang dibutuhkan.
+Kelompok kedua mengukur perilaku eksekusi, yaitu waktu total ujung ke ujung, throughput mesin virtual
+per menit, tingkat keberhasilan, dan tingkat inkonsistensi konfigurasi antarpengulangan. Variabel
+kontrol mencakup CPU, RAM, template, node, datastore, kondisi cluster, operator, dan tingkat
+paralelisme yang sama.
+
+Setiap pengujian memakai template dasar yang sama dengan CPU dan RAM identik, dan ukuran disk boot
+ditetapkan 41 GB dari bawaan 40 GB. Penetapan 41 GB memicu fitur perluasan sistem berkas otomatis
+(auto-resize) cloud-init sehingga sistem berkas tamu meluas mengikuti disk yang diperbesar, dan nama
+host tiap mesin virtual disetel sama dengan nama mesin virtual untuk memvalidasi fitur penyetelan nama
+host otomatis (auto-hostname) cloud-init. Kedua pemeriksaan ini bersifat fungsional dan dilaporkan pada
+Subbab 3.8.1, karena keduanya menguji perilaku template cloud-init yang sama pada ketiga metode, bukan
+pembeda kinerja.
+
+Agar perbandingan adil, tingkat paralelisme disetarakan. Terraform native pada Metode B memakai
+parameter paralelisme bawaan sepuluh, sedangkan portal pada Metode C membatasi empat worker. Peneliti
+menjalankan Metode B pada paralelisme bawaan dan pada paralelisme empat, lalu melaporkan keduanya,
+sehingga batas empat worker portal terbaca sebagai pilihan perlindungan node Proxmox sesuai temuan
+tekanan node pada Bab IV, bukan keterbatasan kinerja.
+
+Peneliti mengulang tiap kombinasi metode dan N minimal tiga kali, membuang jalannya pertama yang dingin
+akibat cache template dan ARC, lalu melaporkan rata-rata beserta rentang. Seluruh pengujian berjalan
+pada node, datastore zfspool thin, dan jendela waktu yang sama untuk menekan beban lain.
+
+Selama batch berjalan, peneliti merekam telemetri pendukung. Pada sisi Proxmox, peneliti mencatat
+penggunaan CPU node, IO delay, dan Pressure Stall Information, serta jumlah tugas clone yang berjalan
+bersamaan untuk mengamati serialisasi pada kunci penyimpanan; metrik ini memakai metode yang sama
+dengan benchmark throughput backend pada Bab IV. Pada sisi portal, peneliti mencatat kedalaman antrian
+Redis, jumlah pekerjaan yang sedang berjalan, dan waktu tunggu antrian, untuk membuktikan antrian
+system tidak tertahan di belakang antrian provisioning.
+
+Studi ini menambahkan satu pengujian isolasi kegagalan. Peneliti menyisipkan satu mesin virtual yang
+dirancang gagal pada batch delapan mesin virtual, misalnya melalui permintaan disk melebihi kapasitas,
+lalu mengamati perilaku tiap metode. Terraform native memakai satu berkas state untuk seluruh batch,
+sehingga satu kegagalan dapat menahan atau menggagalkan apply seluruh batch. Portal memakai direktori
+kerja terpisah per mesin virtual, sehingga tujuh mesin virtual lain tetap selesai. Pengujian ini
+memberi bukti langsung atas keputusan desain isolasi workspace per mesin virtual.
+
+Studi ini tidak mengklaim portal lebih cepat daripada Terraform native, karena keduanya menjalankan
+apply yang sama terhadap Proxmox. Kontribusi portal terletak pada penghapusan penulisan HCL, penegakan
+kebijakan dan persetujuan, kontrol akses berbasis peran, audit, status real-time, serta isolasi per
+mesin virtual, pada kecepatan apply yang setara. Studi ini menguji hipotesis H1 melalui kurva jumlah
+aksi terhadap N, H2 melalui waktu memulai pada N besar, dan H3 melalui konsistensi konfigurasi
+antarmetode, serta menjadi dasar utama jawaban atas Rumusan Masalah 3 dan memberi konteks operator bagi
+benchmark throughput backend pada Bab IV.
 
 ### 3.8.3 Evaluasi Kebergunaan (SUS)
 

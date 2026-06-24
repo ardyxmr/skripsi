@@ -219,7 +219,8 @@ Aktor Admin memegang fungsi administrasi platform. Admin mengelola pengguna, per
 mengelola provider dan menjalankan discovery; mengelola katalog, jaringan, datastore, dan node yang
 dipublikasikan; mengelola environment dan tier; serta memantau audit log. Pemusatan fungsi
 administrasi pada satu aktor menjaga pemisahan tugas antara pengguna swalayan, pemberi persetujuan,
-dan pengelola platform.
+dan pengelola platform. Alur penyiapan platform oleh administrator disajikan sebagai activity diagram
+pada Subbab 3.5.4 (Gambar 3.13).
 
 [Gambar 3.3 Use Case Diagram]
 
@@ -507,6 +508,35 @@ Lapisan abstraksi ini menjadi inti kontribusi yang dibahas pada Rumusan Masalah 
 kekakuan Infrastructure as Code tanpa membebani pengguna dengan kurva belajar Infrastructure as Code.
 Pemisahan antara cerminan mentah, alias terkurasi, dan kebijakan menjadikan kompleksitas Proxmox
 tersembunyi, sedangkan tata kelola tetap terjaga melalui saringan environment.
+
+Selain aliran data, lapisan abstraksi dan kebijakan dibentuk melalui rangkaian aktivitas
+administrator. Gambar 3.13 menyajikan activity diagram penyiapan dan tata kelola oleh administrator
+dalam dua swimlane, yaitu Administrator dan Sistem. Diagram ini melengkapi Gambar 3.12 dengan
+menampilkan urutan tindakan dan keputusan yang membangun katalog layanan terkurasi.
+
+[Gambar 3.13 Activity Diagram Penyiapan dan Tata Kelola oleh Administrator]
+
+Pada swimlane Administrator, proses dimulai dengan pendaftaran provider berupa endpoint dan
+kredensial, lalu pengujian koneksi. Jika koneksi gagal, administrator memperbaiki konfigurasi dan
+mengulang pengujian. Setelah koneksi berhasil, administrator menjalankan discovery, dan Sistem memakai
+driver hanya-baca untuk mencerminkan node, template, jaringan, datastore, serta mesin virtual Proxmox
+ke tabel berprefiks provider_.
+
+Administrator meninjau sumber daya hasil discovery, lalu memublikasikannya sebagai alias ramah
+pengguna, yaitu node, katalog, jaringan, dan datastore. Sistem menyimpan tiap alias dengan status
+Active dan mengikatnya pada sumber daya hasil discovery, sehingga katalog layanan tetap konsisten
+meskipun identitas teknis Proxmox berubah.
+
+Administrator menetapkan tier sebagai standar CPU, RAM, dan penyimpanan, kemudian menyusun
+environment. Penyusunan environment mengisi lima daftar izin, yaitu provider, node, tier, jaringan,
+dan datastore, beserta masa berlaku, masa tenggang, gerbang persetujuan, dan kuota disk. Sistem
+menyimpan environment beserta lima tabel aturan, dan environment menjadi siap dipakai pada wizard
+provisioning. Tahap ini mewujudkan kebijakan sebagai konfigurasi yang menjadi inti tata kelola pada
+Rumusan Masalah 2.
+
+Setelah platform siap, administrator memantau audit log untuk menelusuri aktivitas pengguna dan
+sistem. Pemantauan ini berlangsung berkelanjutan, lepas dari urutan penyiapan, dan menutup rangkaian
+tata kelola dengan akuntabilitas yang dapat ditelusuri.
 
 ## 3.6 Pengembangan Sistem
 

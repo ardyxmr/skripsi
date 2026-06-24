@@ -31,4 +31,5 @@ Tiga berkas flowchart di root repo, beserta status UML dan penempatannya di tesi
 - Gambar 3.10 Class Diagram                  → diagram-3-10-class.md (§3.5.2)
 - Gambar 3.11 ERD                            → Database-relation.md (§3.5.3)
 - Gambar 3.12 Aliran Data Lapisan Abstraksi  → flowchart-provider-discovery.md (§3.5.4)
+- Gambar 3.13 Penyiapan dan Tata Kelola oleh Administrator → diagram-3-13-activity-admin.md (§3.5.4)
 ```

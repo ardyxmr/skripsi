@@ -1,0 +1,158 @@
+---
+# ============================================================================
+# InfraProv — SAMPLE security-hardening playbook
+# ============================================================================
+# Upload THIS file in a catalog's "Hardening Playbook" section, then run
+# "Hardening" on a VM created from that catalog.
+#
+# How it runs: the portal connects as the cloud-init user (e.g. `ubuntu`) using
+# the injected automation SSH key, and escalates with sudo (`become`). All tasks
+# are IDEMPOTENT and CONFIG-ONLY (no package installs, no internet required), and
+# deliberately SAFE — they never disable the login user, sudo, or key-based SSH.
+#
+# Works on the Rocky 9 cloud image (and Debian/Ubuntu cloud images). It's a
+# starting point — adapt to your own baseline (e.g. CIS).
+# ============================================================================
+- name: InfraProv sample hardening baseline
+  hosts: all
+  become: true
+  gather_facts: true
+
+  handlers:
+    - name: reload sshd
+      # reload (not restart) so we never drop the active connection; works on
+      # both `sshd` (RHEL/Rocky) and `ssh` (Debian/Ubuntu) unit names.
+      ansible.builtin.shell: "systemctl reload sshd 2>/dev/null || systemctl reload ssh"
+      changed_when: false
+
+  tasks:
+    # 1) SSH daemon hardening — no root login, key-only auth, sane limits.
+    - name: "1. Harden SSH (no root login, key-only, timeouts)"
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/60-infraprov-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by InfraProv hardening
+          PermitRootLogin no
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+          PermitEmptyPasswords no
+          ChallengeResponseAuthentication no
+          X11Forwarding no
+          MaxAuthTries 4
+          LoginGraceTime 30
+          ClientAliveInterval 300
+          ClientAliveCountMax 2
+      notify: reload sshd
+
+    # 2) Lock the root account's password (no direct root password login).
+    - name: "2. Lock the root account password"
+      ansible.builtin.user:
+        name: root
+        password_lock: true
+
+    # 3) Pre-login warning banner + wire it into SSH.
+    - name: "3. Set a login warning banner"
+      ansible.builtin.copy:
+        dest: /etc/issue.net
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          ******************************************************************
+          *  Authorized access only. Activity is logged and monitored.    *
+          *  Disconnect immediately if you are not an authorized user.     *
+          ******************************************************************
+    - name: "3b. Enable the SSH banner"
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/61-infraprov-banner.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: "Banner /etc/issue.net\n"
+      notify: reload sshd
+
+    # 4) Kernel network hardening via sysctl drop-in.
+    - name: "4. Kernel/network sysctl hardening"
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-infraprov-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          net.ipv4.conf.all.rp_filter = 1
+          net.ipv4.conf.all.accept_redirects = 0
+          net.ipv4.conf.all.send_redirects = 0
+          net.ipv4.conf.all.accept_source_route = 0
+          net.ipv4.conf.all.log_martians = 1
+          net.ipv4.tcp_syncookies = 1
+          net.ipv4.icmp_echo_ignore_broadcasts = 1
+          kernel.randomize_va_space = 2
+      register: sysctl_file
+    - name: "4b. Apply sysctl settings now"
+      ansible.builtin.command: sysctl --system
+      when: sysctl_file.changed
+      changed_when: false
+
+    # 5) Password aging policy (applies to newly set passwords).
+    - name: "5. Enforce password aging policy"
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: "^{{ item.key }}\\s"
+        line: "{{ item.key }}\t{{ item.value }}"
+      loop:
+        - { key: "PASS_MAX_DAYS", value: "90" }
+        - { key: "PASS_MIN_DAYS", value: "7" }
+        - { key: "PASS_WARN_AGE", value: "14" }
+
+    # 6) Restrict permissions on the shadow password files.
+    - name: "6. Secure /etc/shadow and /etc/gshadow"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: root
+        mode: "0640"
+      loop:
+        - /etc/shadow
+        - /etc/gshadow
+
+    # 7) Disable core dumps (information-disclosure hardening).
+    - name: "7. Disable core dumps"
+      ansible.builtin.copy:
+        dest: /etc/security/limits.d/60-infraprov-coredump.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: "* hard core 0\n"
+
+    # 8) Restrictive default umask for interactive logins.
+    - name: "8. Set a restrictive default umask (027)"
+      ansible.builtin.copy:
+        dest: /etc/profile.d/60-infraprov-umask.sh
+        owner: root
+        group: root
+        mode: "0644"
+        content: "umask 027\n"
+
+    # 9) Blacklist rarely-needed / risky kernel modules.
+    - name: "9. Disable unused kernel modules"
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/60-infraprov-blacklist.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          install usb-storage /bin/true
+          install cramfs /bin/true
+          install freevxfs /bin/true
+          install udf /bin/true
+
+    # 10) Restrict cron to root only.
+    - name: "10. Restrict cron to root only"
+      ansible.builtin.copy:
+        dest: /etc/cron.allow
+        owner: root
+        group: root
+        mode: "0600"
+        content: "root\n"

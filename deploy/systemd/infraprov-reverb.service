@@ -1,0 +1,23 @@
+# InfraProv Reverb WebSocket server (:8080). Nginx terminates TLS and proxies wss:// to it.
+# With REVERB_SCALING_ENABLED=true it shares connection state via Redis pub/sub (:6380), so you can
+# run this on multiple nodes behind a WS-aware load balancer.
+[Unit]
+Description=InfraProv Reverb WebSocket server
+After=network-online.target redis-queue.service
+Wants=network-online.target
+Requires=redis-queue.service
+
+[Service]
+Type=simple
+User=appd
+Group=appd
+WorkingDirectory=/home/appd/my-project/backend
+ExecStart=/usr/bin/php artisan reverb:start --host=0.0.0.0 --port=8080
+Restart=always
+RestartSec=2
+# Every WebSocket connection is a file descriptor — this is the limit you hit first at scale.
+LimitNOFILE=100000
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

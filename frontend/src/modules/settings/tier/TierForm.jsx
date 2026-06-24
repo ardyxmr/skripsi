@@ -1,0 +1,210 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Layers, X, Save, Shield, HardDrive, Cpu, MemoryStick } from 'lucide-react';
+
+export default function TierForm({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  initialData = null, 
+  title = "Create Tier",
+  onChange
+}) {
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    cpu: 2,
+    ram: 4,
+    disk: 40,
+    status: 'Active',
+    type: 'Custom'
+  });
+
+  // Keep track if it's a default tier since name cannot be changed
+  const isDefault = initialData?.type === 'Default';
+
+  useEffect(() => {
+    if (initialData && isOpen) {
+      setFormData({
+        ...initialData
+      });
+    } else if (isOpen) {
+      // Reset form on new open
+      setFormData({
+        name: '',
+        description: '',
+        cpu: 2,
+        ram: 4,
+        disk: 40,
+        status: 'Active',
+        type: 'Custom'
+      });
+    }
+  }, [initialData, isOpen]);
+
+  // Grey out Save until the form's required fields pass native validation.
+  const formRef = useRef(null);
+  const [canSave, setCanSave] = useState(false);
+  const syncValidity = () => setCanSave(!!formRef.current && formRef.current.checkValidity());
+  useEffect(() => { syncValidity(); }); // after every render (covers open/prefill + state changes)
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-card rounded-modal shadow-modal border border-gray-200 dark:border-theme w-full max-w-[600px] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 max-h-[90vh]">
+        <div className="shrink-0 flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme">
+          <div>
+            <h3 className="font-semibold text-slate-800 dark:text-zinc-100 flex items-center gap-2">
+              {initialData ? '✏️ Edit Tier' : '➕ Create Tier'}
+            </h3>
+            <p className="text-[12px] text-slate-500 dark:text-zinc-400 mt-1">Configure resource blueprint for VMs</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-zinc-700 self-start">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Form Body */}
+        <form id="tier-form" ref={formRef} onSubmit={handleSubmit} onChange={(e) => { onChange?.(e); syncValidity(); }} className="flex flex-col overflow-hidden min-h-0">
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-5 flex flex-col gap-5">
+            <div className="bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+              <label className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-4 block">General Information</label>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Tier Name <span className="text-rose-500">*</span></label>
+                  <input 
+                    type="text" 
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    placeholder="e.g. Bronze"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50"
+                    required
+                    disabled={isDefault}
+                  />
+                  {isDefault && (
+                    <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1"><Shield size={12}/> Default tier names cannot be changed.</p>
+                  )}
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Description</label>
+                  <textarea 
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    placeholder="Describe the target workload for this tier..."
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors resize-y min-h-[80px]"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+              <label className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-4 block">Resource Blueprint</label>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                <div>
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">CPU (Cores)</label>
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      min="1"
+                      value={formData.cpu}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') { setFormData({ ...formData, cpu: '' }); return; } // allow clearing to retype freely
+                        const n = parseInt(v, 10);
+                        if (!Number.isNaN(n)) setFormData({ ...formData, cpu: Math.max(0, n) });
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">RAM (GB)</label>
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      min="1"
+                      value={formData.ram}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') { setFormData({ ...formData, ram: '' }); return; }
+                        const n = parseInt(v, 10);
+                        if (!Number.isNaN(n)) setFormData({ ...formData, ram: Math.max(0, n) });
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Disk (GB)</label>
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      min="1"
+                      value={formData.disk}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') { setFormData({ ...formData, disk: '' }); return; }
+                        const n = parseInt(v, 10);
+                        if (!Number.isNaN(n)) setFormData({ ...formData, disk: Math.max(0, n) });
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors disabled:opacity-50"
+                      required
+                    />
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="pt-4">
+                <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Tier Status</label>
+                <div className="relative w-1/2">
+                  <select 
+                    value={formData.status}
+                    onChange={(e) => setFormData({...formData, status: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors cursor-pointer"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+          <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-end gap-3 bg-white dark:bg-card">
+            <button 
+              type="button" 
+              onClick={onClose}
+              className="px-4 py-2 text-[13px] font-medium text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-input transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="tier-form"
+              disabled={!canSave}
+              className="px-4 py-2 text-[13px] font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-input transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+            >
+              {initialData ? 'Update' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

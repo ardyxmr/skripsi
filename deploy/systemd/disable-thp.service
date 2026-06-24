@@ -1,0 +1,15 @@
+# Disable Transparent Huge Pages at boot — THP causes multi-millisecond latency spikes in Redis
+# during its background save fork. Ordered BEFORE the Redis instances start.
+[Unit]
+Description=Disable Transparent Huge Pages (Redis latency)
+After=local-fs.target
+Before=redis-server.service redis-queue.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/defrag'
+
+[Install]
+WantedBy=multi-user.target

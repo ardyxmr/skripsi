@@ -101,8 +101,8 @@ Peneliti membagi kebutuhan sistem menjadi kebutuhan fungsional dan nonfungsional
 9. Sistem menjalankan provisioning melalui Terraform setelah permintaan disetujui.
 10. Sistem menjalankan hardening melalui Ansible sesuai versi playbook katalog yang dipilih.
 11. Sistem menampilkan status provisioning secara real-time melalui WebSocket.
-12. Sistem menyediakan inventaris mesin virtual beserta aksi siklus hidup: perpanjangan, perubahan
-    sumber daya (resize), penambahan disk, dan penghapusan.
+12. Sistem menyediakan inventaris mesin virtual beserta aksi siklus hidup: perpanjangan, Edit Resources
+    (perubahan CPU, RAM, dan disk), dan penghapusan.
 13. Sistem menyimpan kredensial login per mesin virtual secara terenkripsi dan menampilkannya
     melalui endpoint yang teraudit.
 14. Sistem mencatat seluruh aktivitas pengguna dan sistem pada audit trail.
@@ -154,9 +154,9 @@ pada lapisan yang sama dan bertugas mengirim pembaruan real-time ke klien.
 Pada lapisan eksekusi asinkron, operasi yang memanggil Proxmox, seperti clone template, perubahan
 sumber daya, penghapusan, dan hardening, berdurasi panjang sehingga API tidak menjalankannya inline.
 API mengirim job ke antrian Redis, lalu worker queue:work mengambil dan mengeksekusinya.
-*TerraformRunner* menjalankan provisioning, resize, penambahan disk, dan penghapusan, sedangkan
+*TerraformRunner* menjalankan provisioning, Edit Resources, dan penghapusan, sedangkan
 *AnsibleRunner* menjalankan hardening. Empat worker melayani antrian default sehingga maksimal empat
-proses provisioning berjalan paralel (lihat hasil pada Subbab 3.7). Satu worker terpisah melayani
+proses provisioning berjalan paralel (lihat hasil pada Bab IV). Satu worker terpisah melayani
 antrian system untuk memproses event broadcast dan sinkronisasi fakta mesin virtual, sehingga antrian
 provisioning yang berat tidak menghambat pembaruan real-time.
 
@@ -203,10 +203,11 @@ yang lebih tinggi memperoleh kapabilitas peran di bawahnya tanpa pendefinisian u
 
 Aktor User mengakses fungsi swalayan inti. User melakukan login, melihat katalog layanan, mengajukan
 permintaan provisioning mesin virtual, melihat status permintaan, dan mengelola inventaris miliknya.
-Pengelolaan inventaris dirinci melalui relasi include menjadi lima aksi siklus hidup, yaitu mengubah
-ukuran CPU atau RAM, menambah data disk, memperpanjang masa berlaku, menjalankan hardening atau patch,
-dan menghapus mesin virtual. Relasi include menegaskan bahwa kelima aksi tersebut merupakan bagian
-wajib dari kemampuan pengelolaan inventaris, bukan use case yang berdiri sendiri.
+Pengelolaan inventaris dirinci melalui relasi include menjadi empat aksi siklus hidup, yaitu Edit
+Resources yang menggabungkan perubahan CPU, RAM, dan disk dalam satu permintaan, memperpanjang masa
+berlaku, menjalankan hardening atau patch, dan menghapus mesin virtual. Relasi include menegaskan
+bahwa keempat aksi tersebut merupakan bagian wajib dari kemampuan pengelolaan inventaris, bukan use
+case yang berdiri sendiri.
 
 Aktor Approver menambahkan kewenangan tata kelola. Approver meninjau daftar permintaan yang menunggu
 keputusan dan menetapkan keputusan berupa menyetujui, menolak, atau mengembalikan permintaan. Use
@@ -260,9 +261,10 @@ Approver dan Sistem. Pada swimlane Approver, proses dimulai ketika Approver memb
 berstatus Pending, memilih satu permintaan, dan menetapkan keputusan. Diagram menyediakan tiga cabang
 keputusan, yaitu Setujui, Tolak, dan Kembalikan.
 
-Cabang Setujui mengarahkan sistem untuk mengirim job sesuai jenis permintaan. Permintaan provisioning
-memicu pengiriman *ProvisionVmJob*, sedangkan permintaan siklus hidup memicu job yang sesuai dengan
-jenisnya, lalu status *ApprovalRequest* berubah menjadi Approved. Cabang Tolak mengubah status
+Cabang Setujui menerapkan keputusan sesuai jenis permintaan. Permintaan provisioning memicu pengiriman
+*ProvisionVmJob*; permintaan Edit Resources, hardening, dan penghapusan memicu job yang sesuai;
+sedangkan perpanjangan dan penetapan permanen diterapkan sinkron tanpa job, lalu status
+*ApprovalRequest* berubah menjadi Approved. Cabang Tolak mengubah status
 *ApprovalRequest* menjadi Rejected disertai alasan, dan meninggalkan mesin virtual pada keadaan bersih
 sebelum permintaan, karena perubahan tidak diterapkan.
 
@@ -283,8 +285,9 @@ Pengguna, Sistem, dan Approver. Diagram ini memakai gerbang persetujuan yang sam
 awal, tetapi menambahkan pemilahan jenis penerapan setelah gerbang terlewati.
 
 Pada swimlane Pengguna, pengguna membuka halaman inventaris, memilih mesin virtual miliknya, dan
-memilih satu dari lima aksi siklus hidup, yaitu resize CPU atau RAM, menambah data disk, memperpanjang
-masa berlaku, hardening atau patch, dan menghapus mesin virtual. Pada swimlane Sistem, setiap aksi
+memilih satu dari empat aksi siklus hidup, yaitu Edit Resources yang menggabungkan perubahan CPU, RAM,
+dan disk dalam satu permintaan, memperpanjang masa berlaku, hardening atau patch, dan menghapus mesin
+virtual. Pada swimlane Sistem, setiap aksi
 melalui validasi kebijakan environment, lalu memasuki gerbang persetujuan dengan syarat yang sama,
 yaitu approval_required bernilai benar dan pengguna bukan peran privileged. Jika gerbang aktif, sistem
 membuat *ApprovalRequest* berstatus Pending dan menunggu keputusan Approver. Jika gerbang tidak aktif,
@@ -292,13 +295,12 @@ sistem menerapkan perubahan.
 
 Setelah gerbang terlewati, sistem memilah jenis penerapan. Aksi perpanjangan masa berlaku dan
 penetapan permanen diterapkan secara sinkron sebagai pembaruan kolom expiry_date atau is_permanent
-tanpa pengiriman job, karena keduanya tidak mengubah konfigurasi infrastruktur. Aksi resize,
-penambahan disk, hardening, dan penghapusan diterapkan secara asinkron melalui pengiriman job.
+tanpa pengiriman job, karena keduanya tidak mengubah konfigurasi infrastruktur. Aksi Edit Resources,
+hardening, dan penghapusan diterapkan secara asinkron melalui pengiriman job.
 
-Pada jalur asinkron, sistem mengirim job yang sesuai, yaitu *ResizeVmJob*, *AddDiskJob*,
-*EditResourcesVmJob*, *HardenVmJob*, atau *DestroyVmJob*. Worker menjalankan Terraform untuk resize,
-penambahan disk, dan penghapusan, serta Ansible untuk hardening, lalu memperbarui entitas *Inventory*
-beserta *InventoryDisk* sesuai hasil. Kedua jalur penerapan berujung pada pemancaran event
+Pada jalur asinkron, sistem mengirim job yang sesuai, yaitu *EditResourcesVmJob*, *HardenVmJob*, atau
+*DestroyVmJob*. Worker menjalankan Terraform untuk Edit Resources dan penghapusan, serta Ansible untuk
+hardening, lalu memperbarui entitas *Inventory* beserta *InventoryDisk* sesuai hasil. Kedua jalur penerapan berujung pada pemancaran event
 *VmStateChanged* sehingga antarmuka memperlihatkan keadaan terbaru. Pemilahan sinkron dan asinkron ini
 menjaga akurasi diagram terhadap implementasi, karena perpanjangan masa berlaku tidak memanggil
 Terraform maupun Ansible.
@@ -328,7 +330,7 @@ cloud-init, serta menyalakan mesin virtual.
 Setelah apply selesai, Proxmox mengembalikan vmid baru dan alamat IP. Worker memperbarui status
 *Inventory* dari Provisioning menjadi Active, lalu memancarkan event *VmStateChanged*. Server Reverb
 meneruskan event tersebut ke Frontend sehingga status diperbarui real-time tanpa polling. Batas empat
-job paralel berkaitan dengan hasil benchmark backend pada Subbab 3.7 dan menjadi dasar pembahasan
+job paralel berkaitan dengan hasil benchmark backend pada Bab IV dan menjadi dasar pembahasan
 efisiensi operasional pada Rumusan Masalah 3.
 
 [Gambar 3.7 Sequence Diagram Provisioning Mesin Virtual]
@@ -345,8 +347,9 @@ dan API meneruskannya ke *ApprovalWorkflowService*.
 
 Diagram memuat fragmen alternatif untuk tiap keputusan. Pada cabang Setujui, layanan mengubah status
 menjadi Approved, lalu memilah jenis permintaan melalui fragmen alternatif bersarang: permintaan
-provisioning mengirim *ProvisionVmJob* untuk tiap instance melalui loop, sedangkan permintaan siklus
-hidup mengirim satu job sesuai jenisnya. Pada cabang Tolak, layanan mengubah status menjadi Rejected
+provisioning mengirim *ProvisionVmJob* untuk tiap instance melalui loop; permintaan Edit Resources,
+hardening, dan penghapusan mengirim satu job sesuai jenisnya; sedangkan perpanjangan dan penetapan
+permanen diterapkan sinkron tanpa job. Pada cabang Tolak, layanan mengubah status menjadi Rejected
 disertai alasan. Pada cabang Kembalikan, layanan mengubah status menjadi Reverted dan mengembalikan
 *ProvisionRequest* menjadi draf yang siap diedit ulang, dan cabang ini berlaku khusus untuk permintaan
 provisioning.
@@ -531,7 +534,7 @@ audit trail, serta notifikasi real-time.
 
 Peneliti mendemonstrasikan kelayakan artefak dengan menjalankan alur penuh pada cluster Proxmox
 nyata: permintaan, persetujuan, provisioning Terraform, hardening Ansible, dan siklus hidup
-(perpanjangan, resize, penambahan disk, penghapusan). Demonstrasi multi-cluster menambahkan provider
+(perpanjangan, Edit Resources, penghapusan). Demonstrasi multi-cluster menambahkan provider
 Proxmox kedua untuk memperlihatkan bahwa jalur driver provider berjalan pada dua cluster tanpa
 perubahan kode.
 

@@ -19,8 +19,7 @@ graph LR
         UC_request(["Ajukan Provisioning VM"])
         UC_status(["Lihat Status Permintaan"])
         UC_inv(["Kelola Inventaris Miliknya"])
-        UC_resize(["Resize CPU / RAM"])
-        UC_disk(["Tambah Data Disk"])
+        UC_edit(["Edit Resources (CPU / RAM / Disk)"])
         UC_renew(["Perpanjang Masa Berlaku"])
         UC_harden(["Jalankan Hardening / Patch"])
         UC_delete(["Hapus VM"])
@@ -40,8 +39,7 @@ graph LR
     User --- UC_request
     User --- UC_status
     User --- UC_inv
-    UC_inv -.->|include| UC_resize
-    UC_inv -.->|include| UC_disk
+    UC_inv -.->|include| UC_edit
     UC_inv -.->|include| UC_renew
     UC_inv -.->|include| UC_harden
     UC_inv -.->|include| UC_delete

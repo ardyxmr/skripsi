@@ -2,7 +2,9 @@
 
 Urutan keputusan persetujuan oleh Approver (Manager/Admin). Aksi Kembalikan
 (Revert) dibatasi pada permintaan jenis PROVISION; permintaan siklus hidup
-(Resize/AddDisk/Renew/Harden/Destroy) hanya menerima Setujui atau Tolak.
+(Edit Resources/Renew/Harden/Destroy) hanya menerima Setujui atau Tolak. Pada
+persetujuan, Edit Resources, Harden, dan Destroy mengirim job, sedangkan Renew
+dan Permanent diterapkan sinkron tanpa job.
 
 ```mermaid
 sequenceDiagram
@@ -30,8 +32,10 @@ sequenceDiagram
             loop tiap instance i = 1..N
                 SVC->>Q: dispatch ProvisionVmJob
             end
-        else request_type = RESIZE / ADD_DISK / RENEW / HARDEN / DESTROY
-            SVC->>Q: dispatch job siklus hidup yang sesuai
+        else request_type = EDIT_RESOURCES / HARDEN / DESTROY
+            SVC->>Q: dispatch job siklus hidup (EditResourcesVmJob / HardenVmJob / DestroyVmJob)
+        else request_type = RENEW / PERMANENT
+            SVC->>DB: perbarui expiry_date / is_permanent (sinkron, tanpa job)
         end
     else action = Tolak
         SVC->>DB: ApprovalRequest status=Rejected + alasan

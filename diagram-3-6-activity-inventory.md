@@ -1,10 +1,11 @@
 # Gambar 3.6 — Activity Diagram: Inventory Mesin Virtual
 
-Tiga swimlane: Pengguna, Sistem, Approver. Lima aksi siklus hidup (Resize,
-Tambah Disk, Perpanjang, Hardening, Hapus) memakai gerbang persetujuan yang
-sama seperti provisioning awal. Setelah lolos gerbang, Perpanjang dan Permanent
-diterapkan sinkron sebagai pembaruan masa berlaku tanpa job; Resize, Tambah Disk,
-dan Hapus menjalankan Terraform, sedangkan Hardening menjalankan Ansible.
+Tiga swimlane: Pengguna, Sistem, Approver. Empat aksi siklus hidup (Edit
+Resources, Perpanjang, Hardening, Hapus) memakai gerbang persetujuan yang sama
+seperti provisioning awal. Edit Resources menggabungkan perubahan CPU, RAM, dan
+disk dalam satu persetujuan dan satu apply. Setelah lolos gerbang, Perpanjang dan
+Permanent diterapkan sinkron sebagai pembaruan masa berlaku tanpa job; Edit
+Resources dan Hapus menjalankan Terraform, sedangkan Hardening menjalankan Ansible.
 
 ```mermaid
 flowchart TB
@@ -13,8 +14,7 @@ flowchart TB
         A1[Buka halaman Inventory]
         A2[Pilih VM miliknya]
         A3{Pilih aksi siklus hidup}
-        AR[Resize CPU / RAM]
-        AD[Tambah Data Disk]
+        AER[Edit Resources: CPU / RAM / Disk]
         APx[Perpanjang Masa Berlaku]
         AH[Harden / Patch]
         ADEL[Hapus VM]
@@ -27,7 +27,7 @@ flowchart TB
         Q1[Buat ApprovalRequest Pending, tunggu approver]
         TYP{Jenis aksi}
         SYNC[Perbarui expiry_date atau is_permanent secara sinkron, tanpa job]
-        J["Dispatch job: ResizeVmJob / AddDiskJob / EditResourcesVmJob / HardenVmJob / DestroyVmJob"]
+        J["Dispatch job: EditResourcesVmJob / HardenVmJob / DestroyVmJob"]
         EX[Worker jalankan Terraform atau Ansible]
         UP[Update Inventory dan InventoryDisk]
         BR[Broadcast VmStateChanged]
@@ -40,13 +40,11 @@ flowchart TB
     end
 
     S1 --> A1 --> A2 --> A3
-    A3 --> AR
-    A3 --> AD
+    A3 --> AER
     A3 --> APx
     A3 --> AH
     A3 --> ADEL
-    AR --> V1
-    AD --> V1
+    AER --> V1
     APx --> V1
     AH --> V1
     ADEL --> V1
@@ -57,7 +55,7 @@ flowchart TB
     AP1 -- ya --> TYP
     AP1 -- tidak --> AP2 --> E1
     TYP -- "Perpanjang / Permanent" --> SYNC
-    TYP -- "Resize / Tambah Disk / Harden / Hapus" --> J
+    TYP -- "Edit Resources / Harden / Hapus" --> J
     J --> EX --> UP --> BR
     SYNC --> BR
     BR --> E1

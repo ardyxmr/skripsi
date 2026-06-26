@@ -663,7 +663,7 @@ export default function Inventory() {
                       <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200 font-mono bg-blue-100/50 dark:bg-page px-2 py-0.5 rounded-md border dark:border-theme">{selectedVm.osUser}</span>
                     </div>
                     <div className="flex justify-between items-center gap-2">
-                      <span className="text-[12px] text-gray-500 dark:text-gray-400">Password:</span>
+                      <span className="text-[12px] text-gray-500 dark:text-gray-400">Temporary Password:</span>
                       {revealedCreds ? (
                         revealedCreds.password ? (
                           <span className="flex items-center gap-1.5">
@@ -681,7 +681,7 @@ export default function Inventory() {
                     </div>
                     <div className="text-[11px] text-blue-600 dark:text-blue-400 bg-blue-100/50 dark:bg-blue-900/30 p-2 rounded flex items-start gap-1.5 mt-2">
                       <AlertCircle size={12} className="shrink-0 mt-0.5" />
-                      <span>Unique per VM. Revealing it is recorded in the audit log; change it after first login.</span>
+                      <span>Temporary, unique per VM — you'll be required to set a new password on first login. Revealing it is recorded in the audit log.</span>
                     </div>
                   </div>
                 </section>

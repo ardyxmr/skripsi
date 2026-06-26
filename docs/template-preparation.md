@@ -43,6 +43,7 @@ for an IP that never comes. Install `qemu-guest-agent` in every template.
 - [ ] **Disk on `scsi0`**, controller `virtio-scsi-single`.
 - [ ] **Networking comes up via DHCP** on clone (verified — §6).
 - [ ] **SSH password auth enabled** (`ssh_pwauth: true` in cloud-init). Cloud images disable it by default (`PasswordAuthentication no`), but the portal logs users in with the injected `ciuser`/`cipassword`, so SSH must accept passwords or PuTTY fails with *"No supported authentication methods (server sent: publickey,gssapi-*)"*.
+- [ ] **Force a password change on first login** (`chpasswd: { expire: true }` in cloud-init). Makes the portal's auto-generated password a **one-time** credential: the owner reveals it once (self-service, audited), logs in, and is forced to set their own — after which **neither the admin nor the system knows the real password**. Details + the deterministic `chage` fallback in §3.
 - [ ] **Identity reset** before sealing: blank `/etc/machine-id`, remove SSH host keys, `cloud-init clean` (so each clone is unique).
 - [ ] **Storage** that supports VM images and has capacity — see §5.
 - [ ] Use template **VMIDs ≥ 9000** so they never collide with portal-provisioned VMs (which start at 100).
@@ -65,7 +66,7 @@ virt-customize -a Rocky-9-GenericCloud-Base.latest.x86_64.qcow2 \
   --install qemu-guest-agent \
   --run-command 'systemctl enable qemu-guest-agent' \
   --run-command 'grubby --update-kernel=ALL --args="console=ttyS0,115200 console=tty0"' \
-  --run-command 'echo "ssh_pwauth: true" > /etc/cloud/cloud.cfg.d/99-pwauth.cfg' \
+  --run-command 'printf "ssh_pwauth: true\nchpasswd: { expire: true }\n" > /etc/cloud/cloud.cfg.d/99-pwauth.cfg' \
   --run-command 'truncate -s 0 /etc/machine-id' \
   --run-command 'rm -f /etc/ssh/ssh_host_*'
 
@@ -82,13 +83,19 @@ qm template $VMID
 Notes:
 - **Console:** cloud images log to **serial** (`ttyS0`), so `--vga serial0` shows boot output + a login. The `grubby` line also enables `tty0` so the graphical noVNC console works too.
 - **SSH password login:** `ssh_pwauth: true` makes cloud-init flip `PasswordAuthentication yes` on each clone's first boot — without it, SSH only offers `publickey` and password login (which is all the portal hands out) is refused.
+- **First-login password reset (one-time credential):** `chpasswd: { expire: true }` expires the injected `cipassword` on first boot, so the user is forced to set their own password on first SSH/console login. The portal-generated password (revealed self-service in Inventory) is then a *temporary* credential only — after the change, neither the admin nor the system knows the real one (a privacy/STRIDE win). **Verify on a fresh clone:** log in with the revealed password and confirm you're prompted for a new one. If a clone logs in *without* prompting (Proxmox's own cloud-init can override `chpasswd`), use the deterministic fallback below — it expires every human account on first boot regardless of the username the portal injected:
+  ```bash
+  # add to the same offline virt-customize run (or a 99-pwexpire.cfg)
+  --run-command 'printf "#cloud-config\nbootcmd:\n  - [ bash, -c, \"for u in \\$(awk -F: \\$3>=1000\\&\\&\\$3<65534{print\\$1} /etc/passwd); do chage -d 0 \\$u; done\" ]\n" > /etc/cloud/cloud.cfg.d/99-pwexpire.cfg'
+  ```
+  (Simpler if you know the injected user is always `ubuntu`: a `runcmd` of `chage -d 0 ubuntu`.) **Caveat:** OpenSSH CLI and the Proxmox console handle the "expired password → set new" prompt cleanly; some old GUI clients (e.g. legacy PuTTY) are clunky with it — the console is the fallback. Recovery if a user forgets their new password = admin resets via the Proxmox console.
 - **Disk grow:** cloud images include `cloud-init` + `growpart`, so the boot disk auto-grows to whatever size the portal requests. Nothing extra needed.
 - **Do NOT** bake a `ciuser`/`cipassword` into the template — the portal injects those per clone.
 
 > **Already built a template without this?** Fix it in place, offline — no re-clone, no re-publish (the catalog still points at the same vmid). Find the disk with `qm config <vmid> | grep scsi0` (e.g. `vmdata:base-9000-disk-0` → `/dev/zvol/vmdata/base-9000-disk-0`):
 > ```bash
 > virt-customize -a /dev/zvol/vmdata/base-9000-disk-0 \
->   --run-command 'echo "ssh_pwauth: true" > /etc/cloud/cloud.cfg.d/99-pwauth.cfg'
+>   --run-command 'printf "ssh_pwauth: true\nchpasswd: { expire: true }\n" > /etc/cloud/cloud.cfg.d/99-pwauth.cfg'
 > ```
 > Only **new** clones pick it up; VMs already provisioned stay key-only until reprovisioned (or enable it in-guest — §8).
 

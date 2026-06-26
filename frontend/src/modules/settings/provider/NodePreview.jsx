@@ -100,7 +100,7 @@ export default function NodePreview() {
     e.preventDefault();
     const fd = new FormData(e.target);
     const payload = {
-      nodeName: fd.get('nodeName'),
+      nodeName: fd.get('node_name'),
       description: fd.get('description'),
       providerId: Number(fd.get('providerId')) || null,
       providerNodeId: Number(fd.get('providerNodeId')) || null,

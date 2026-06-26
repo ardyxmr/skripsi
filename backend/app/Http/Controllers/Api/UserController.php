@@ -27,16 +27,36 @@ class UserController extends Controller
         );
     }
 
+    /**
+     * Password policy shared by store/update — mirrors the Create-User form (>=8 chars + at least one
+     * uppercase letter, one number, and one special character). Defense-in-depth: the client form is the
+     * first gate; this ensures a bypassed/scripted client still cannot set a weak password.
+     */
+    private function passwordRules(bool $required): array
+    {
+        return [
+            $required ? 'required' : 'nullable',
+            'string',
+            'min:8',
+            'regex:/^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/',
+        ];
+    }
+
+    private function passwordMessages(): array
+    {
+        return ['password.regex' => 'Password must include at least one uppercase letter, one number, and one special character.'];
+    }
+
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255', $this->uniqueNameCI('users', 'name')],
             'email' => ['required', 'email', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8'],
+            'password' => $this->passwordRules(true),
             'role_id' => ['required', 'integer', 'exists:roles,id'],
             'group_id' => ['required', 'integer', 'exists:groups,id'],
-            'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
-        ]);
+            'status' => ['nullable', Rule::in(['Active', 'Disabled'])],
+        ], $this->passwordMessages());
         $data['password'] = Hash::make($data['password']);
         $data['status'] ??= 'Active';
 
@@ -51,11 +71,11 @@ class UserController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255', $this->uniqueNameCI('users', 'name', $user->id)],
             'email' => ['required', 'email', Rule::unique('users', 'email')->ignore($user->id)],
-            'password' => ['nullable', 'string', 'min:8'],
+            'password' => $this->passwordRules(false),
             'role_id' => ['required', 'integer', 'exists:roles,id'],
             'group_id' => ['required', 'integer', 'exists:groups,id'],
-            'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
-        ]);
+            'status' => ['nullable', Rule::in(['Active', 'Disabled'])],
+        ], $this->passwordMessages());
         if (! empty($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         } else {

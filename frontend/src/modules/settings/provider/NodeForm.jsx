@@ -64,7 +64,12 @@ export default function NodeForm({ isOpen, mode, data, providers, publishedNodeI
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Node Name <span className="text-rose-500">*</span></label>
-                  <input type="text" name="nodeName" value={nodeName} onChange={(e) => setNodeName(e.target.value)} required placeholder="e.g. Jakarta Zone A" className={inputCls} />
+                  {/* name MUST NOT be "nodeName": a form control named nodeName shadows the form's
+                      built-in DOM `form.nodeName` property, so React-DOM's shouldUseChangeEvent does
+                      `form.nodeName.toLowerCase()` on an element instead of the "FORM" string and throws
+                      during event extraction — which skips handleSubmit's preventDefault and lets the
+                      browser do a native form submit (full reload, drops ?tab → User Management). */}
+                  <input type="text" name="node_name" value={nodeName} onChange={(e) => setNodeName(e.target.value)} required placeholder="e.g. Jakarta Zone A" className={inputCls} />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Description</label>

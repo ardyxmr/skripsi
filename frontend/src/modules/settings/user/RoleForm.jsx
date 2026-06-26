@@ -13,6 +13,10 @@ export default function RoleForm({ mode, data, onClose, onSubmit, onChange }) {
     const formData = new FormData(e.target);
     const submitData = Object.fromEntries(formData.entries());
     submitData.permissions = formData.getAll('permissions');
+    // The field is named role_name (a control named "name" shadows the form's DOM `form.name`);
+    // remap back to the API key the backend expects.
+    submitData.name = submitData.role_name;
+    delete submitData.role_name;
     onSubmit(submitData);
   };
 
@@ -31,7 +35,7 @@ export default function RoleForm({ mode, data, onClose, onSubmit, onChange }) {
         <form ref={formRef} onSubmit={handleSubmit} onChange={(e) => { onChange?.(e); syncValidity(); }} className="p-5 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-medium text-slate-700 dark:text-zinc-300">Role Name</label>
-            <input name="name" required defaultValue={data?.name} className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors" placeholder="e.g. Developer" />
+            <input name="role_name" required defaultValue={data?.name} className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors" placeholder="e.g. Developer" />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-medium text-slate-700 dark:text-zinc-300">Description</label>

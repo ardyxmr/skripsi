@@ -28,6 +28,11 @@ compatible with all of this or provisioning fails:
 **The single most common failure:** no guest agent → `agent=1` makes Terraform hang waiting
 for an IP that never comes. Install `qemu-guest-agent` in every template.
 
+> **Windows templates** follow a different path — there is no official Windows cloud image, so you
+> **build one from an ISO** and use **cloudbase-init** (the Windows port of cloud-init) instead of
+> cloud-init. The portal pipeline above is otherwise unchanged. See **§10 (Recipe C)** and the
+> tier/environment notes in **§11**.
+
 ---
 
 ## 2. The non-negotiable checklist (both template types)
@@ -226,3 +231,100 @@ works, and it boots clean — it will work end-to-end in the portal.
 
 - **`rocky9-cloud` (vmid 9000)** — EL9 cloud image, `--cpu host`, agent, serial+VGA console. Published as the **Rocky Linux 9** catalog. Provisions single + parallel batches cleanly on thin `vmdata`. **Apply the offline `ssh_pwauth: true` fix (§3 callout) for SSH password login** — built before that step was added.
 - **`ubuntu24-lvm` (vmid 9001)** — manual Ubuntu 24.04, custom LVM, `--cpu host`, agent, lvm2-in-initramfs, DHCP netplan. (Finish per §4.2 networking before publishing.)
+
+---
+
+## 10. Recipe C — Windows templates (Server 2022/2025 & Windows 11) via cloudbase-init
+
+Windows has **no official cloud image** like Fedora/Ubuntu. You build the template from an ISO, and
+the cloud-init equivalent is **cloudbase-init** (by Cloudbase Solutions). It reads the **same Proxmox
+cloud-init drive** the Linux path uses, so once installed correctly a Windows template clones through
+the portal's existing Telmate pipeline (hostname / user / password / IP all injected). `sshkeys` is
+ignored — Windows logs in by password over RDP/WinRM.
+
+### 10.1 ISOs / drivers you need on the node
+- Windows ISO — for a lab use the **evaluation** editions (Server eval = 180 days; Win 11 Enterprise eval) so activation isn't a blocker. Note this as a thesis limitation.
+- **virtio-win** ISO (Fedora's signed driver ISO) — Windows can't see a VirtIO SCSI disk without it.
+- **cloudbase-init** MSI (`cloudbase.it`) — installed inside the guest.
+
+### 10.2 Proxmox VM settings
+| Setting | Value | Why |
+|---|---|---|
+| Machine | **q35** | modern chipset (required for Win 11; fine for Server) |
+| BIOS | **OVMF (UEFI)** + add an **EFI disk** | required for Win 11 Secure Boot; recommended for Server |
+| SCSI controller | **virtio-scsi-single** | matches the stub (`scsihw`) |
+| Boot disk | **scsi0**, **VirtIO SCSI** | matches the stub (`scsi0`) |
+| Network | **VirtIO (model=virtio)** | matches the stub |
+| CPU | **host** | performance + feature parity |
+| Cloud-init drive | **Add → CloudInit Drive on `ide2`** | cloudbase-init reads it |
+| CD 1 / CD 2 | **Windows ISO** + **virtio-win ISO** | install + driver load |
+| RAM / Disk | **Server:** ≥4 GB / ≥60 GB · **Win 11:** ≥4 GB (8 rec.) / ≥64 GB | Windows won't fit the current 40 GB tiers — see §11 |
+
+**Windows 11 only — extra hardware gates:**
+- [ ] **TPM 2.0** → add a **TPM State** device (`tpmstate0`, version 2.0).
+- [ ] **Secure Boot** → OVMF EFI disk with pre-enrolled MS keys (Proxmox "EFI disk" defaults enroll them).
+
+### 10.3 Install + drivers
+1. Boot the Windows ISO. At "Where do you want to install Windows?" the disk is missing → **Load driver** → browse the virtio-win CD → `vioscsi\<ver>\<arch>` → the disk appears.
+2. Finish the install, boot to desktop.
+3. From the virtio-win CD run **`virtio-win-guest-tools.exe`** — installs ALL VirtIO drivers (net/balloon/serial) **and** the **qemu-guest-agent** service. Confirm the *QEMU Guest Agent* service is **Running** (this is what reports the IP back to the portal).
+
+### 10.4 cloudbase-init
+Install the cloudbase-init MSI. Then edit
+`C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\cloudbase-init.conf` **and**
+`cloudbase-init-unattend.conf` (the sysprep/specialize pass):
+- **Datasource** must read the Proxmox drive — include the NoCloud/ConfigDrive service, e.g.
+  `metadata_services=cloudbaseinit.metadata.services.nocloudservice.NoCloudConfigDriveService`.
+- **Plugins** (`plugins=`): `SetHostNamePlugin`, `CreateUserPlugin` + `SetUserPasswordPlugin`,
+  `NoCloudNetworkConfigPlugin` (network), and **`ExtendVolumesPlugin`** so `C:` grows to the cloned
+  disk size (Windows' equivalent of Linux growpart — the Linux `growpart`/`resizefs` trick does NOT apply).
+- `username=Admin` (the local account the portal's `cipassword` is set on); `first_logon_behaviour=no`
+  so the injected password isn't force-changed at first logon.
+- **Password complexity:** Windows enforces its own policy, so the portal's `cipassword` MUST be
+  complex (upper + number + symbol) or `SetUserPassword` fails. The Create-User password policy already
+  shipped matches this shape; ensure any seeded/default VM password is complex too.
+
+### 10.5 Sysprep + seal
+```
+C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown ^
+  /unattend:"C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\Unattend.xml"
+```
+(cloudbase-init ships that `Unattend.xml`; it hooks cloudbase-init into the specialize pass.) When the
+VM **shuts down**, convert it: `qm template <vmid>` (use a VMID ≥ 9000).
+
+### 10.6 Verify before publishing (mirrors §6)
+Clone it, then:
+```
+qm clone <tpl> 990 --name win-verify
+qm set 990 --ciuser Admin --cipassword 'Str0ng#Pass!' --ipconfig0 ip=dhcp --agent enabled=1
+qm start 990
+qm agent 990 network-get-interfaces      # must return an IPv4 → guest agent + cloudbase-init worked
+# RDP to that IP as Admin / the cipassword. Then: qm stop 990 ; qm destroy 990 --purge
+```
+
+### 10.7 Faster path (optional)
+For a reproducible, thesis-defensible build, there are **Packer + Proxmox** templates on GitHub that
+automate "ISO → drivers → cloudbase-init → sysprep → template" end-to-end. Worth it if you'll rebuild;
+the manual recipe above is fine for two templates.
+
+---
+
+## 11. All templates available across all tiers and environments (wiring)
+
+**Catalogs are NOT tier-bound.** There is no per-catalog tier rule in the schema (the policy is a 5-way
+allow-list: provider / node / tier / network / datastore — catalogs are admitted by **node residency**).
+So a published catalog is automatically selectable with **every tier an environment allows** — you never
+wire "catalog × tier" pairs. To make **every template usable in every environment at every tier**, each
+environment's allow-list must include:
+1. the **provider** + the **node(s)** the templates live on (a catalog only shows where its node is allowed), and
+2. **all tiers**.
+
+Then every catalog × every allowed tier works automatically. Build each OS template (Fedora / Ubuntu /
+Windows) on the node(s) you want it available on, publish it as a catalog, and allow that node + the tiers
+in each environment.
+
+> **Windows vs the current tiers — a real constraint to resolve.** All current tiers are **40 GB disk**
+> (Bronze 2c/2 GB, Silver 3c/4 GB, Gold 4c/5 GB). Windows Server/11 will **not** fit 40 GB and want
+> ≥4 GB RAM. "Windows on all tiers" is allowed by the *policy* but will fail in *practice* on Bronze/40 GB.
+> Either raise the Windows-eligible tiers' `disk_gb` (≥60 GB Server / ≥64 GB Win 11) and RAM, or accept
+> that Windows is realistically a Silver/Gold offering. Linux templates are unaffected.

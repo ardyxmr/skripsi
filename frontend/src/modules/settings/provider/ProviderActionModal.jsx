@@ -6,6 +6,10 @@ export default function ProviderActionModal({ isOpen, action, provider, isBlocki
 
   if (!isOpen || !provider) return null;
 
+  // Providers come straight from the API (camelized) as `providerName`; there is no `.name`.
+  // Fall back so the name renders and the confirm-to-delete gate actually matches what's typed.
+  const providerName = provider.providerName ?? provider.name ?? '';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white dark:bg-card rounded-modal shadow-modal border border-gray-200 dark:border-theme w-full max-w-[400px] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
@@ -45,7 +49,7 @@ export default function ProviderActionModal({ isOpen, action, provider, isBlocki
               </div>
               <div className="bg-slate-50 dark:bg-surface p-3 rounded-card text-[12px] border border-gray-200 dark:border-theme">
                 <div className="font-semibold text-slate-700 dark:text-zinc-300 mb-1">Provider:</div>
-                <div className="text-slate-500 dark:text-zinc-400 font-mono">{provider.name}</div>
+                <div className="text-slate-500 dark:text-zinc-400 font-mono">{providerName}</div>
               </div>
               <div className="flex flex-col gap-1.5 mt-2">
                 <label className="text-[12px] font-medium text-slate-700 dark:text-zinc-300">Type the provider name to confirm:</label>
@@ -53,7 +57,7 @@ export default function ProviderActionModal({ isOpen, action, provider, isBlocki
                   type="text" 
                   value={confirmText}
                   onChange={(e) => setConfirmText(e.target.value)}
-                  placeholder={`Type "${provider.name}"`}
+                  placeholder={`Type "${providerName}"`}
                   className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm" 
                 />
               </div>
@@ -63,7 +67,7 @@ export default function ProviderActionModal({ isOpen, action, provider, isBlocki
                 </button>
                 <button 
                   onClick={onConfirm} 
-                  disabled={confirmText !== provider.name}
+                  disabled={confirmText.trim() !== providerName}
                   className={`px-4 py-2 text-[13px] font-medium text-white rounded-input transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                     action === 'Delete' ? 'bg-rose-600 hover:bg-rose-700' :
                     action === 'Enable' ? 'bg-emerald-600 hover:bg-emerald-700' :

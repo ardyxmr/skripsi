@@ -47,17 +47,18 @@ export function CatalogProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const refetch = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // silent:true skips the loading/error UI churn — used by background live refreshes (e.g. Usage
+  // count following an inventory change) so the table data updates without flashing the skeleton.
+  const refetch = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) { setLoading(true); setError(null); }
     try {
       const rows = (await api.get(RESOURCE) || []).map(normalizeCatalog);
       setCatalogs(rows);
       preloadCatalogImages(rows); // warm icon cache ahead of the Catalog page
     } catch (e) {
-      setError(e);
+      if (!silent) setError(e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 

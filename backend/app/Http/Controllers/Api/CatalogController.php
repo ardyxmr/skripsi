@@ -57,6 +57,15 @@ class CatalogController extends Controller
 
     public function destroy(Request $request, Catalog $catalog): JsonResponse
     {
+        // Block (409) only while a LIVE VM uses it (historical requests null out on delete). To swap
+        // the image, edit the catalog (→ new template) rather than deleting, so its history stays intact.
+        foreach (['inventory' => 'catalog_id'] as $table => $column) {
+            if (\Illuminate\Support\Facades\Schema::hasTable($table)
+                && \Illuminate\Support\Facades\DB::table($table)->where($column, $catalog->id)->exists()) {
+                abort(409, 'Catalog has active VMs. To change its image, edit the catalog and select the new template, or set it inactive. Delete it only once no VMs reference it.');
+            }
+        }
+
         $name = $catalog->catalog_name;
         if ($catalog->catalog_image) {
             Storage::disk('public')->delete($catalog->catalog_image);

@@ -58,7 +58,7 @@ The artifact is built entirely on an open-source stack — **Laravel** (API), **
 research gap: it **abstracts IaC/CLI complexity** (§3.3.2–3.3.3) behind a **policy-bound,
 governed** self-service layer (§3.3.4) that is **portable across providers** (§3.3.1). Three
 load-bearing architectural decisions underpin it — the **node-centric policy model (ADR-17)**,
-realized as a five-way environment allow-list (provider/node/tier/network/datastore) anchored on
+realized as a three-way environment allow-list (provider/node/tier) anchored on
 the node (see §3.3.4), a **per-VM Terraform workspace/state (ADR-08)** for isolation and a safe
 retryable failure path, and **cookie-based Sanctum SPA authentication (ADR-24)**. Full design detail:
 `03-architectural-decisions.md`, `06-database-schema.md`, `07-api-contract.md`.
@@ -119,13 +119,13 @@ further reducing the cognitive load of provisioning.
 ### 3.3.4 Policy and governance engine — the Environment
 
 The **Environment** is the business-policy unit and the heart of the governance model. It is a
-**policy-as-configuration** unit that explicitly **allow-lists five resource types** via dedicated
-rule tables — `environment_provider_rules`, `environment_node_rules`, `environment_tier_rules`,
-`environment_network_rules`, and `environment_datastore_rules`. Catalogs are admitted implicitly
-by **node residency** (a catalog's template must sit on an allow-listed node) rather than a
-dedicated rule table. When a user selects an environment during provisioning, they therefore see
-**only the providers, nodes, tiers, networks, datastores, and catalogs that the environment
-permits** — with the bound node as the routing anchor (the node-centric invariant, ADR-17) that
+**policy-as-configuration** unit that explicitly **allow-lists three resource types** via dedicated
+rule tables: `environment_provider_rules`, `environment_node_rules`, and `environment_tier_rules`.
+Networks, datastores, and catalogs are admitted implicitly by **node residency** (their published
+row must sit on an allow-listed node) rather than a dedicated rule table. When a user selects an
+environment during provisioning, they therefore see **only the providers, nodes, and tiers the
+environment permits, plus the catalogs, networks, and datastores that reside on the allowed
+nodes**, with the bound node as the routing anchor (the node-centric invariant, ADR-17) that
 doubles as a least-privilege guardrail. Each environment also carries independent policy levers:
 
 - **Approval gate (`approval_required`)** — toggles whether provisioning/lifecycle in this

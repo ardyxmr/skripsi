@@ -260,8 +260,7 @@ environments (
 environment_provider_rules  ( id PK, environment_id FK, provider_id FK );
 environment_tier_rules      ( id PK, environment_id FK, tier_id FK );
 environment_node_rules      ( id PK, environment_id FK, node_id FK );        -- references published nodes.id (ADR-17)
-environment_network_rules   ( id PK, environment_id FK, network_id FK );    -- references published networks.id
-environment_datastore_rules ( id PK, environment_id FK, datastore_id FK );  -- references published datastores.id
+-- networks + datastores carry no rule table: they are admitted by node residency (follow the allow-listed node)
 ```
 **Seed:** tiers Bronze (2/4096/40), Silver (4/8192/80), Gold (8/16384/160) on install; Platinum (16/32768/320) admin-creatable. **Tier delete blocked** if referenced by any environment rule, inventory row, or provision request.
 
@@ -406,7 +405,7 @@ provider_templates  ─1:1─ catalogs
 provider_networks   ─1:1─ networks (published)
 provider_datastores ─1:1─ datastores (published)
 provider_nodes      ─1:1─ nodes (published)
-environments ──< environment_(provider|tier|node|network|datastore)_rules >── (providers|tiers|nodes|networks|datastores)
+environments ──< environment_(provider|tier|node)_rules >── (providers|tiers|nodes)
 users ──< provision_requests >── (environment, provider, node[published], catalog, tier, network, datastore)
 provision_requests ─ref─ approval_requests (request_type=PROVISION)
 inventory ─ref─ approval_requests (request_type ∈ RENEWAL|PERMANENT|RESIZE|ADD_DISK|DESTROY)

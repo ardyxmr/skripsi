@@ -407,6 +407,7 @@ export default function Inventory() {
 
   const openDrawer = (vm) => {
     setSelectedVm(vm);
+    setDrawerOpen(true);      // without this the drawer stayed mounted but invisible (opacity-0 / translate-x-full)
     setRenewError('');
     setRevealedCreds(null);   // require an explicit, audited reveal per VM open
     setCredLoading(false);
@@ -663,7 +664,7 @@ export default function Inventory() {
                       <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200 font-mono bg-blue-100/50 dark:bg-page px-2 py-0.5 rounded-md border dark:border-theme">{selectedVm.osUser}</span>
                     </div>
                     <div className="flex justify-between items-center gap-2">
-                      <span className="text-[12px] text-gray-500 dark:text-gray-400">Temporary Password:</span>
+                      <span className="text-[12px] text-gray-500 dark:text-gray-400">Initial Password (one-time):</span>
                       {revealedCreds ? (
                         revealedCreds.password ? (
                           <span className="flex items-center gap-1.5">
@@ -681,7 +682,7 @@ export default function Inventory() {
                     </div>
                     <div className="text-[11px] text-blue-600 dark:text-blue-400 bg-blue-100/50 dark:bg-blue-900/30 p-2 rounded flex items-start gap-1.5 mt-2">
                       <AlertCircle size={12} className="shrink-0 mt-0.5" />
-                      <span>Temporary, unique per VM — you'll be required to set a new password on first login. Revealing it is recorded in the audit log.</span>
+                      <span>One-time initial password. The user sets their own password on first login; the portal never receives or stores it, so this value stops working once the VM has been logged into. Revealing it is recorded in the audit log.</span>
                     </div>
                   </div>
                 </section>
@@ -1442,10 +1443,6 @@ export default function Inventory() {
                             <div className="w-full md:w-[250px] shrink-0 border-l-2 border-teal-400 pl-4">
                               <div className="space-y-3">
                                 <div>
-                                  <div className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400">Default OS User</div>
-                                  <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{vm.osUser}</div>
-                                </div>
-                                <div>
                                   <div className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400">Created Date</div>
                                   <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{formatSimpleDate(vm.createdDate)}</div>
                                 </div>
@@ -1473,11 +1470,11 @@ export default function Inventory() {
                                 </div>
                                 <div>
                                   <div className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400">Datastore</div>
-                                  <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{vm.datastore || 'vmdata'}</div>
+                                  <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{vm.datastore || '—'}</div>
                                 </div>
                                 <div>
                                   <div className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400">Network</div>
-                                  <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{vm.network || 'vlan-prod'}</div>
+                                  <div className="text-[13px] font-medium text-gray-800 dark:text-gray-200">{vm.network || '—'}</div>
                                 </div>
                               </div>
                             </div>
@@ -1515,14 +1512,6 @@ export default function Inventory() {
                                   )}
                                 </div>
                               </div>
-                            </div>
-
-                            {/* Right Panel - Description */}
-                            <div className="flex-1 min-w-[250px]">
-                               <div className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Description / Notes</div>
-                               <div className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed bg-gray-50 dark:bg-page p-3 rounded-lg border border-gray-100 dark:border-theme overflow-y-auto max-h-[140px]">
-                                 {vm.description || <span className="italic text-gray-400">No Description Provided</span>}
-                               </div>
                             </div>
 
                           </div>

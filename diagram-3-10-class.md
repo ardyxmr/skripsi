@@ -105,7 +105,7 @@ classDiagram
         +disk_gb
     }
 
-    %% --- Environment dan lima aturan ---
+    %% --- Environment dan tiga aturan ---
     class Environment {
         +id
         +environment_name
@@ -121,8 +121,6 @@ classDiagram
     Environment "*" -- "*" Provider : environment_provider_rules
     Environment "*" -- "*" Node : environment_node_rules
     Environment "*" -- "*" Tier : environment_tier_rules
-    Environment "*" -- "*" Network : environment_network_rules
-    Environment "*" -- "*" Datastore : environment_datastore_rules
 
     %% --- Workflow ---
     class ProvisionRequest {

@@ -19,7 +19,9 @@ class DatastoreController extends Controller
 
     public function index(): JsonResponse
     {
-        $rows = Datastore::with(['provider', 'providerNode', 'providerDatastore'])->orderBy('id')->get();
+        $rows = Datastore::with(['provider', 'providerNode', 'providerDatastore'])
+            ->withCount(['inventories as active_vms' => fn ($q) => $q->whereNotIn('status', ['Deleted'])])
+            ->orderBy('id')->get();
 
         return response()->json($rows->map(fn (Datastore $d) => $this->transform($d)));
     }
@@ -51,6 +53,15 @@ class DatastoreController extends Controller
 
     public function destroy(Request $request, Datastore $datastore): JsonResponse
     {
+        // Block (409) only while a LIVE VM uses it. Historical requests null out on delete; the env
+        // datastore allow-list is node-derived + cascades on delete, so it is not a delete blocker.
+        foreach (['inventory' => 'datastore_id'] as $table => $column) {
+            if (\Illuminate\Support\Facades\Schema::hasTable($table)
+                && \Illuminate\Support\Facades\DB::table($table)->where($column, $datastore->id)->exists()) {
+                abort(409, 'Datastore has active VMs. Wait for its VMs to be deleted before deleting it.');
+            }
+        }
+
         $name = $datastore->datastore_name;
         $datastore->delete();
         $this->audit->log($request->user(), 'DELETE_DATASTORE', "Deleted datastore {$name}", $request);
@@ -76,6 +87,7 @@ class DatastoreController extends Controller
             'total_space' => $pd?->total_space,
             'available_space' => $pd?->available_space,
             'status' => $d->effectiveStatus(),
+            'active_vms' => $d->active_vms ?? $d->inventories()->whereNotIn('status', ['Deleted'])->count(),
             'updated_at' => $d->updated_at,
         ];
     }

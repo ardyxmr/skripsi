@@ -18,12 +18,12 @@ return [
     // cloud-init login user created on every provisioned VM (ci_user). The password is generated
     // PER VM (strong, random, alphanumeric) at provision time, stored encrypted on the inventory row,
     // and revealed only via the audited GET /inventory/{id}/credentials endpoint.
-    'ci_user' => env('PROVISION_CI_USER', 'ubuntu'),
+    'ci_user' => env('PROVISION_CI_USER', 'sysuser'),
 
     // Ansible hardening (Stage 8). A dedicated automation keypair is injected into every NEW VM via
     // cloud-init (public key on the ci_user) so Ansible connects KEY-based — independent of the
     // template's ssh_pwauth. The private key stays on the worker (never copied into a workspace).
-    'ansible_ssh_user' => env('ANSIBLE_SSH_USER', env('PROVISION_CI_USER', 'ubuntu')),
+    'ansible_ssh_user' => env('ANSIBLE_SSH_USER', env('PROVISION_CI_USER', 'sysuser')),
     'ansible_public_key_path' => env('ANSIBLE_PUBLIC_KEY_PATH', storage_path('app/ansible/automation_key.pub')),
     'ansible_private_key_path' => env('ANSIBLE_PRIVATE_KEY_PATH', storage_path('app/ansible/automation_key')),
 

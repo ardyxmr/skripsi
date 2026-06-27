@@ -64,8 +64,6 @@ export default function EnvironmentForm({
     allowedProviderIds: [],
     allowedTierIds: [],
     allowedNodeIds: [],
-    allowedNetworkIds: [],
-    allowedDatastoreIds: [],
   };
   const [formData, setFormData] = useState(EMPTY);
 

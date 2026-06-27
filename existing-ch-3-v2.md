@@ -313,8 +313,8 @@ hingga mesin virtual siap. Partisipan mencakup Pengguna, Frontend SPA, API Larav
 antrian Redis, worker, Proxmox, dan server Reverb.
 
 Urutan dimulai ketika pengguna mengisi wizard dan Frontend mengirim permintaan POST ke endpoint
-provision-requests. API memvalidasi permintaan terhadap daftar izin lima sumber daya environment
-sebelum melanjutkan. Diagram memuat fragmen alternatif pada gerbang persetujuan. Jika environment
+provision-requests. API memvalidasi permintaan terhadap daftar izin tiga sumber daya environment,
+yaitu provider, node, dan tier, sebelum melanjutkan. Diagram memuat fragmen alternatif pada gerbang persetujuan. Jika environment
 mewajibkan persetujuan dan pengguna bukan peran privileged, API menyimpan *ProvisionRequest* dan
 *ApprovalRequest* berstatus Pending, memancarkan event *ApprovalChanged*, dan mengembalikan respons
 berstatus menunggu persetujuan, dengan kelanjutan mengikuti Gambar 3.8. Jika pengguna berperan
@@ -405,8 +405,9 @@ Kelompok abstraksi terpublikasi terdiri atas *Node*, *Catalog*, *Network*, dan *
 masing-masing menjadi alias bagi satu entitas mirror provider, ditambah *CatalogHardeningVersion* yang
 menyimpan versi playbook hardening per katalog. Kelompok tier berisi *Tier* dengan atribut vcpu,
 ram_mb, dan disk_gb. Kelompok environment berisi *Environment* yang menyimpan kebijakan masa berlaku,
-masa tenggang, gerbang persetujuan, dan kuota disk, serta terhubung ke *Provider*, *Node*, *Tier*,
-*Network*, dan *Datastore* melalui lima tabel aturan.
+masa tenggang, gerbang persetujuan, dan kuota disk, serta terhubung ke *Provider*, *Node*, dan
+*Tier* melalui tiga tabel aturan. *Network* dan *Datastore* tidak memiliki tabel aturan tersendiri
+dan mengikuti node yang diizinkan.
 
 Kelompok alur kerja terdiri atas *ProvisionRequest*, *ApprovalRequest*, *Inventory*, dan
 *InventoryDisk*. Satu *User* mengajukan banyak *ProvisionRequest*; satu *ProvisionRequest* menghasilkan
@@ -445,11 +446,12 @@ provider_nodes, sehingga alias ramah pengguna selalu terikat pada sumber daya ny
 publikasi dari lapisan discovery menjadi penerapan pola anti-corruption layer yang melindungi katalog
 layanan dari perubahan mentah pada Proxmox.
 
-Kelompok kebijakan terdiri atas tiers, environments, dan lima tabel aturan, yaitu
-environment_provider_rules, environment_node_rules, environment_tier_rules, environment_network_rules,
-dan environment_datastore_rules. Tiap tabel aturan menghubungkan environments dengan satu jenis sumber
-daya yang diizinkan. Struktur lima tabel aturan ini mewujudkan kebijakan sebagai konfigurasi, yaitu
-batasan sumber daya dapat diubah tanpa mengubah kode.
+Kelompok kebijakan terdiri atas tiers, environments, dan tiga tabel aturan, yaitu
+environment_provider_rules, environment_node_rules, dan environment_tier_rules. Tiap tabel aturan
+menghubungkan environments dengan satu jenis sumber daya yang diizinkan. Jaringan dan datastore tidak
+memiliki tabel aturan tersendiri; keduanya mengikuti node yang diizinkan, sehingga pengguna hanya
+melihat jaringan dan datastore yang berada pada node tersebut. Struktur tabel aturan ini mewujudkan
+kebijakan sebagai konfigurasi, yaitu batasan sumber daya dapat diubah tanpa mengubah kode.
 
 Kelompok permintaan terdiri atas provision_requests dan approval_requests. Tabel provision_requests
 menyimpan identifier sumber daya terpublikasi yang dipilih pengguna, sedangkan approval_requests
@@ -474,9 +476,9 @@ dan storage pool local-lvm menjadi datastore Disk-ssd-dev. Dengan demikian pengg
 mesin virtual dari pilihan menu, tanpa menyentuh berkas *HashiCorp Configuration Language* (HCL), identifier bridge, atau nama storage
 pool.
 
-Lapisan kebijakan berpusat pada environment. Environment membatasi provider, node, tier, jaringan,
-dan datastore melalui lima tabel aturan, sehingga pengguna hanya melihat sumber daya yang
-dialirkan ke node yang diizinkan. Environment juga mengatur gerbang persetujuan
+Lapisan kebijakan berpusat pada environment. Environment membatasi provider, node, dan tier melalui
+tiga tabel aturan. Jaringan dan datastore mengikuti node yang diizinkan, sehingga pengguna hanya
+melihat jaringan dan datastore yang berada pada node tersebut. Environment juga mengatur gerbang persetujuan
 (approval_required), masa berlaku dan masa tenggang, serta kuota disk data. Tier menstandarkan
 ukuran sumber daya (CPU, RAM, penyimpanan) lepas dari provider.
 
@@ -495,7 +497,7 @@ provider_datastores, dan provider_vms.
 Tahap ketiga adalah publikasi, yaitu pemetaan sumber daya hasil discovery menjadi alias terkurasi yang
 berstatus aktif atau nonaktif. Administrator memetakan template menjadi katalog, bridge menjadi
 jaringan, dan storage pool menjadi datastore dengan nama ramah pengguna. Tahap keempat adalah kebijakan
-yang berpusat pada environment beserta lima tabel aturan, yang menyaring sumber daya terpublikasi
+yang berpusat pada environment beserta tiga tabel aturan, yang menyaring sumber daya terpublikasi
 menjadi himpunan yang boleh dipakai pengguna, ditambah tier yang menstandarkan ukuran sumber daya.
 
 Aliran berakhir pada wizard provisioning. Wizard menampilkan hanya sumber daya yang lolos saringan
@@ -528,9 +530,9 @@ Active dan mengikatnya pada sumber daya hasil discovery, sehingga katalog layana
 meskipun identitas teknis Proxmox berubah.
 
 Administrator menetapkan tier sebagai standar CPU, RAM, dan penyimpanan, kemudian menyusun
-environment. Penyusunan environment mengisi lima daftar izin, yaitu provider, node, tier, jaringan,
-dan datastore, beserta masa berlaku, masa tenggang, gerbang persetujuan, dan kuota disk. Sistem
-menyimpan environment beserta lima tabel aturan, dan environment menjadi siap dipakai pada wizard
+environment. Penyusunan environment mengisi tiga daftar izin, yaitu provider, node, dan tier,
+beserta masa berlaku, masa tenggang, gerbang persetujuan, dan kuota disk. Sistem
+menyimpan environment beserta tiga tabel aturan, dan environment menjadi siap dipakai pada wizard
 provisioning. Tahap ini mewujudkan kebijakan sebagai konfigurasi yang menjadi inti tata kelola pada
 Rumusan Masalah 2.
 

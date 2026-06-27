@@ -6,6 +6,7 @@ export default function NetworkForm({ modal, setModal, handleAddEditNetworkSubmi
   const { nodes } = useNodeContext();
   const [providerId, setProviderId] = useState('');
   const [nodeId, setNodeId] = useState('');
+  const [bridgeId, setBridgeId] = useState('');
   const [networks, setNetworks] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -14,6 +15,9 @@ export default function NetworkForm({ modal, setModal, handleAddEditNetworkSubmi
       setProviderId(modal.data?.providerId ?? '');
       const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
       setNodeId(match ? match.id : '');
+      // Controlled bridge value: pin to this network's own discovered bridge despite the async option
+      // load (an uncontrolled select would fall back to the first bridge and trip "already published").
+      setBridgeId(modal.data?.providerNetworkId ?? '');
     }
   }, [modal.isOpen, modal.type, modal.data, nodes]);
 
@@ -69,7 +73,7 @@ export default function NetworkForm({ modal, setModal, handleAddEditNetworkSubmi
                 </div>
                 <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Provider <span className="text-rose-500">*</span></label>
-                  <select name="providerId" value={providerId} onChange={(e) => { setProviderId(e.target.value); setNodeId(''); }} required className={`${inputCls} cursor-pointer`}>
+                  <select name="providerId" value={providerId} onChange={(e) => { setProviderId(e.target.value); setNodeId(''); setBridgeId(''); }} required className={`${inputCls} cursor-pointer`}>
                     <option value="" disabled>Select provider</option>
                     {providers.filter((p) => (p.status ?? p.connectionStatus) === 'Connected').map((p) => (
                       <option key={p.id} value={p.id}>{p.providerName ?? p.name}</option>
@@ -78,7 +82,7 @@ export default function NetworkForm({ modal, setModal, handleAddEditNetworkSubmi
                 </div>
                 <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Published Node <span className="text-rose-500">*</span></label>
-                  <select value={nodeId} onChange={(e) => setNodeId(e.target.value)} required disabled={!providerId} className={`${inputCls} cursor-pointer disabled:opacity-50`}>
+                  <select value={nodeId} onChange={(e) => { setNodeId(e.target.value); setBridgeId(''); }} required disabled={!providerId} className={`${inputCls} cursor-pointer disabled:opacity-50`}>
                     <option value="" disabled>{!providerId ? 'Select a provider first' : providerNodes.length === 0 ? 'No published nodes — publish one first' : 'Select published node'}</option>
                     {providerNodes.map((n) => (
                       <option key={n.id} value={n.id}>{n.name}{n.rawNode ? ` (${n.rawNode})` : ''}</option>
@@ -87,7 +91,7 @@ export default function NetworkForm({ modal, setModal, handleAddEditNetworkSubmi
                 </div>
                 <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Discovered Network <span className="text-rose-500">*</span></label>
-                  <select name="providerNetworkId" defaultValue={modal.data?.providerNetworkId || ''} required disabled={!nodeId || loading} className={`${inputCls} cursor-pointer disabled:opacity-50`}>
+                  <select name="providerNetworkId" value={bridgeId} onChange={(e) => setBridgeId(e.target.value)} required disabled={!nodeId || loading} className={`${inputCls} cursor-pointer disabled:opacity-50`}>
                     <option value="" disabled>{!providerId ? 'Select a provider first' : !nodeId ? 'Select a node first' : loading ? 'Loading…' : 'Select discovered bridge'}</option>
                     {visibleNetworks.map((n) => (
                       <option key={n.id} value={n.id}>{n.networkName} ({n.nodeName}{n.cidr ? ` · ${n.cidr}` : ''})</option>

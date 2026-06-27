@@ -25,7 +25,7 @@ flowchart TB
         C1{Koneksi berhasil?}
         D1[Driver hanya-baca mencerminkan sumber daya ke tabel provider_*]
         P1[Simpan alias terpublikasi dengan status Active]
-        R1[Simpan environment dan lima tabel aturan]
+        R1[Simpan environment dan tiga tabel aturan]
         ENR[Environment siap dipakai pada wizard provisioning]
     end
 

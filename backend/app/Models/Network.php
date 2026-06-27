@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['network_name', 'description', 'provider_id', 'provider_node_id', 'provider_network_id', 'status', 'created_by'])]
 class Network extends Model
@@ -22,6 +23,12 @@ class Network extends Model
     public function providerNetwork(): BelongsTo
     {
         return $this->belongsTo(ProviderNetwork::class);
+    }
+
+    /** VMs provisioned onto this network — for the Usage count + delete-guard. */
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class, 'network_id');
     }
 
     public function effectiveStatus(): string

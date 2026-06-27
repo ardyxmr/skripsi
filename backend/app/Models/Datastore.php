@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['datastore_name', 'description', 'provider_id', 'provider_node_id', 'provider_datastore_id', 'status', 'created_by'])]
 class Datastore extends Model
@@ -22,6 +23,12 @@ class Datastore extends Model
     public function providerDatastore(): BelongsTo
     {
         return $this->belongsTo(ProviderDatastore::class);
+    }
+
+    /** VMs provisioned onto this datastore — for the Usage count + delete-guard. */
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class, 'datastore_id');
     }
 
     public function effectiveStatus(): string

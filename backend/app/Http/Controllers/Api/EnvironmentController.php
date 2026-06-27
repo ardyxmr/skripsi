@@ -18,7 +18,7 @@ class EnvironmentController extends Controller
 
     public function index(): JsonResponse
     {
-        $envs = Environment::with(['providers:id', 'tiers:id', 'nodes:id', 'networks:id', 'datastores:id'])
+        $envs = Environment::with(['providers:id', 'tiers:id', 'nodes:id'])
             ->orderBy('display_order')->orderBy('id')->get();
 
         return response()->json($envs->map(fn (Environment $e) => $this->transform($e)));
@@ -33,7 +33,7 @@ class EnvironmentController extends Controller
         $this->syncRules($env, $request);
         $this->audit->log($request->user(), 'CREATE_ENVIRONMENT', "Created environment {$env->environment_name}", $request);
 
-        return response()->json($this->transform($env->fresh(['providers:id', 'tiers:id', 'nodes:id', 'networks:id', 'datastores:id'])), 201);
+        return response()->json($this->transform($env->fresh(['providers:id', 'tiers:id', 'nodes:id'])), 201);
     }
 
     public function update(Request $request, Environment $environment): JsonResponse
@@ -42,13 +42,23 @@ class EnvironmentController extends Controller
         $this->syncRules($environment, $request);
         $this->audit->log($request->user(), 'UPDATE_ENVIRONMENT', "Updated environment {$environment->environment_name}", $request);
 
-        return response()->json($this->transform($environment->fresh(['providers:id', 'tiers:id', 'networks:id', 'datastores:id'])));
+        return response()->json($this->transform($environment->fresh(['providers:id', 'tiers:id', 'nodes:id'])));
     }
 
     public function destroy(Request $request, Environment $environment): JsonResponse
     {
+        // Block (409) while LIVE VMs belong to this environment: deleting it would orphan them from
+        // their expiry/approval policy. Historical requests + soft-deleted VMs null out on delete.
+        $liveVms = \Illuminate\Support\Facades\DB::table('inventory')
+            ->where('environment_id', $environment->id)
+            ->whereNotIn('status', ['Deleted'])
+            ->count();
+        if ($liveVms > 0) {
+            abort(409, "Environment has {$liveVms} active VM(s). Delete or let them expire before deleting this environment.");
+        }
+
         $name = $environment->environment_name;
-        $environment->delete(); // cascades rule rows
+        $environment->delete(); // cascades the provider/node/tier rule rows
         $this->audit->log($request->user(), 'DELETE_ENVIRONMENT', "Deleted environment {$name}", $request);
 
         return response()->json(null, 204);
@@ -64,10 +74,6 @@ class EnvironmentController extends Controller
                 ->get(['tiers.id', 'tiers.tier_name', 'tiers.cpu', 'tiers.ram_mb', 'tiers.disk_gb']),
             'nodes' => $environment->nodes()->where('nodes.status', 'Active')
                 ->get(['nodes.id', 'nodes.node_name']),
-            'networks' => $environment->networks()->where('networks.status', 'Active')
-                ->get(['networks.id', 'networks.network_name']),
-            'datastores' => $environment->datastores()->where('datastores.status', 'Active')
-                ->get(['datastores.id', 'datastores.datastore_name']),
         ]);
     }
 
@@ -81,12 +87,6 @@ class EnvironmentController extends Controller
         }
         if ($request->has('allowed_node_ids')) {
             $env->nodes()->sync($request->input('allowed_node_ids', []));
-        }
-        if ($request->has('allowed_network_ids')) {
-            $env->networks()->sync($request->input('allowed_network_ids', []));
-        }
-        if ($request->has('allowed_datastore_ids')) {
-            $env->datastores()->sync($request->input('allowed_datastore_ids', []));
         }
     }
 
@@ -108,8 +108,6 @@ class EnvironmentController extends Controller
             'allowed_provider_ids' => $e->providers->pluck('id'),
             'allowed_tier_ids' => $e->tiers->pluck('id'),
             'allowed_node_ids' => $e->nodes->pluck('id'),
-            'allowed_network_ids' => $e->networks->pluck('id'),
-            'allowed_datastore_ids' => $e->datastores->pluck('id'),
             'updated_at' => $e->updated_at,
         ];
     }
@@ -137,15 +135,11 @@ class EnvironmentController extends Controller
             'allowed_tier_ids.*' => ['integer', 'exists:tiers,id'],
             'allowed_node_ids' => ['array'],
             'allowed_node_ids.*' => ['integer', 'exists:nodes,id'],
-            'allowed_network_ids' => ['array'],
-            'allowed_network_ids.*' => ['integer', 'exists:networks,id'],
-            'allowed_datastore_ids' => ['array'],
-            'allowed_datastore_ids.*' => ['integer', 'exists:datastores,id'],
         ]);
 
         // Rule arrays are synced separately, not mass-assigned to the model.
         return collect($validated)->except([
-            'allowed_provider_ids', 'allowed_tier_ids', 'allowed_node_ids', 'allowed_network_ids', 'allowed_datastore_ids',
+            'allowed_provider_ids', 'allowed_tier_ids', 'allowed_node_ids',
         ])->all();
     }
 }

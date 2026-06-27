@@ -6,6 +6,7 @@ export default function DatastoreForm({ modal, setModal, handleAddEditDatastoreS
   const { nodes } = useNodeContext();
   const [providerId, setProviderId] = useState('');
   const [nodeId, setNodeId] = useState('');
+  const [storageId, setStorageId] = useState('');
   const [datastores, setDatastores] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -14,6 +15,9 @@ export default function DatastoreForm({ modal, setModal, handleAddEditDatastoreS
       setProviderId(modal.data?.providerId ?? '');
       const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
       setNodeId(match ? match.id : '');
+      // Controlled storage value: pin to this datastore's own discovered storage despite the async
+      // option load (an uncontrolled select would fall back to the first storage and trip "already published").
+      setStorageId(modal.data?.providerDatastoreId ?? '');
     }
   }, [modal.isOpen, modal.type, modal.data, nodes]);
 
@@ -69,7 +73,7 @@ export default function DatastoreForm({ modal, setModal, handleAddEditDatastoreS
                 </div>
                 <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Provider <span className="text-rose-500">*</span></label>
-                  <select name="providerId" value={providerId} onChange={(e) => { setProviderId(e.target.value); setNodeId(''); }} required className={`${inputCls} cursor-pointer`}>
+                  <select name="providerId" value={providerId} onChange={(e) => { setProviderId(e.target.value); setNodeId(''); setStorageId(''); }} required className={`${inputCls} cursor-pointer`}>
                     <option value="" disabled>Select provider</option>
                     {providers.filter((p) => (p.status ?? p.connectionStatus) === 'Connected').map((p) => (
                       <option key={p.id} value={p.id}>{p.providerName ?? p.name}</option>
@@ -78,7 +82,7 @@ export default function DatastoreForm({ modal, setModal, handleAddEditDatastoreS
                 </div>
                 <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Published Node <span className="text-rose-500">*</span></label>
-                  <select value={nodeId} onChange={(e) => setNodeId(e.target.value)} required disabled={!providerId} className={`${inputCls} cursor-pointer disabled:opacity-50`}>
+                  <select value={nodeId} onChange={(e) => { setNodeId(e.target.value); setStorageId(''); }} required disabled={!providerId} className={`${inputCls} cursor-pointer disabled:opacity-50`}>
                     <option value="" disabled>{!providerId ? 'Select a provider first' : providerNodes.length === 0 ? 'No published nodes — publish one first' : 'Select published node'}</option>
                     {providerNodes.map((n) => (
                       <option key={n.id} value={n.id}>{n.name}{n.rawNode ? ` (${n.rawNode})` : ''}</option>
@@ -87,7 +91,7 @@ export default function DatastoreForm({ modal, setModal, handleAddEditDatastoreS
                 </div>
                 <div>
                   <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Discovered Storage <span className="text-rose-500">*</span></label>
-                  <select name="providerDatastoreId" defaultValue={modal.data?.providerDatastoreId || ''} required disabled={!nodeId || loading} className={`${inputCls} cursor-pointer disabled:opacity-50`}>
+                  <select name="providerDatastoreId" value={storageId} onChange={(e) => setStorageId(e.target.value)} required disabled={!nodeId || loading} className={`${inputCls} cursor-pointer disabled:opacity-50`}>
                     <option value="" disabled>{!providerId ? 'Select a provider first' : !nodeId ? 'Select a node first' : loading ? 'Loading…' : 'Select discovered storage'}</option>
                     {visibleDatastores.map((s) => (
                       <option key={s.id} value={s.id}>{s.datastoreName} ({s.nodeName}{s.datastoreType ? ` · ${s.datastoreType}` : ''})</option>

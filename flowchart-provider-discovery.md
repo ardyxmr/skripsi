@@ -20,9 +20,9 @@ flowchart LR
     NET["networks<br/>(vmbr0 → VLAN-DEV)"]
     DS["datastores<br/>(local-lvm → Disk-ssd-dev)"]
   end
-  subgraph POL["Policy — Environment + 5 allow-list rule tables"]
+  subgraph POL["Policy — Environment + 3 allow-list rule tables"]
     ENV["environments<br/>approval · expiry · grace · disk caps"]
-    RULES["environment_provider_rules<br/>environment_node_rules<br/>environment_tier_rules<br/>environment_network_rules<br/>environment_datastore_rules"]
+    RULES["environment_provider_rules<br/>environment_node_rules<br/>environment_tier_rules"]
     TIER["tiers (Bronze/Silver/Gold)"]
   end
   WIZ["Provisioning wizard (no HCL)"]
@@ -38,8 +38,8 @@ flowchart LR
   PN --> DS
   NODE --> RULES
   CAT --> WIZ
-  NET --> RULES
-  DS --> RULES
+  NET --> WIZ
+  DS --> WIZ
   TIER --> RULES
   RULES --- ENV
   ENV --> WIZ

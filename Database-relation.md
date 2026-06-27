@@ -142,16 +142,6 @@ Table environment_tier_rules {
   environment_id integer [ref: > environments.id]
   tier_id integer [ref: > tiers.id]
 }
-Table environment_network_rules {
-  id integer [pk]
-  environment_id integer [ref: > environments.id]
-  network_id integer [ref: > networks.id]
-}
-Table environment_datastore_rules {
-  id integer [pk]
-  environment_id integer [ref: > environments.id]
-  datastore_id integer [ref: > datastores.id]
-}
 
 // ---------- Requests + approvals ----------
 Table provision_requests {
@@ -241,8 +231,6 @@ TableGroup Policy {
   environment_provider_rules
   environment_node_rules
   environment_tier_rules
-  environment_network_rules
-  environment_datastore_rules
 }
 TableGroup Requests {
   provision_requests

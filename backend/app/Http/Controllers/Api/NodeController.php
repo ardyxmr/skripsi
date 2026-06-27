@@ -53,15 +53,15 @@ class NodeController extends Controller
 
     public function destroy(Request $request, Node $node): JsonResponse
     {
-        // Delete blocked (409) if referenced by a request, inventory, or env rule → unpublish instead.
+        // Delete blocked (409) only by LIVE usage — an active VM or an env rule (historical requests
+        // null out on delete). Remove it from environments first if it's in an allow-list.
         $refs = [
-            'provision_requests' => 'node_id',
             'inventory' => 'node_id',
             'environment_node_rules' => 'node_id',
         ];
         foreach ($refs as $table => $column) {
             if (Schema::hasTable($table) && DB::table($table)->where($column, $node->id)->exists()) {
-                abort(409, 'Node is in use by a request, an active VM, or an environment policy. Unpublish it instead.');
+                abort(409, 'Node is in use by an active VM or an environment policy. Remove it from environments and wait for its VMs to be deleted before deleting.');
             }
         }
 

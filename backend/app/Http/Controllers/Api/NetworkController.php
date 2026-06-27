@@ -19,7 +19,9 @@ class NetworkController extends Controller
 
     public function index(): JsonResponse
     {
-        $rows = Network::with(['provider', 'providerNode', 'providerNetwork'])->orderBy('id')->get();
+        $rows = Network::with(['provider', 'providerNode', 'providerNetwork'])
+            ->withCount(['inventories as active_vms' => fn ($q) => $q->whereNotIn('status', ['Deleted'])])
+            ->orderBy('id')->get();
 
         return response()->json($rows->map(fn (Network $n) => $this->transform($n)));
     }
@@ -51,6 +53,15 @@ class NetworkController extends Controller
 
     public function destroy(Request $request, Network $network): JsonResponse
     {
+        // Block (409) only while a LIVE VM uses it. Historical requests null out on delete; the env
+        // network allow-list is node-derived + cascades on delete, so it is not a delete blocker.
+        foreach (['inventory' => 'network_id'] as $table => $column) {
+            if (\Illuminate\Support\Facades\Schema::hasTable($table)
+                && \Illuminate\Support\Facades\DB::table($table)->where($column, $network->id)->exists()) {
+                abort(409, 'Network has active VMs. Wait for its VMs to be deleted before deleting it.');
+            }
+        }
+
         $name = $network->network_name;
         $network->delete();
         $this->audit->log($request->user(), 'DELETE_NETWORK', "Deleted network {$name}", $request);
@@ -72,6 +83,7 @@ class NetworkController extends Controller
             'provider_network_name' => $n->providerNetwork?->network_name,  // the bridge, e.g. vmbr0
             'cidr' => $n->providerNetwork?->cidr,
             'status' => $n->effectiveStatus(),
+            'active_vms' => $n->active_vms ?? $n->inventories()->whereNotIn('status', ['Deleted'])->count(),
             'updated_at' => $n->updated_at,
         ];
     }

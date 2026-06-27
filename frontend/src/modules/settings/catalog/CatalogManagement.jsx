@@ -13,6 +13,7 @@ import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { useUI } from '../../../stores/uiStore';
 import { ensureMinDuration } from '../../../lib/minDuration';
+import { LIVE_CACHE_EVENT } from '../../../lib/liveCache';
 
 export default function CatalogManagement() {
   const { providers } = useProviderContext();
@@ -54,6 +55,20 @@ export default function CatalogManagement() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showUnsavedWarning, modal.isOpen, hasUnsavedChanges]);
+
+  // Keep the Usage (active-VM) count live: the app-wide LiveDataPoller refreshes /inventory and fires
+  // LIVE_CACHE_EVENT when VMs are created or deleted. Re-pull catalogs on that event so the Usage column
+  // updates on its own (server recomputes active_vms), no manual refresh needed.
+  const refetchRef = useRef(refetch);
+  useEffect(() => { refetchRef.current = refetch; }, [refetch]);
+  useEffect(() => {
+    const onLive = (e) => {
+      if (e.detail?.path !== '/inventory' || document.hidden) return;
+      refetchRef.current?.({ silent: true });
+    };
+    window.addEventListener(LIVE_CACHE_EVENT, onLive);
+    return () => window.removeEventListener(LIVE_CACHE_EVENT, onLive);
+  }, []);
 
   const openModal = (type, mode, data = null) => {
     setModal({ isOpen: true, type, mode, data });

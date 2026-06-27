@@ -33,14 +33,4 @@ class Environment extends Model
     {
         return $this->belongsToMany(Node::class, 'environment_node_rules');
     }
-
-    public function networks(): BelongsToMany
-    {
-        return $this->belongsToMany(Network::class, 'environment_network_rules');
-    }
-
-    public function datastores(): BelongsToMany
-    {
-        return $this->belongsToMany(Datastore::class, 'environment_datastore_rules');
-    }
 }

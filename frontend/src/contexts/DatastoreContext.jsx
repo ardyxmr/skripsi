@@ -40,16 +40,17 @@ export function DatastoreProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const refetch = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // silent:true skips the loading/error UI churn — used by background live refreshes (the Usage
+  // column following an inventory change) so the data updates without flashing the skeleton.
+  const refetch = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) { setLoading(true); setError(null); }
     try {
       const rows = await api.get(RESOURCE);
       setDatastores((rows || []).map(normalizeDatastore));
     } catch (e) {
-      setError(e);
+      if (!silent) setError(e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 

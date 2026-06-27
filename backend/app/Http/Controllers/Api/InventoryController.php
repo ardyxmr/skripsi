@@ -30,7 +30,7 @@ class InventoryController extends Controller
         $rows = $this->scopedQuery($request->user())
             ->whereNot(fn ($q) => $q->where('status', 'Deleted')
                 ->where(fn ($w) => $w->whereNull('destroyed_at')->orWhere('destroyed_at', '<', $cutoff)))
-            ->with(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'disks', 'pendingApprovals', 'hardenedVersion'])
+            ->with(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'network', 'datastore', 'disks', 'pendingApprovals', 'hardenedVersion'])
             ->orderByDesc('id')->get();
 
         return response()->json($rows->map(fn (Inventory $i) => $this->transform($i)));
@@ -41,7 +41,7 @@ class InventoryController extends Controller
         $this->authorizeView($request->user(), $inventory);
 
         return response()->json($this->transform(
-            $inventory->load(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'disks', 'pendingApprovals', 'hardenedVersion'])
+            $inventory->load(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'network', 'datastore', 'disks', 'pendingApprovals', 'hardenedVersion'])
         ));
     }
 
@@ -76,7 +76,7 @@ class InventoryController extends Controller
         $rows = $this->scopedQuery($request->user())
             ->whereNot(fn ($q) => $q->where('status', 'Deleted')
                 ->where(fn ($w) => $w->whereNull('destroyed_at')->orWhere('destroyed_at', '<', $cutoff)))
-            ->with(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'disks', 'pendingApprovals', 'hardenedVersion'])
+            ->with(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'network', 'datastore', 'disks', 'pendingApprovals', 'hardenedVersion'])
             ->orderByDesc('id')->get();
 
         return response()->json($rows->map(fn (Inventory $i) => $this->transform($i)));
@@ -358,6 +358,8 @@ class InventoryController extends Controller
             'max_data_disks' => (int) ($i->environment?->max_data_disks ?? 0), // policy cap for used/max display
             'provider_name' => $i->provider?->provider_name,
             'node_name' => $i->node?->node_name,
+            'network_name' => $i->network?->network_name,        // published network the VM is on
+            'datastore_name' => $i->datastore?->datastore_name,  // published datastore the VM is on
             'catalog_id' => $i->catalog_id,
             'catalog_name' => $i->catalog?->catalog_name,
             'tier_name' => $i->tier?->tier_name,

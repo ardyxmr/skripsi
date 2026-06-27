@@ -83,19 +83,23 @@ qm template $VMID
 Notes:
 - **Console:** cloud images log to **serial** (`ttyS0`), so `--vga serial0` shows boot output + a login. The `grubby` line also enables `tty0` so the graphical noVNC console works too.
 - **SSH password login:** `ssh_pwauth: true` makes cloud-init flip `PasswordAuthentication yes` on each clone's first boot — without it, SSH only offers `publickey` and password login (which is all the portal hands out) is refused.
-- **First-login password reset (one-time credential):** `chpasswd: { expire: true }` expires the injected `cipassword` on first boot, so the user is forced to set their own password on first SSH/console login. The portal-generated password (revealed self-service in Inventory) is then a *temporary* credential only — after the change, neither the admin nor the system knows the real one (a privacy/STRIDE win). **Verify on a fresh clone:** log in with the revealed password and confirm you're prompted for a new one. If a clone logs in *without* prompting (Proxmox's own cloud-init can override `chpasswd`), use the deterministic fallback below — it expires every human account on first boot regardless of the username the portal injected:
+- **First-login password reset (one-time credential) — use `runcmd: chage -d 0`, NOT `chpasswd`.** Goal: force the user to set their own password on first login, so the portal-generated password (revealed self-service in Inventory) is a *temporary* credential only — after the change, neither the admin nor the system knows the real one (a privacy/STRIDE win). **`chpasswd: { expire: true }` does NOT achieve this on Proxmox** (live-tested 2026-06-27, Rocky 9): Proxmox's own cloud-init sets the injected `cipassword` *without* expiry and overrides the template's `chpasswd` directive, so the clone logs straight in. The method that **does** work is a post-boot `chage -d 0` on the injected user — it sets the shadow last-change date to 0, after which PAM forces a change at next login, independent of the `chpasswd` module:
   ```bash
-  # add to the same offline virt-customize run (or a 99-pwexpire.cfg)
-  --run-command 'printf "#cloud-config\nbootcmd:\n  - [ bash, -c, \"for u in \\$(awk -F: \\$3>=1000\\&\\&\\$3<65534{print\\$1} /etc/passwd); do chage -d 0 \\$u; done\" ]\n" > /etc/cloud/cloud.cfg.d/99-pwexpire.cfg'
+  # add as its own 99-pwexpire.cfg in the offline virt-customize run (+ --selinux-relabel on EL).
+  # Use runcmd (final stage, runs once per instance AFTER the password is set) — NOT bootcmd,
+  # which runs too early AND re-fires on every reboot.
+  --run-command 'printf "#cloud-config\nruncmd:\n  - chage -d 0 sysuser\n" > /etc/cloud/cloud.cfg.d/99-pwexpire.cfg'
   ```
-  (Simpler if you know the injected user is always `ubuntu`: a `runcmd` of `chage -d 0 ubuntu`.) **Caveat:** OpenSSH CLI and the Proxmox console handle the "expired password → set new" prompt cleanly; some old GUI clients (e.g. legacy PuTTY) are clunky with it — the console is the fallback. Recovery if a user forgets their new password = admin resets via the Proxmox console.
+  (`sysuser` = the portal's `ci_user`; change it if you re-point `PROVISION_CI_USER`. Generic form for any injected human user: `runcmd: - bash -c "for u in $(awk -F: '$3>=1000 && $3<65534 {print $1}' /etc/passwd); do chage -d 0 \"$u\"; done"`.) **Verified end-to-end (Rocky 9, vmid 9000, 2026-06-27):** a fresh clone forces the change on first SSH login with no manual step, and the OS `pwquality` policy independently rejects weak choices (e.g. `P@ssw0rd` → *"based on a dictionary word"*; `d3Hgtwhr!` accepted). **Most robust variant if `runcmd` ever fails to fire** (cloud-init list-merge or stable-instance-id quirks): drop an executable in `/var/lib/cloud/scripts/per-instance/` that runs `chage -d 0 sysuser` — same once-per-instance timing, no YAML-merge dependency. **Caveat:** OpenSSH CLI and the Proxmox console handle the "expired → set new" prompt cleanly; some old GUI clients (legacy PuTTY) are clunky — the console is the fallback. Recovery if a user forgets their new password = admin resets via the Proxmox console.
 - **Disk grow:** cloud images include `cloud-init` + `growpart`, so the boot disk auto-grows to whatever size the portal requests. Nothing extra needed.
 - **Do NOT** bake a `ciuser`/`cipassword` into the template — the portal injects those per clone.
 
 > **Already built a template without this?** Fix it in place, offline — no re-clone, no re-publish (the catalog still points at the same vmid). Find the disk with `qm config <vmid> | grep scsi0` (e.g. `vmdata:base-9000-disk-0` → `/dev/zvol/vmdata/base-9000-disk-0`):
 > ```bash
 > virt-customize -a /dev/zvol/vmdata/base-9000-disk-0 \
->   --run-command 'printf "ssh_pwauth: true\nchpasswd: { expire: true }\n" > /etc/cloud/cloud.cfg.d/99-pwauth.cfg'
+>   --run-command 'printf "ssh_pwauth: true\n" > /etc/cloud/cloud.cfg.d/99-pwauth.cfg' \
+>   --run-command 'printf "#cloud-config\nruncmd:\n  - chage -d 0 sysuser\n" > /etc/cloud/cloud.cfg.d/99-pwexpire.cfg' \
+>   --selinux-relabel
 > ```
 > Only **new** clones pick it up; VMs already provisioned stay key-only until reprovisioned (or enable it in-guest — §8).
 
@@ -236,7 +240,7 @@ works, and it boots clean — it will work end-to-end in the portal.
 
 ## 9. Quick reference — verified golden templates in this environment
 
-- **`rocky9-cloud` (vmid 9000)** — EL9 cloud image, `--cpu host`, agent, serial+VGA console. Published as the **Rocky Linux 9** catalog. Provisions single + parallel batches cleanly on thin `vmdata`. **Apply the offline `ssh_pwauth: true` fix (§3 callout) for SSH password login** — built before that step was added.
+- **`rocky9-cloud` (vmid 9000)** — EL9 cloud image, `--cpu host`, agent, serial+VGA console. Published as the **Rocky Linux 9** catalog. Provisions single + parallel batches cleanly on thin `vmdata`. **Forced first-login password reset live-verified 2026-06-27**: carries `99-pwauth.cfg` (`ssh_pwauth: true`) + `99-pwexpire.cfg` (`runcmd: chage -d 0 sysuser`); a fresh clone forces the password change on first SSH login, and `pwquality` rejects weak passwords (`P@ssw0rd` refused, `d3Hgtwhr!` accepted). Default login user is now `sysuser` (portal `PROVISION_CI_USER`).
 - **`ubuntu24-lvm` (vmid 9001)** — manual Ubuntu 24.04, custom LVM, `--cpu host`, agent, lvm2-in-initramfs, DHCP netplan. (Finish per §4.2 networking before publishing.)
 
 ---

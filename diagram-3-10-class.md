@@ -7,6 +7,18 @@ penuh tetap pada ERD. Kelas layanan (`ProvisionRequestService`,
 `LifecycleService`, dll.) tidak ditampilkan demi menjaga pemisahan tanggung
 jawab dengan diagram arsitektur.
 
+![Gambar 3.10 — Class Diagram](diagram-3-10-class.svg)
+
+> **Koreksi relasi (vs. draf gambar sebelumnya):** `CatalogHardeningVersion`
+> berelasi ke **`Catalog`** (`Catalog hasMany CatalogHardeningVersion`,
+> `CatalogHardeningVersion belongsTo Catalog`), **bukan** ke `ProviderTemplate`.
+> Versi hardening adalah properti dari katalog terpublikasi, bukan template
+> mentah pada lapisan mirror provider. Relasi lain telah diverifikasi terhadap
+> model Eloquent di `backend/app/Models/`.
+
+Sumber tekstual diagram (Mermaid) tetap dipertahankan di bawah agar dapat
+di-render ulang bila diperlukan:
+
 ```mermaid
 classDiagram
     %% --- IAM ---

@@ -17,7 +17,7 @@ sequenceDiagram
 
     PG->>FE: Isi wizard provisioning (env, node, catalog, tier, network, datastore)
     FE->>API: POST /provision-requests
-    API->>API: Validasi kebijakan environment (allow-list 5 sumber daya)
+    API->>API: Validasi kebijakan environment (allow-list 3 sumber daya: provider, node, tier)
 
     alt approval_required dan pengguna non-privileged
         API->>DB: Simpan ProvisionRequest + ApprovalRequest (Pending)

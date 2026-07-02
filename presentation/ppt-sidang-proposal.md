@@ -1,6 +1,6 @@
 # Poin-Poin Slide — Sidang Proposal
 
-Judul: **Perancangan dan Pengembangan Aplikasi Web Self-service untuk Orkestrasi dan Otomatisasi Provisioning Mesin Virtual Berbasis Sumber Terbuka Menggunakan Infrastructure as Code**
+Judul: **Rancang Bangun ProvIO: Aplikasi Web Self-Service Provisioning Mesin Virtual Berbasis Infrastructure as Code pada Proxmox Virtual Environment**
 
 Cara pakai: tiap "## Slide" = satu slide. Tempel judul + bullet ke PPT. Baris *(Catatan pembicara)* tidak usah ditempel, itu bahan ngomongmu. Target: 16 slide, durasi ~12–15 menit.
 

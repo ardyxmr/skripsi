@@ -216,7 +216,7 @@ Hasil evaluasi digunakan untuk memastikan bahwa aplikasi yang dikembangkan mampu
 
 **a. Variabel Penelitian**
 
-Variabel penelitian merupakan atribut atau aspek yang diukur untuk menilai keberhasilan sistem yang dikembangkan. Penelitian ini menggunakan empat variabel utama, yaitu efisiensi, konsistensi konfigurasi, kesalahan manusia (*human error*), dan kebergunaan (usability). Definisi operasional, indikator, instrumen, serta skala pengukuran dari setiap variabel disajikan pada Tabel 3.4.
+Variabel penelitian merupakan atribut atau aspek yang diukur untuk menilai keberhasilan sistem yang dikembangkan. Penelitian ini menggunakan empat variabel utama, yaitu efisiensi, konsistensi konfigurasi, kesalahan manusia (*human error*), dan kebergunaan (*usability*). Definisi operasional, indikator, instrumen, serta skala pengukuran dari setiap variabel disajikan pada Tabel 3.4.
 
 **Tabel 3.4 Variabel Penelitian**
 
@@ -225,11 +225,11 @@ Variabel penelitian merupakan atribut atau aspek yang diukur untuk menilai keber
 | 1 | Efisiensi | Kecepatan dan kemudahan proses *provisioning* mesin virtual | Waktu *provisioning* (menit) dan jumlah langkah yang dilakukan | Stopwatch dan lembar observasi | Rasio |
 | 2 | Konsistensi konfigurasi | Keseragaman hasil konfigurasi mesin virtual terhadap standar yang ditetapkan | Tingkat kesesuaian konfigurasi (jumlah deviasi terhadap standar) | Lembar checklist perbandingan konfigurasi | Rasio |
 | 3 | Kesalahan manusia (*human error*) | Kesalahan konfigurasi yang terjadi selama proses *provisioning* | Jumlah kesalahan konfigurasi per proses *provisioning* | Lembar observasi dan log sistem | Rasio |
-| 4 | Kebergunaan (usability) | Tingkat kemudahan penggunaan aplikasi oleh pengguna | Skor *System Usability Scale* (SUS) | Kuesioner SUS (10 butir, skala Likert 1–5) | Interval |
+| 4 | Kebergunaan (*usability*) | Tingkat kemudahan penggunaan aplikasi oleh pengguna | Skor *System Usability Scale* (SUS) | Kuesioner SUS (10 butir, skala Likert 1–5) | Interval |
 
 **b. Instrumen Penelitian**
 
-Instrumen penelitian merupakan alat yang digunakan untuk mengumpulkan data pada proses pengujian. Instrumen yang digunakan dalam penelitian ini meliputi pengujian *black box* untuk memvalidasi fungsionalitas seluruh fitur aplikasi dengan memeriksa kesesuaian antara masukan dan keluaran tanpa melihat struktur kode internal; stopwatch dan lembar observasi untuk mencatat waktu serta jumlah langkah pada proses *provisioning*, baik menggunakan aplikasi maupun proses manual melalui antarmuka Proxmox VE bawaan; lembar checklist perbandingan konfigurasi untuk menilai keseragaman konfigurasi mesin virtual yang dihasilkan terhadap standar yang telah ditetapkan; serta kuesioner *System Usability Scale* (SUS) yang terdiri dari sepuluh butir pernyataan dengan skala Likert lima tingkat untuk mengukur tingkat kebergunaan aplikasi berdasarkan persepsi pengguna.
+Instrumen penelitian merupakan alat yang digunakan untuk mengumpulkan data pada proses pengujian. Instrumen yang digunakan dalam penelitian ini meliputi pengujian *black box* untuk memvalidasi fungsionalitas seluruh fitur aplikasi dengan memeriksa kesesuaian antara masukan dan keluaran tanpa melihat struktur kode internal; stopwatch dan lembar observasi untuk mencatat waktu serta jumlah langkah pada proses *provisioning*, baik menggunakan aplikasi maupun proses manual melalui antarmuka Proxmox VE bawaan; lembar checklist perbandingan konfigurasi untuk menilai keseragaman konfigurasi mesin virtual yang dihasilkan terhadap standar yang telah ditetapkan; pencatatan log sistem untuk menelusuri aktivitas dan kesalahan yang terjadi selama proses *provisioning*; pemeriksaan respons *Application Programming Interface* (API Response), yaitu pengamatan terhadap kode status dan data keluaran yang dikembalikan sistem untuk memastikan setiap permintaan diproses dengan benar oleh backend; serta kuesioner *System Usability Scale* (SUS) yang terdiri dari sepuluh butir pernyataan dengan skala Likert lima tingkat untuk mengukur tingkat kebergunaan aplikasi berdasarkan persepsi pengguna.
 
 **c. Rancangan Pengujian**
 
@@ -241,7 +241,7 @@ Data yang diperoleh dari proses pengujian dianalisis menggunakan teknik yang dis
 
 Data efisiensi, yang meliputi waktu dan jumlah langkah *provisioning*, serta data konsistensi konfigurasi dianalisis menggunakan uji statistik komparatif untuk membandingkan aplikasi yang dikembangkan dengan proses manual melalui antarmuka Proxmox VE bawaan. Sebelum uji beda dilakukan, data terlebih dahulu diuji normalitasnya menggunakan uji Shapiro-Wilk. Apabila data berdistribusi normal, digunakan uji *Independent Sample T-Test*; apabila data tidak berdistribusi normal, digunakan uji nonparametrik, yaitu uji Wilcoxon. Uji beda ini digunakan untuk menentukan apakah terdapat perbedaan yang signifikan antara kedua metode sebagaimana dirumuskan pada hipotesis penelitian di Bab II.
 
-Data kebergunaan (usability) dianalisis menggunakan perhitungan skor *System Usability Scale* (SUS). Skor SUS dihitung sesuai prosedur baku sehingga menghasilkan nilai dalam rentang 0 hingga 100, kemudian diinterpretasikan berdasarkan kategori penerimaan dengan ambang batas minimal 68 sebagai kategori dapat diterima (acceptable).
+Data kebergunaan (*usability*) dianalisis menggunakan perhitungan skor *System Usability Scale* (SUS). Skor SUS dihitung sesuai prosedur baku sehingga menghasilkan nilai dalam rentang 0 hingga 100, kemudian diinterpretasikan berdasarkan kategori penerimaan dengan ambang batas minimal 68 sebagai kategori dapat diterima (acceptable).
 
 Data pengujian fungsional dianalisis menggunakan persentase keberhasilan, yaitu perbandingan antara jumlah skenario pengujian *black box* yang berhasil sesuai hasil yang diharapkan terhadap total skenario yang diuji. Persentase keberhasilan tersebut digunakan untuk menilai tingkat kesesuaian fungsionalitas aplikasi terhadap kebutuhan yang telah ditetapkan.
 

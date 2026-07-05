@@ -7,10 +7,20 @@ key-based `sysadmin` admin account). All commands run **on the Proxmox host**. T
 **skipping the `qemu-guest-agent` install** (RHEL repos need an active subscription). Shared concepts
 live in `template-preparation.md`.
 
+> **If you generate this qcow2 with the Red Hat image builder (console.redhat.com), pick "Package mode",
+> NOT "Image mode".** Image mode produces a **bootc** image (ostree/composefs, immutable `/etc`, built
+> from an `image-builder-bootc-foundry/...` ref) that `virt-customize` cannot customise and that
+> cloud-init's user-inject + forced-reset flow does not work with. A bootc qcow2 makes `virt-customize`
+> fail with *"no operating systems were found in the guest image"* (its root is not inspectable as a
+> normal OS). The traditional package-mode **"Virtualization — Guest image (.qcow2)"** is the one this
+> runbook expects. Leave Users/Groups empty and set no hostname (the portal injects those per clone);
+> `qemu-guest-agent` + `cloud-init` are already in the qcow2 target (add `qemu-guest-agent` explicitly in
+> the Packages step if you want zero doubt). Verified end-to-end on a Package-mode RHEL 10 build 2026-07-05.
+
 ## 0. Prerequisites
 
 - `libguestfs-tools` on the Proxmox node
-- The downloaded image on the node: `/var/lib/vz/template/rhel-10-x86_64-20260626.qcow2`
+- The downloaded image on the node, e.g. `/var/lib/vz/template/rhel-10-x86_64-YYYYMMDD.qcow2` (the exact name carries the build date; it must be the **Package-mode** "Guest image (.qcow2)" — see the note above)
 - A free VMID. This doc uses **9003** (Jakarta sequence: Rocky 9000 / Ubuntu 9001 / Fedora 9002 / RHEL 9003)
 - Target node = **Jakarta** (has `vmbr0` + `vmdata`)
 - The bastion `sysadmin` public key: `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDMFSYaSQgzzeXrSVoSyydpx0MaZQKiMTubSsHDMsbKP sysadmin-bastion`
@@ -49,6 +59,14 @@ What changes vs Fedora:
 - **`grubby … console=ttyS0`** *(EL delta)* — wires the serial console.
 
 The `ssh_pwauth`, forced-reset, `sysadmin`, and identity-reset lines are identical to the other distros.
+
+> **Proxmox: `virt-customize` fails with "no operating systems were found"?** On a valid image this is
+> usually the node's default libguestfs backend (libvirt) misbehaving, not the image. Run
+> `export LIBGUESTFS_BACKEND=direct` in the same shell, then re-run the command (it drives QEMU
+> directly). Sanity-check what the appliance sees with `virt-filesystems -a "$IMG" --long -h --all` — a
+> normal RHEL layout shows an EFI (vfat) + xfs `boot` + xfs `root`. If instead you see ostree/composefs
+> or no mountable root, you built a **bootc / Image-mode** qcow2 (see §0), not a package-mode one.
+> Verified fix on this node 2026-07-05.
 
 ## 2. Create the VM, import the disk, seal as a template
 

@@ -88,10 +88,13 @@ qm agent 990 network-get-interfaces      # returns a real IP (not just lo) → t
 Confirm the two baked behaviors against the clone's IP:
 
 ```bash
-# Forced first-login reset:
-ssh sysuser@<ip>        # password Verify123! → EXPECT "you must change your password now"
+# Forced first-login reset — VERIFY AS sysuser (password), NOT sysadmin:
+ssh sysuser@<ip>        # password Verify123! → EXPECT "you are required to change your password immediately"
+#   IMPORTANT: log in as sysuser with the PASSWORD. The key-based sysadmin login never
+#   triggers the expiry prompt, so testing with sysadmin makes a working template look broken.
 #   NOTE: on EL, pwquality rejects weak/dictionary passwords at the change prompt
 #   (e.g. P@ssw0rd is refused). Use a strong one such as d3Hgtwhr!.
+#   Live-verified on Fedora 44 (vmid 9002) 2026-07-05: runcmd fires, sysuser forced to reset.
 
 # Key-based sysadmin (run from the BASTION/app-VM, which holds the private key):
 ssh -i /home/appd/.ssh/sysadmin_bastion -o BatchMode=yes sysadmin@<ip> 'id; sudo -n id'

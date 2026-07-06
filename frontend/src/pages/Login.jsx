@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
-import { MonitorPlay, Lock, Mail, Loader2 } from 'lucide-react';
+import { Lock, Mail, Loader2 } from 'lucide-react';
 import api, { ensureCsrf } from '../lib/api';
 import { setAuthed } from '../lib/auth';
 import { AUTH_BYPASS, makeBypassUser, setBypassUser } from '../lib/devAuth';
@@ -74,15 +74,13 @@ export default function Login() {
     <div className="min-h-screen bg-page text-primary flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans transition-colors duration-300">
       <div className="sm:mx-auto sm:w-full sm:max-w-md animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="flex justify-center">
-          <div className="w-16 h-16 bg-brand-500 rounded-xl flex items-center justify-center text-white font-bold shadow-xl shadow-brand-500/30">
-            <MonitorPlay size={40} />
-          </div>
+          <img src="/exovirt-icon.png" alt="ExoVirt" className="h-24 w-auto" />
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
-          Welcome to InfraProv
+          Welcome to ExoVirt
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-          Proxmox Self-Service Provisioning Portal
+          Self-Service Provisioning Portal
         </p>
         {AUTH_BYPASS && (
           <p className="mt-3 text-center text-[12px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-md py-1.5 px-3">
@@ -108,7 +106,7 @@ export default function Login() {
                   autoComplete="email"
                   {...register('email')}
                   className="focus:ring-brand-500 focus:border-brand-500 block w-full pl-10 sm:text-sm border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-surface dark:text-white rounded-lg p-2.5 transition-colors"
-                  placeholder="admin@infraprov.local"
+                  placeholder="admin@exovirt.local"
                 />
               </div>
               {errors.email && (

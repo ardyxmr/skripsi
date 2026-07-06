@@ -42,6 +42,8 @@ export function UserProvider({ children }) {
   // Authenticated current user (separate from the admin-managed lists below).
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  // First-run installer flag: true while the backend reports an empty users table (fresh install).
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   // Admin-managed lists.
   const [users, setUsers] = useState([]);
@@ -58,15 +60,28 @@ export function UserProvider({ children }) {
       if (AUTH_BYPASS) {
         const u = getBypassUser();
         if (active && u) { setAuthed(true); setCurrentUser(u); }
-      } else {
-        // Cookie auth: always probe /auth/me on boot. A 200 means a valid session cookie exists
-        // (rehydrate); a 401 means logged out (expected on the login screen — swallowed here).
-        try {
-          const me = await api.get('/auth/me');
-          if (active) { setAuthed(true); setCurrentUser(me); }
-        } catch {
-          if (active) setAuthed(false);
+        if (active) setAuthLoading(false);
+        return;
+      }
+
+      // First-run gate: a brand-new install has an empty users table. Detect that BEFORE probing
+      // /auth/me (which would 401 and hard-bounce to /login) so we can route to /setup instead.
+      try {
+        const s = await api.get('/setup/status'); // camelized → { needsSetup }
+        if (active && s?.needsSetup) {
+          setNeedsSetup(true);
+          setAuthLoading(false);
+          return; // empty DB — no session to resolve
         }
+      } catch { /* status probe failed (backend down) — fall through to the normal auth probe */ }
+
+      // Cookie auth: probe /auth/me on boot. A 200 means a valid session cookie exists (rehydrate);
+      // a 401 means logged out (expected on the login screen — swallowed here).
+      try {
+        const me = await api.get('/auth/me');
+        if (active) { setAuthed(true); setCurrentUser(me); }
+      } catch {
+        if (active) setAuthed(false);
       }
       if (active) setAuthLoading(false);
     })();
@@ -108,6 +123,8 @@ export function UserProvider({ children }) {
         currentUser,
         setCurrentUser,
         authLoading,
+        needsSetup,
+        setNeedsSetup,
         users,
         roles,
         groups,

@@ -49,8 +49,9 @@ api.interceptors.response.use(
 
     if (status === 401) {
       setAuthed(false);
-      // Don't bounce the expected logged-out boot probe (/auth/me on the login screen).
-      if (window.location.pathname !== '/login') window.location.href = '/login';
+      // Don't bounce the expected logged-out boot probe (/auth/me on the login/setup screens).
+      const path = window.location.pathname;
+      if (path !== '/login' && path !== '/setup') window.location.href = '/login';
     }
     const body = err.response?.data?.error;
     const details = body?.details ?? null;

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation, Navigate, Outlet, useN
 import { Grid, Plus, Server, CheckSquare, Settings as SettingsIcon, LogOut, Moon, Sun, Menu, KeyRound } from 'lucide-react';
 
 import Login from './pages/Login'; // eager — the unauthenticated entry point stays instant
+import Setup from './pages/Setup'; // eager — the first-run installer, shown before any user exists
 
 // Authenticated pages are code-split: each loads its own chunk on first visit, so the initial
 // bundle (and login → first paint) is far smaller. The <Suspense> around the Outlet shows a loader.
@@ -235,15 +236,15 @@ function ProtectedLayout() {
       <LiveDataPoller />
       <IdleTimeout onLogout={handleLogout} />
 
-      {/* No header bar — the brand floats top-left and the controls float top-right, both on the background. */}
-      <div className="h-[68px] shrink-0 flex items-center justify-between px-6">
+      {/* No header bar — the brand floats top-left and the controls float top-right, both on the background.
+          relative z-40 lifts the whole strip (and the bell/profile popovers that overflow downward into
+          the page) above sticky table headers (z-20) while staying below modals/overlays (z-60/z-70). */}
+      <div className="relative z-40 h-[68px] shrink-0 flex items-center justify-between px-6">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 bg-[#185FA5] rounded-lg flex items-center justify-center text-white shrink-0 shadow-sm shadow-blue-500/30">
-            <svg viewBox="0 0 16 16" className="w-5 h-5 fill-current"><path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V3zm0 7a1 1 0 011-1h10a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3z"/></svg>
-          </div>
+          <img src="/exovirt-icon.png" alt="ExoVirt" className="h-10 w-auto shrink-0" />
           <div className="whitespace-nowrap leading-tight">
-            <div className="text-[15px] font-medium text-gray-900 dark:text-gray-100">Infra<span className="text-[#185FA5]">Cloud</span></div>
-            <div className="text-[11px] text-gray-500 dark:text-gray-400">VM Orchestration</div>
+            <div className="text-[15px] font-medium text-gray-900 dark:text-gray-100">ExoVirt</div>
+            <div className="text-[11px] text-gray-500 dark:text-gray-400">Self-Service Provisioning Portal</div>
           </div>
         </div>
         <Topbar user={currentUser} onLogout={handleLogout} />
@@ -263,6 +264,22 @@ function ProtectedLayout() {
   );
 }
 
+// First-run installer gate. While the database has no users, everything routes to /setup until the
+// first administrator is created; once installed, /setup is closed off and bounces to /login.
+function SetupGate() {
+  const { needsSetup, authLoading } = useUserContext();
+  const location = useLocation();
+
+  if (needsSetup && location.pathname !== '/setup') {
+    return <Navigate to="/setup" replace />;
+  }
+  // Guarded on !authLoading so a fresh install doesn't flash /setup → /login before the probe lands.
+  if (!authLoading && !needsSetup && location.pathname === '/setup') {
+    return <Navigate to="/login" replace />;
+  }
+  return <Outlet />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -277,6 +294,8 @@ export default function App() {
                     <DataBootstrap />
                     <Toast />
                     <Routes>
+                      <Route element={<SetupGate />}>
+                      <Route path="/setup" element={<Setup />} />
                       <Route path="/login" element={<Login />} />
                       <Route element={<RequireAuth />}>
                         <Route element={<ProtectedLayout />}>
@@ -290,6 +309,7 @@ export default function App() {
                           </Route>
                           <Route path="*" element={<NotFound />} />
                         </Route>
+                      </Route>
                       </Route>
                     </Routes>
                   </EnvironmentProvider>

@@ -13,12 +13,17 @@ use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\ProviderController;
 use App\Http\Controllers\Api\ProvisionRequestController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\TierController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 // Liveness probe (no auth).
 Route::get('/health', fn () => response()->json(['status' => 'ok', 'app' => config('app.name')]));
+
+// First-run installer (no auth) — self-locks once any user exists. See SetupController.
+Route::get('/setup/status', [SetupController::class, 'status']);
+Route::post('/setup', [SetupController::class, 'store']);
 
 // Auth (Module 10 / 07-api-contract §1).
 Route::post('/auth/login', [AuthController::class, 'login']);

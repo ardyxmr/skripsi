@@ -10,15 +10,20 @@ export default function NetworkForm({ modal, setModal, handleAddEditNetworkSubmi
   const [networks, setNetworks] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Prefill/reset ONCE per open, keyed on the item. WITHOUT this guard the effect re-runs every time
+  // `nodes` live-refreshes (~10s poll) and wipes the user's in-progress provider/node/bridge selection.
+  const prefilledRef = useRef(null);
   useEffect(() => {
-    if (modal.isOpen && modal.type === 'network') {
-      setProviderId(modal.data?.providerId ?? '');
-      const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
-      setNodeId(match ? match.id : '');
-      // Controlled bridge value: pin to this network's own discovered bridge despite the async option
-      // load (an uncontrolled select would fall back to the first bridge and trip "already published").
-      setBridgeId(modal.data?.providerNetworkId ?? '');
-    }
+    if (!(modal.isOpen && modal.type === 'network')) { prefilledRef.current = null; return; }
+    const key = modal.data?.id ?? 'new';
+    if (prefilledRef.current === key) return;
+    prefilledRef.current = key;
+    setProviderId(modal.data?.providerId ?? '');
+    const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
+    setNodeId(match ? match.id : '');
+    // Controlled bridge value: pin to this network's own discovered bridge despite the async option
+    // load (an uncontrolled select would fall back to the first bridge and trip "already published").
+    setBridgeId(modal.data?.providerNetworkId ?? '');
   }, [modal.isOpen, modal.type, modal.data, nodes]);
 
   // Discovered networks (bridges) for the selected provider.

@@ -1,0 +1,101 @@
+# ExoVirt — full stack. Works with `docker compose` and `podman-compose`.
+# Run: docker compose --env-file .env.docker up -d --build
+# (the --env-file is required so ${VAR} placeholders below resolve from .env.docker)
+name: exovirt
+
+# Shared config for the PHP services (app/worker/scheduler/reverb). depends_on is set per-service
+# because a service-level key REPLACES the anchor's (YAML merge does not deep-merge).
+x-app: &app-base
+  build:
+    context: .
+    target: app
+  image: exovirt-app:latest
+  env_file: [.env.docker]
+  restart: unless-stopped
+  volumes:
+    - esv_appdata:/var/www/html/storage/app
+    - esv_provisioning:/var/www/html/storage/app/provisioning
+
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-exovirt}
+      POSTGRES_USER: ${DB_USERNAME:-exovirt}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-exovirt}
+    volumes:
+      - esv_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-exovirt} -d ${DB_DATABASE:-exovirt}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis-cache:
+    image: redis:7-bookworm
+    command: ["redis-server", "--protected-mode", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+
+  redis-queue:
+    image: redis:7-bookworm
+    command: ["redis-server", "/etc/redis/redis-queue.conf"]
+    volumes:
+      - ./docker/redis-queue.conf:/etc/redis/redis-queue.conf:ro
+      - esv_redis_queue:/data
+    restart: unless-stopped
+
+  app:
+    <<: *app-base
+    environment:
+      RUN_MIGRATIONS: "1"
+    depends_on:
+      db: { condition: service_healthy }
+      redis-cache: { condition: service_started }
+      redis-queue: { condition: service_started }
+
+  worker:
+    <<: *app-base
+    command: ["php", "artisan", "queue:work", "redis", "--queue=default", "--sleep=1", "--tries=1", "--timeout=600", "--max-time=3600"]
+    depends_on:
+      db: { condition: service_healthy }
+      app: { condition: service_started }
+      redis-queue: { condition: service_started }
+    deploy:
+      replicas: ${WORKER_REPLICAS:-3}
+
+  scheduler:
+    <<: *app-base
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      db: { condition: service_healthy }
+      app: { condition: service_started }
+
+  reverb:
+    <<: *app-base
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+    volumes: []          # reverb only needs Redis + code (in the image), not the storage volumes
+    depends_on:
+      redis-queue: { condition: service_started }
+
+  nginx:
+    build:
+      context: .
+      target: web
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_APP_NAME: ExoVirt
+        VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:-exovirt-key}
+    image: exovirt-web:latest
+    depends_on: [app, reverb]
+    volumes:
+      - esv_appdata:/var/www/html/storage/app:ro   # serve /storage (catalog images) read-only
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  esv_db:            # Postgres data
+  esv_redis_queue:   # queue AOF (durable jobs)
+  esv_appdata:       # storage/app: ansible key, private, catalog-images, master-provisioning stubs
+  esv_provisioning:  # ⭐ storage/app/provisioning: workspaces + terraform state (BACK THIS UP)

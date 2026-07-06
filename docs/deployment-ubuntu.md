@@ -5,7 +5,7 @@ halaman login jalan. Ini menggabungkan + memperbarui `08-deployment-workflow.md`
 `deployment-realtime-topology.md` untuk skenario **deploy prod pertama kali** (DB kosong → first-run
 installer bikin admin, bukan seeder).
 
-Ganti di seluruh dokumen: `exovirt.example.com` → domainmu, `/home/appd/my-project` → path install-mu,
+Ganti di seluruh dokumen: `exovirt.example.com` → domainmu, `/home/app/exovirt` → path install-mu,
 user `appd` → user deploy-mu.
 
 ```
@@ -70,9 +70,9 @@ Bawa kode lewat **git clone** (paling bersih — `.gitignore` sudah mengecualika
 `vendor`, `node_modules`). **Jangan copy folder dev apa adanya.**
 
 ```bash
-sudo mkdir -p /home/appd && sudo chown appd:appd /home/appd
-cd /home/appd
-git clone <URL_REPO_KAMU> my-project     # → /home/appd/my-project
+sudo mkdir -p /home/app && sudo chown "$USER:$USER" /home/app   # atau user khusus deploy-mu
+cd /home/app
+git clone https://github.com/ardyxmr/skripsi.git exovirt        # → /home/app/exovirt
 ```
 
 > Kalau repo belum ada remote: bikin arsip bersih di mesin dev
@@ -101,15 +101,17 @@ SQL
 ```bash
 redis-cli -p 6379 CONFIG SET maxmemory 256mb
 redis-cli -p 6379 CONFIG SET maxmemory-policy allkeys-lru
-# (prod) set password:
-redis-cli -p 6379 CONFIG SET requirepass 'GANTI_PASS_CACHE'
-redis-cli -p 6379 CONFIG REWRITE
+# (prod) set password — PAKAI PASSWORD KUAT ASLI, bukan placeholder ini:
+redis-cli -p 6379 CONFIG SET requirepass 'PASSWORD_KUAT_CACHE'
+# ⚠️ Setelah requirepass aktif, CONFIG REWRITE WAJIB pakai -a (kalau tidak → NOAUTH):
+redis-cli -p 6379 -a 'PASSWORD_KUAT_CACHE' --no-auth-warning CONFIG REWRITE
+# Catat password ini → nanti = REDIS_PASSWORD di .env (Fase 7).
 ```
 
 **Queue + Reverb pub/sub (:6380)** — `noeviction` + AOF, lewat systemd:
 
 ```bash
-cd /home/appd/my-project
+cd /home/app/exovirt
 sudo cp deploy/redis/redis-queue.conf /etc/redis/redis-queue.conf
 # (prod) buka comment requirepass di file itu → set 'GANTI_PASS_QUEUE'
 sudo mkdir -p /var/lib/redis-queue && sudo chown redis:redis /var/lib/redis-queue
@@ -127,7 +129,7 @@ redis-cli -p 6380 config get maxmemory-policy   # noeviction
 ## Fase 5 — Tuning kernel (Redis + WebSocket)
 
 ```bash
-cd /home/appd/my-project
+cd /home/app/exovirt
 sudo cp deploy/sysctl/99-infraprov.conf /etc/sysctl.d/ && sudo sysctl --system
 sudo cp deploy/systemd/disable-thp.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now disable-thp
@@ -140,7 +142,7 @@ printf 'appd soft nofile 100000\nappd hard nofile 100000\n' | sudo tee -a /etc/s
 ## Fase 6 — Backend (Laravel)
 
 ```bash
-cd /home/appd/my-project/backend
+cd /home/app/exovirt/backend
 composer install --no-dev --optimize-autoloader
 cp .env.example .env
 php artisan key:generate            # APP_KEY (dipakai enkripsi kredensial provider)
@@ -155,9 +157,13 @@ mkdir -p storage/app/ansible
 ssh-keygen -t ed25519 -f storage/app/ansible/automation_key -N '' -C exovirt-ansible
 chmod 600 storage/app/ansible/automation_key
 
-# Pastikan stub Terraform ada (default variant = 'structured').
-# storage/ biasanya gitignore → salin dari repo/mesin dev kalau clone tidak membawanya:
+# ⚠️ Stub Terraform TIDAK ikut git (ada di storage/, ter-gitignore) → clone TIDAK membawanya.
+# WAJIB salin manual dari mesin dev ke VM baru (default variant = 'structured'; bawa dua-duanya):
+#   scp -r appd@DEV_HOST:/home/app/exovirt/backend/storage/app/master-provisioning \
+#          /home/app/exovirt/backend/storage/app/
+# Verifikasi setelah disalin:
 ls storage/app/master-provisioning/terraform-structured/{main.tf,variables.tf}
+ls storage/app/master-provisioning/terraform/{main.tf,variables.tf}
 ```
 
 > ❗ **Perbedaan paling penting dari runbook lama:** jalankan `migrate --force` **TANPA** `db:seed`.
@@ -214,8 +220,10 @@ REDIS_SESSION_DB=2
 SESSION_LIFETIME=60
 SESSION_EXPIRE_ON_CLOSE=true
 SESSION_SECURE_COOKIE=true
-SESSION_DOMAIN=exovirt.example.com
-SANCTUM_STATEFUL_DOMAINS=exovirt.example.com
+# ⚠️ SANCTUM_STATEFUL_DOMAINS HARUS = host di URL browser, kalau tidak → login 500
+#    "Session store not set on request." Akses via IP → isi IP + SESSION_DOMAIN=null.
+SESSION_DOMAIN=exovirt.example.com          # akses via IP → null
+SANCTUM_STATEFUL_DOMAINS=exovirt.example.com # akses via IP → <ip-vm> (tambah :port kalau bukan 443)
 
 # --- Broadcasting / Reverb ---
 BROADCAST_CONNECTION=reverb
@@ -262,7 +270,7 @@ VITE_IDLE_WARN_MIN=5
 ```
 
 ```bash
-cd /home/appd/my-project/frontend
+cd /home/app/exovirt/frontend
 npm ci && npm run build          # → frontend/dist (termasuk logo ExoVirt di public/)
 ```
 
@@ -271,12 +279,23 @@ npm ci && npm run build          # → frontend/dist (termasuk logo ExoVirt di p
 ## Fase 9 — systemd services (workers, Reverb, scheduler)
 
 ```bash
-cd /home/appd/my-project
+cd /home/app/exovirt
 sudo cp deploy/systemd/infraprov-worker@.service   /etc/systemd/system/
 sudo cp deploy/systemd/infraprov-reverb.service    /etc/systemd/system/
 sudo cp deploy/systemd/infraprov-scheduler.service /etc/systemd/system/
-# (unit ini sudah User=appd, WorkingDirectory=/home/appd/my-project/backend, php /usr/bin/php —
-#  sesuaikan kalau path/user-mu beda)
+
+# ⚠️ WAJIB: unit ini ter-hardcode User=appd + WorkingDirectory=/home/app/exovirt.
+# Kalau user/path-mu beda, sesuaikan — kalau tidak → gagal "status=217/USER".
+# Contoh untuk user 'sysadmin' + path '/home/app/exovirt' (ganti sesuai punyamu):
+sudo sed -i \
+  -e 's|^User=appd|User=sysadmin|' \
+  -e 's|^Group=appd|Group=sysadmin|' \
+  -e 's|^WorkingDirectory=/home/app/exovirt/backend|WorkingDirectory=/home/app/exovirt/backend|' \
+  /etc/systemd/system/infraprov-worker@.service \
+  /etc/systemd/system/infraprov-reverb.service \
+  /etc/systemd/system/infraprov-scheduler.service
+# (User= harus pemilik file app — cek: stat -c '%U' <path>/backend)
+
 sudo systemctl daemon-reload
 
 sudo systemctl enable --now infraprov-worker@1 infraprov-worker@2 infraprov-worker@3  # 3 worker paralel
@@ -292,13 +311,34 @@ Cek: `systemctl status infraprov-reverb`, `journalctl -u infraprov-worker@1 -f`.
 
 ```bash
 sudo cp deploy/nginx/infraprov.conf /etc/nginx/sites-available/exovirt
-# EDIT file itu: ganti semua `server_name infraprov.example.com` → domainmu,
-# pastikan `root` menunjuk ke /home/appd/my-project/frontend/dist dan backend/public,
-# dan fastcgi_pass = unix:/run/php/php8.3-fpm.sock (cek: `ls /run/php/`).
+# EDIT file itu: ganti `server_name infraprov.example.com` → domainmu (atau `_` kalau akses via IP),
+# pastikan `root` = /home/app/exovirt/frontend/dist & backend/public,
+# fastcgi_pass = unix:/run/php/php8.3-fpm.sock (cek: `ls /run/php/`).
 sudo ln -s /etc/nginx/sites-available/exovirt /etc/nginx/sites-enabled/
+```
+
+**TLS — pilih salah satu:**
+
+**(A) Punya domain publik + VM reachable dari internet** → Let's Encrypt:
+```bash
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d exovirt.example.com     # provisions + auto-renew TLS
 ```
+
+**(B) VM internal / testing tanpa domain** → self-signed (browser akan warning, klik lanjut):
+```bash
+sudo openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+  -keyout /etc/nginx/exovirt-selfsigned.key -out /etc/nginx/exovirt-selfsigned.crt -subj "/CN=exovirt.local"
+sudo sed -i \
+  -e 's|server_name infraprov.example.com;|server_name _;|' \
+  -e 's|ssl_certificate .*|ssl_certificate /etc/nginx/exovirt-selfsigned.crt;|' \
+  -e 's|ssl_certificate_key .*|ssl_certificate_key /etc/nginx/exovirt-selfsigned.key;|' \
+  /etc/nginx/sites-available/exovirt
+sudo nginx -t && sudo systemctl reload nginx
+# Akses via IP → di .env (Fase 7) set SESSION_DOMAIN=null & SANCTUM_STATEFUL_DOMAINS=<ip-vm> biar login jalan.
+```
+
+> Catatan: `http2 on;` butuh nginx ≥1.25.1. Config repo sudah pakai `listen ... ssl http2` (kompatibel nginx lama).
 
 Nginx menyajikan SPA, mem-proxy `/api` ke PHP-FPM, dan meng-upgrade `/app/` ke Reverb (wss). Broadcast
 API (`/apps/{id}/events`) sengaja TIDAK diekspos — worker menghubungi Reverb di `127.0.0.1:8080`.
@@ -334,7 +374,7 @@ API (`/apps/{id}/events`) sengaja TIDAK diekspos — worker menghubungi Reverb d
 ## Fase 13 — Deploy berikutnya (update)
 
 ```bash
-cd /home/appd/my-project/backend && git pull && composer install --no-dev --optimize-autoloader
+cd /home/app/exovirt/backend && git pull && composer install --no-dev --optimize-autoloader
 php artisan migrate --force
 php artisan config:cache && php artisan route:cache && php artisan event:cache
 php artisan queue:restart          # WAJIB — worker cache kode saat boot

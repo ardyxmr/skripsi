@@ -29,26 +29,32 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
   const [templates, setTemplates] = useState([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
-  // Reset image + cascade state whenever the modal opens.
+  // Prefill/reset image + cascade state ONCE per open, keyed on the item. WITHOUT this guard the effect
+  // re-runs every time `nodes` live-refreshes (~10s poll) and wipes the user's in-progress
+  // provider/node/template selection. (NodeForm is immune — its reset doesn't depend on `nodes`.)
+  const prefilledRef = useRef(null);
   useEffect(() => {
-    if (modal.isOpen && modal.type === 'catalog') {
-      setPreview(modal.data?.catalogImage || modal.data?.catalog_image || null);
-      setImgError('');
-      setPbError(''); setHvName(''); setHvVersion('');
-      setHvVersions([]);
-      if (modal.mode === 'edit' && modal.data?.id) {
-        api.get(`/catalogs/${modal.data.id}/hardening`).then((r) => setHvVersions(r || [])).catch(() => setHvVersions([]));
-      }
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      setProviderId(modal.data?.providerId ?? '');
-      // Pre-select the published node that abstracts this catalog's discovered node.
-      const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
-      setNodeId(match ? match.id : '');
-      // Controlled template value: keep it pinned to the catalog's own template even though the
-      // options load asynchronously (an uncontrolled select would fall back to the first option,
-      // submitting another catalog's template and tripping the "already published" unique check).
-      setTemplateId(modal.data?.providerTemplateId ?? '');
+    if (!(modal.isOpen && modal.type === 'catalog')) { prefilledRef.current = null; return; }
+    const key = modal.data?.id ?? 'new';
+    if (prefilledRef.current === key) return;
+    prefilledRef.current = key;
+
+    setPreview(modal.data?.catalogImage || modal.data?.catalog_image || null);
+    setImgError('');
+    setPbError(''); setHvName(''); setHvVersion('');
+    setHvVersions([]);
+    if (modal.mode === 'edit' && modal.data?.id) {
+      api.get(`/catalogs/${modal.data.id}/hardening`).then((r) => setHvVersions(r || [])).catch(() => setHvVersions([]));
     }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setProviderId(modal.data?.providerId ?? '');
+    // Pre-select the published node that abstracts this catalog's discovered node.
+    const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
+    setNodeId(match ? match.id : '');
+    // Controlled template value: keep it pinned to the catalog's own template even though the
+    // options load asynchronously (an uncontrolled select would fall back to the first option,
+    // submitting another catalog's template and tripping the "already published" unique check).
+    setTemplateId(modal.data?.providerTemplateId ?? '');
   }, [modal.isOpen, modal.type, modal.data, nodes]);
 
   // Load discovered templates for the selected provider.

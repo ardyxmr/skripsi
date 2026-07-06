@@ -13,7 +13,7 @@ Requires=redis-queue.service
 Type=simple
 User=appd
 Group=appd
-WorkingDirectory=/home/appd/my-project/backend
+WorkingDirectory=/home/app/exovirt/backend
 # --timeout MUST be < the redis queue retry_after (1800) or a slow job gets re-dispatched in parallel.
 # --max-time recycles the worker hourly (frees memory; picks up new code after a deploy + queue:restart).
 ExecStart=/usr/bin/php artisan queue:work redis --queue=default --sleep=1 --tries=1 --timeout=600 --max-time=3600

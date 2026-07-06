@@ -1,0 +1,32 @@
+# Keep the build context small + never bake dev state / secrets into the image.
+**/.git
+**/.github
+**/node_modules
+backend/vendor
+frontend/dist
+**/.env
+**/.env.*
+!backend/.env.example
+
+# Dev/runtime storage — but KEEP master-provisioning (baked Terraform stubs).
+backend/storage/logs/*
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/app/provisioning/*
+backend/storage/app/private/*
+backend/storage/app/public/*
+backend/storage/app/catalog-images/*
+backend/storage/app/ansible/*
+
+# Docs / deploy artifacts not needed inside the image.
+docs
+deploy
+presentation
+journal
+architecture-v2
+bab3-highlevel
+Harden-script
+*.md
+!README-docker.md
+dist

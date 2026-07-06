@@ -10,15 +10,20 @@ export default function DatastoreForm({ modal, setModal, handleAddEditDatastoreS
   const [datastores, setDatastores] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Prefill/reset ONCE per open, keyed on the item. WITHOUT this guard the effect re-runs every time
+  // `nodes` live-refreshes (~10s poll) and wipes the user's in-progress provider/node/storage selection.
+  const prefilledRef = useRef(null);
   useEffect(() => {
-    if (modal.isOpen && modal.type === 'datastore') {
-      setProviderId(modal.data?.providerId ?? '');
-      const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
-      setNodeId(match ? match.id : '');
-      // Controlled storage value: pin to this datastore's own discovered storage despite the async
-      // option load (an uncontrolled select would fall back to the first storage and trip "already published").
-      setStorageId(modal.data?.providerDatastoreId ?? '');
-    }
+    if (!(modal.isOpen && modal.type === 'datastore')) { prefilledRef.current = null; return; }
+    const key = modal.data?.id ?? 'new';
+    if (prefilledRef.current === key) return;
+    prefilledRef.current = key;
+    setProviderId(modal.data?.providerId ?? '');
+    const match = nodes.find((n) => n.providerNodeId === modal.data?.providerNodeId && String(n.providerId) === String(modal.data?.providerId));
+    setNodeId(match ? match.id : '');
+    // Controlled storage value: pin to this datastore's own discovered storage despite the async
+    // option load (an uncontrolled select would fall back to the first storage and trip "already published").
+    setStorageId(modal.data?.providerDatastoreId ?? '');
   }, [modal.isOpen, modal.type, modal.data, nodes]);
 
   // Discovered datastores for the selected provider.

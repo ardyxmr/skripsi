@@ -357,6 +357,9 @@ class InventoryController extends Controller
             'allow_data_disk' => (bool) $i->environment?->allow_data_disk,   // gates the add-disk UI
             'max_data_disks' => (int) ($i->environment?->max_data_disks ?? 0), // policy cap for used/max display
             'provider_name' => $i->provider?->provider_name,
+            // Connection health of the hosting provider — the UI shows the VM as "Unknown" when its
+            // provider is unreachable, since the last-synced power state can no longer be trusted.
+            'provider_connected' => $i->provider?->status === 'Connected',
             'node_name' => $i->node?->node_name,
             'network_name' => $i->network?->network_name,        // published network the VM is on
             'datastore_name' => $i->datastore?->datastore_name,  // published datastore the VM is on

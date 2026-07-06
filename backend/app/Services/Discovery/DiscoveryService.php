@@ -26,6 +26,7 @@ class DiscoveryService
     {
         $driver = ProviderFactory::make($provider);
         $runAt = now();
+        $prevStatus = $provider->status;   // capture BEFORE this run to detect a Connected↔Disconnected transition
 
         $provider->discovery_status = 'running';
         $provider->save();
@@ -169,9 +170,31 @@ class DiscoveryService
             $provider->last_sync_at = $runAt;
             $provider->save();
             $this->guard->recordProviderSuccess($provider->id); // host reachable → close the breaker
+
+            // Audit only the TRANSITION back to reachable (not every successful tick), so the trail
+            // records recoveries without flooding. auth() is null on the scheduler → logged as 'system'.
+            if ($prevStatus === 'Disconnected') {
+                $this->audit->log(auth()->user(), 'PROVIDER_RECONNECTED',
+                    "Provider {$provider->provider_name} is reachable again (Connected) — its nodes, catalogs, networks and datastores are back online.",
+                    null, ['provider_id' => $provider->id, 'status' => 'Connected']);
+            }
         } catch (\Throwable $e) {
             $provider->discovery_status = 'failed';
+            // Sync the connection status too: a failed live probe means the host is unreachable, so
+            // mark it Disconnected right here instead of waiting for a manual Test Connection. Every
+            // effectiveStatus() (catalog/network/datastore/node) then reports "Provider Offline"
+            // automatically; a later successful discover() flips it back to Connected (success path above).
+            $provider->status = 'Disconnected';
             $provider->save();
+
+            // Audit only the TRANSITION into unreachable (the first failing run, while it was still
+            // Connected/new), so a long outage yields ONE entry, not one per discovery tick.
+            if ($prevStatus !== 'Disconnected') {
+                $this->audit->log(auth()->user(), 'PROVIDER_DISCONNECTED',
+                    "Provider {$provider->provider_name} is unreachable (Disconnected) — its nodes, catalogs, networks and datastores are now offline.",
+                    null, ['provider_id' => $provider->id, 'status' => 'Disconnected']);
+            }
+
             $this->guard->recordProviderFailure($provider->id); // feed the circuit breaker
             throw $e;
         }

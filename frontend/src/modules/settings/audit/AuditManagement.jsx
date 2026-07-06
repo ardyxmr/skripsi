@@ -19,7 +19,7 @@ function normalizeLog(row) {
       const result = row.metadata?.result;
       if (result) return String(result).toLowerCase() === 'success' ? 'SUCCESS' : 'FAILED';
       const a = (row.actionType ?? row.action_type ?? '').toUpperCase();
-      if (/FAILED|THROTTLED/.test(a)) return 'FAILED';
+      if (/FAILED|THROTTLED|DISCONNECTED/.test(a)) return 'FAILED';
       if (a === 'POWER_OFF') return 'UNKNOWN';
       return 'SUCCESS';
     })(),

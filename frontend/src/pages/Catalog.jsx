@@ -5,7 +5,6 @@ import api from '../lib/api';
 import { getCached, LIVE_CACHE_EVENT } from '../lib/liveCache';
 import { useCatalogContext } from '../contexts/CatalogContext';
 import { useTierContext } from '../contexts/TierContext';
-import { useProviderContext } from '../contexts/ProviderContext';
 
 // Derive the stat-card numbers from the (camelCased) inventory/approval rows.
 const computeCounts = (invRaw, apprRaw) => {
@@ -39,7 +38,6 @@ export default function Catalog() {
   const navigate = useNavigate();
   const { catalogs, loading } = useCatalogContext();
   const { tiers } = useTierContext();
-  const { providers } = useProviderContext();
   // Data freshness on login is handled centrally by <DataBootstrap/> (refetches every context when
   // the user authenticates), so no per-page refetch is needed here.
 
@@ -95,8 +93,8 @@ export default function Catalog() {
             <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400"><Database size={16} /></div>
             <div className="text-[12px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Providers</div>
           </div>
-          <div className="text-[28px] font-bold text-gray-800 dark:text-gray-100">{(providers || []).length}</div>
-          <div className="text-[12px] text-blue-600 dark:text-blue-400 font-medium mt-1">Available for Provisioning</div>
+          <div className="text-[28px] font-bold text-gray-800 dark:text-gray-100">{new Set(usable.map((c) => c.provider).filter(Boolean)).size}</div>
+          <div className="text-[12px] text-blue-600 dark:text-blue-400 font-medium mt-1">Connected &amp; available</div>
         </div>
 
         <div onClick={() => navigate('/approvals')} className="bg-white dark:bg-card rounded-card p-5 border border-gray-100 dark:border-theme shadow-sm cursor-pointer transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-amber-500/20 hover:border-amber-200 dark:hover:border-amber-700">

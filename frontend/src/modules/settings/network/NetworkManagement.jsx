@@ -8,6 +8,7 @@ import NetworkExplorer from './NetworkExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useNetworkContext } from '../../../contexts/NetworkContext';
 import StatusPill from '../../../components/common/StatusPill';
+import { isOffline } from '../../../lib/resourceStatus';
 import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { formatDateTime } from '../../../lib/datetime';
@@ -199,7 +200,8 @@ export default function NetworkManagement() {
                             n.provider.toLowerCase().includes(q);
       
       const matchesProvider = networkProviderFilter === 'All Providers' || n.provider === networkProviderFilter;
-      const matchesStatus = networkStatusFilter === 'All Status' || n.status === networkStatusFilter;
+      const matchesStatus = networkStatusFilter === 'All Status'
+        || (networkStatusFilter === 'Offline / Missing' ? isOffline(n.status) : n.status === networkStatusFilter);
 
       return matchesSearch && matchesProvider && matchesStatus;
     }).sort((a, b) => {
@@ -226,11 +228,11 @@ export default function NetworkManagement() {
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Total Networks</div>
               </div>
               <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{networks.filter(n => n.status !== 'Offline / Missing').length}</div>
+                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{networks.filter(n => !isOffline(n.status)).length}</div>
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Active</div>
               </div>
               <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">{networks.filter(n => n.status === 'Offline / Missing').length}</div>
+                <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">{networks.filter(n => isOffline(n.status)).length}</div>
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Offline / Missing</div>
               </div>
             <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
@@ -340,7 +342,7 @@ export default function NetworkManagement() {
                 <tbody>
                   {loading && networks.length === 0 && <TableSkeleton cols={8} />}
                   {sortedNetworks.map((network) => (
-                    <tr key={network.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
+                    <tr key={network.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${isOffline(network.status) ? 'opacity-60' : ''}`}>
                       <td className="px-5 py-3">
                         <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px]">{network.name}</div>
                         {network.description && <div className="text-[12px] text-slate-500 dark:text-zinc-400 mt-0.5">{network.description}</div>}
@@ -368,8 +370,8 @@ export default function NetworkManagement() {
                           <button onClick={() => { setOpenDropdownId(null); setNetworkDrawer({ isOpen: true, network }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
                             <Layers size={14}/> Network Explorer
                           </button>
-                          <button onClick={() => { setOpenDropdownId(null); handleNetworkActionClick(network.status === 'Active' ? 'Disable' : 'Enable', network); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                            {network.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>} 
+                          <button disabled={isOffline(network.status)} title={isOffline(network.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(network.status)) return; setOpenDropdownId(null); handleNetworkActionClick(network.status === 'Active' ? 'Disable' : 'Enable', network); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                            {network.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
                             {network.status === 'Active' ? 'Disable Network' : 'Enable Network'}
                           </button>
                           <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>

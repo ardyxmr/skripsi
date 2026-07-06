@@ -3,7 +3,8 @@ import { Bell, CheckCircle, Clock, AlertTriangle, Shield, PlusCircle, Check, XCi
 import { useNavigate } from 'react-router-dom';
 import { getCached, LIVE_CACHE_EVENT } from '../lib/liveCache';
 import { useUserContext } from '../contexts/UserContext';
-import { canApprove } from '../lib/rbac';
+import { useProviderContext } from '../contexts/ProviderContext';
+import { canApprove, isAdmin } from '../lib/rbac';
 
 // Friendly request-type labels for notification copy.
 const REQ_LABEL = {
@@ -35,9 +36,26 @@ const decisionType = (s) => (s === 'Rejected' ? 'APPROVAL_REJECTED' : s === 'Rev
 //  • Requesters → decisions (Approved/Rejected/Reverted) on their own requests.
 //  • Everyone   → their VMs that are expiring soon or failed to provision.
 // Each item carries a STABLE id so the read-state survives polls/reloads.
-function deriveNotifications(approvals, inventory, user) {
+function deriveNotifications(approvals, inventory, providers, user) {
   const approver = canApprove(user);
   const items = [];
+
+  // Admin-only, high-priority: a provider (Proxmox cluster) that's unreachable takes ALL its
+  // nodes/catalogs/networks/datastores offline. Surface it until it recovers. The id embeds the
+  // last-healthy timestamp so a FRESH outage after a recovery re-notifies (new id → unread again).
+  if (isAdmin(user)) {
+    for (const p of providers || []) {
+      if (p.status && p.status !== 'Connected') {
+        items.push({
+          id: `provider-down-${p.id}-${p.lastDiscoveryAt ?? ''}`,
+          type: 'PROVIDER_OFFLINE',
+          message: `Provider "${p.providerName ?? p.name ?? 'unknown'}" is disconnected — its nodes, catalogs, networks and datastores are offline`,
+          link: '/settings',
+          when: tsMs(p.lastDiscoveryAt) || Date.now(),
+        });
+      }
+    }
+  }
 
   for (const r of approvals || []) {
     const vm = r.vmName || r.vm || 'a VM';
@@ -81,6 +99,7 @@ export default function NotificationCenter() {
   const popoverRef = useRef(null);
   const navigate = useNavigate();
   const { currentUser } = useUserContext();
+  const { providers } = useProviderContext();   // admin-only data (empty for other roles); drives the provider-offline alert
 
   const readKey = currentUser ? `notif_read_${currentUser.id}` : 'notif_read_anon';
 
@@ -118,8 +137,8 @@ export default function NotificationCenter() {
   }, [applyFromCache]);
 
   const notifications = useMemo(
-    () => deriveNotifications(approvals, inventory, currentUser),
-    [approvals, inventory, currentUser],
+    () => deriveNotifications(approvals, inventory, providers, currentUser),
+    [approvals, inventory, providers, currentUser],
   );
   const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
 
@@ -154,6 +173,7 @@ export default function NotificationCenter() {
       case 'APPROVAL_REJECTED': return <div className="p-2 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-500"><XCircle size={16} /></div>;
       case 'RENEWAL_REQUEST': return <div className="p-2 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-500"><Clock size={16} /></div>;
       case 'PERMANENT_REQUEST': return <div className="p-2 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500"><Shield size={16} /></div>;
+      case 'PROVIDER_OFFLINE':
       case 'PROVISION_FAILED':
       case 'EXPIRY_WARNING': return <div className="p-2 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-500"><AlertTriangle size={16} /></div>;
       default: return <div className="p-2 rounded-full bg-gray-50 dark:bg-gray-800 text-gray-500"><Bell size={16} /></div>;

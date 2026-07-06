@@ -9,6 +9,7 @@ import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useCatalogContext } from '../../../contexts/CatalogContext';
 import api from '../../../lib/api';
 import StatusPill from '../../../components/common/StatusPill';
+import { isOffline } from '../../../lib/resourceStatus';
 import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { useUI } from '../../../stores/uiStore';
@@ -217,7 +218,8 @@ export default function CatalogManagement() {
                           c.template.toLowerCase().includes(q);
     
     const matchesProvider = catalogProviderFilter === 'All Providers' || c.provider === catalogProviderFilter;
-    const matchesStatus = catalogStatusFilter === 'All Status' || c.status === catalogStatusFilter;
+    const matchesStatus = catalogStatusFilter === 'All Status'
+      || (catalogStatusFilter === 'Offline / Missing' ? isOffline(c.status) : c.status === catalogStatusFilter);
 
     return matchesSearch && matchesProvider && matchesStatus;
   });
@@ -247,11 +249,11 @@ export default function CatalogManagement() {
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Published Catalogs</div>
               </div>
               <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{catalogs.filter(c => c.status !== 'Offline / Missing').length}</div>
+                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{catalogs.filter(c => !isOffline(c.status)).length}</div>
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Active</div>
               </div>
               <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">{catalogs.filter(c => c.status === 'Offline / Missing').length}</div>
+                <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">{catalogs.filter(c => isOffline(c.status)).length}</div>
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Offline / Missing</div>
               </div>
             <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
@@ -360,7 +362,7 @@ export default function CatalogManagement() {
                 <tbody>
                   {loading && catalogs.length === 0 && <TableSkeleton cols={7} />}
                   {sortedCatalogs.map((catalog) => (
-                    <tr key={catalog.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
+                    <tr key={catalog.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${isOffline(catalog.status) ? 'opacity-60' : ''}`}>
                       <td className="px-5 py-3">
                         <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px] hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer" onClick={() => setCatalogDrawer({ isOpen: true, catalog })}>
                           {catalog.name}
@@ -406,8 +408,8 @@ export default function CatalogManagement() {
                           <button onClick={() => { setOpenDropdownId(null); setCatalogDrawer({ isOpen: true, catalog }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
                             <Layers size={14}/> Catalog Explorer
                           </button>
-                          <button onClick={() => { setOpenDropdownId(null); handleCatalogActionClick(catalog.status === 'Active' ? 'Disable' : 'Enable', catalog); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                            {catalog.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>} 
+                          <button disabled={isOffline(catalog.status)} title={isOffline(catalog.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(catalog.status)) return; setOpenDropdownId(null); handleCatalogActionClick(catalog.status === 'Active' ? 'Disable' : 'Enable', catalog); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                            {catalog.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
                             {catalog.status === 'Active' ? 'Disable Catalog' : 'Enable Catalog'}
                           </button>
                           <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>

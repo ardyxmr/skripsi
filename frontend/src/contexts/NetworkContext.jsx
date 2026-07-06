@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import api from '../lib/api';
 import { makeCrud } from '../lib/crud';
 import { isAuthed } from '../lib/auth';
+import { LIVE_CACHE_EVENT } from '../lib/liveCache';
 
 const NetworkContext = createContext();
 const RESOURCE = '/networks';
@@ -44,6 +45,15 @@ export function NetworkProvider({ children }) {
 
   useEffect(() => {
     if (isAuthed()) refetch(); // wait for auth — DataBootstrap re-fetches on login
+  }, [refetch]);
+
+  // Keep the status live app-wide (not just while the Settings tab is mounted): a network's status is
+  // derived from its provider/node health, so when a provider goes offline the list flips to
+  // "Provider Offline" on its own. Rides the LiveDataPoller heartbeat (~10s), gated on '/inventory'.
+  useEffect(() => {
+    const onLive = (e) => { if (e?.detail?.path === '/inventory' && isAuthed()) refetch({ silent: true }); };
+    window.addEventListener(LIVE_CACHE_EVENT, onLive);
+    return () => window.removeEventListener(LIVE_CACHE_EVENT, onLive);
   }, [refetch]);
 
   const { create, update, remove } = makeCrud(RESOURCE, setNetworks, refetch, normalizeNetwork);

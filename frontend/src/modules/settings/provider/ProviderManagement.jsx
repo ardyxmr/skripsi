@@ -200,6 +200,10 @@ export default function ProviderManagement() {
   const activeTab = 'Provider Management';
   const isLoading = false;
 
+  // A disconnected provider contributes no usable resources — the aggregate widgets (Templates /
+  // Networks / Datastores) count connected providers only, matching what can actually be provisioned.
+  const connectedProviders = providers.filter((p) => p.status === 'Connected');
+
   return (
     <>
           {/* Provider Management */}
@@ -218,7 +222,7 @@ export default function ProviderManagement() {
                       <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Providers</div>
                     </div>
                     <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{providers.filter(p => p.status === 'Connected').length}</div>
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{connectedProviders.length}</div>
                       <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Connected</div>
                     </div>
                     <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
@@ -226,15 +230,15 @@ export default function ProviderManagement() {
                       <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Discovery Success</div>
                     </div>
                     <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{providers.reduce((acc, p) => acc + (p.templatesCount || 0), 0)}</div>
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{connectedProviders.reduce((acc, p) => acc + (p.templatesCount || 0), 0)}</div>
                       <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Templates</div>
                     </div>
                     <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{providers.reduce((acc, p) => acc + (p.networksCount || 0), 0)}</div>
+                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{connectedProviders.reduce((acc, p) => acc + (p.networksCount || 0), 0)}</div>
                       <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Networks</div>
                     </div>
                     <div className="text-center pl-4">
-                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-500">{providers.reduce((acc, p) => acc + (p.datastoresCount || 0), 0)}</div>
+                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-500">{connectedProviders.reduce((acc, p) => acc + (p.datastoresCount || 0), 0)}</div>
                       <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Datastores</div>
                     </div>
                   </div>
@@ -350,7 +354,7 @@ export default function ProviderManagement() {
                             }
                             return 0;
                           }).map((p) => (
-                            <tr key={p.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
+                            <tr key={p.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${p.status !== 'Connected' ? 'opacity-60' : ''}`}>
                               <td className="px-5 py-3">
                                 <div className="text-[13px] font-bold text-gray-800 dark:text-gray-200">{p.providerName}</div>
                               </td>

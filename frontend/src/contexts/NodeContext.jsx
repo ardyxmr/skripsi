@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import api from '../lib/api';
 import { makeCrud } from '../lib/crud';
 import { isAuthed } from '../lib/auth';
+import { LIVE_CACHE_EVENT } from '../lib/liveCache';
 
 const NodeContext = createContext();
 const RESOURCE = '/nodes';
@@ -41,21 +42,30 @@ export function NodeProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const refetch = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // silent:true skips the loading/error churn — used by the background live refresh so a node's
+  // status stays fresh without flashing the skeleton.
+  const refetch = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) { setLoading(true); setError(null); }
     try {
       const rows = await api.get(RESOURCE);
       setNodes((rows || []).map(normalizeNode));
     } catch (e) {
-      setError(e);
+      if (!silent) setError(e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (isAuthed()) refetch(); // wait for auth — DataBootstrap re-fetches on login
+  }, [refetch]);
+
+  // Keep node status live app-wide: a node's operational health follows its provider (a disconnected
+  // provider takes its nodes Offline), so ride the LiveDataPoller heartbeat (~10s), gated on '/inventory'.
+  useEffect(() => {
+    const onLive = (e) => { if (e?.detail?.path === '/inventory' && isAuthed()) refetch({ silent: true }); };
+    window.addEventListener(LIVE_CACHE_EVENT, onLive);
+    return () => window.removeEventListener(LIVE_CACHE_EVENT, onLive);
   }, [refetch]);
 
   const { create, update, remove } = makeCrud(RESOURCE, setNodes, refetch, normalizeNode);

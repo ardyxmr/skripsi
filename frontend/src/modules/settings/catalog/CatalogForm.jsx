@@ -188,7 +188,7 @@ export default function CatalogForm({ modal, setModal, handleAddEditCatalogSubmi
                     <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-1">Provider <span className="text-rose-500">*</span></label>
                     <select name="providerId" value={providerId} onChange={(e) => { setProviderId(e.target.value); setNodeId(''); setTemplateId(''); }} required className="w-full px-3 py-2 border border-slate-300 dark:border-theme bg-white dark:bg-page text-slate-900 dark:text-zinc-100 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-colors shadow-sm cursor-pointer">
                       <option value="" disabled>Select provider</option>
-                      {providers.map(p => (
+                      {providers.filter((p) => (p.status ?? p.connectionStatus) === 'Connected').map(p => (
                         <option key={p.id} value={p.id}>{p.providerName ?? p.name}</option>
                       ))}
                     </select>

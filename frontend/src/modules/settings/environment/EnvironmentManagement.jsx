@@ -12,6 +12,7 @@ import { useTierContext } from '../../../contexts/TierContext';
 import ResizableTh from '../../../components/ResizableTh';
 import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
+import { isOffline } from '../../../lib/resourceStatus';
 import EnvironmentForm from './EnvironmentForm';
 import EnvironmentExplorer from './EnvironmentExplorer';
 import { useUI } from '../../../stores/uiStore';
@@ -445,7 +446,15 @@ export default function EnvironmentManagement() {
         initialData={editingEnv}
         title={formMode === 'create' ? "Create Environment" : "Edit Environment"}
         onChange={() => setHasUnsavedChanges(true)}
-        lists={{ providers, tiers, nodes, networks, datastores }}
+        lists={{
+          // Only offer connected providers + non-offline nodes for the allow-list, like the catalog/
+          // network/datastore forms — you can't scope an environment to an unreachable provider/node.
+          providers: providers.filter((p) => p.status === 'Connected'),
+          tiers,
+          nodes: nodes.filter((n) => !isOffline(n.status)),
+          networks,
+          datastores,
+        }}
       />
 
       {/* Unified Action Modal */}

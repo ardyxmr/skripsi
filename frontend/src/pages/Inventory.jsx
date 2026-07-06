@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback, useLayoutEffe
 import {
   Search, RefreshCw, ChevronRight, ChevronDown, MoreVertical,
   X, Calendar, Server, Clock, AlertCircle, Shield, FileText, CheckCircle2,
-  Settings, Cpu, HardDrive, Plus, Eye, Copy
+  Settings, Cpu, HardDrive, Plus, Copy
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
@@ -39,12 +39,14 @@ function normalizeVm(row) {
     cpu: row.vcpu ?? row.cpu ?? 0,
     ram: row.ramMb != null ? Math.round(row.ramMb / 1024) : (row.ram ?? 0),
     disk: row.diskAllocatedGb ?? row.disk ?? 0,
-    ip: row.ipAddress ?? row.ip ?? 'N/A',
+    // Provider unreachable → we can't trust the last-synced IP either, so blank it to N/A (matches the Unknown status).
+    ip: (row.providerConnected ?? true) ? (row.ipAddress ?? row.ip ?? 'N/A') : 'N/A',
     owner: row.ownerName ?? row.owner ?? '—',
     createdBy: row.createdBy ?? row.requesterName ?? '—',
     createdDate: row.createdAt ?? row.createdDate,
     osUser: row.loginUsername ?? 'ubuntu',
     observedPowerState: row.observedPowerState ?? 'unknown',
+    providerConnected: row.providerConnected ?? true,   // false → hosting provider unreachable → status Unknown
     disks: row.disks ?? [],
     allowDataDisk: row.allowDataDisk ?? false,
     maxDataDisks: row.maxDataDisks ?? 0,
@@ -70,6 +72,9 @@ function effectiveVmStatus(vm) {
   // display state (like Provisioning/Updating/Deleting) while the Ansible run is live.
   if (vm.status === 'Active' && vm.hardeningStatus === 'Running') return 'Hardening';
   if (vm.status === 'Active') {
+    // Provider unreachable → the last-synced power state is stale, so surface it as Unknown
+    // instead of a misleading "Running".
+    if (!vm.providerConnected) return 'Unknown';
     return vm.observedPowerState === 'stopped' ? 'Stopped' : 'Running';
   }
   return vm.status;
@@ -190,8 +195,8 @@ export default function Inventory() {
   // Drawer State
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedVm, setSelectedVm] = useState(null);
-  const [revealedCreds, setRevealedCreds] = useState(null); // { username, password } once revealed for the open VM
-  const [credLoading, setCredLoading] = useState(false);
+  const [credLoading, setCredLoading] = useState(false);   // spinner while the copy-only credential fetch is in flight
+  const clipboardClearRef = useRef(null);                  // pending timer for the best-effort clipboard auto-clear
   
   // Modals
   const [deleteModalVm, setDeleteModalVm] = useState(null);
@@ -424,28 +429,52 @@ export default function Inventory() {
     setSelectedVm(vm);
     setDrawerOpen(true);      // without this the drawer stayed mounted but invisible (opacity-0 / translate-x-full)
     setRenewError('');
-    setRevealedCreds(null);   // require an explicit, audited reveal per VM open
     setCredLoading(false);
   };
 
-  // Reveal-on-demand: the password is never in the list payload — fetch it from the audited endpoint.
-  const revealCredentials = async () => {
-    if (!selectedVm) return;
+  // Best-effort: wipe the clipboard ~30s after a copy, but ONLY if it still holds the password we
+  // wrote (so we never clobber something the user copied in the meantime). Silently gives up when
+  // the browser won't grant clipboard-read rather than blindly clearing the user's clipboard.
+  const scheduleClipboardClear = (secret) => {
+    if (clipboardClearRef.current) clearTimeout(clipboardClearRef.current);
+    clipboardClearRef.current = setTimeout(async () => {
+      try {
+        const current = await navigator.clipboard.readText();
+        if (current === secret) await navigator.clipboard.writeText('');
+      } catch { /* clipboard read not permitted — leave the user's clipboard alone */ }
+    }, 30000);
+  };
+
+  // Copy-only credentials: the initial password is fetched from the audited endpoint and written
+  // STRAIGHT to the clipboard. It is never placed in React state nor rendered to the DOM, so a
+  // shoulder-surfer or a screen-share never sees it (the 1Password "copy without reveal" pattern).
+  const copyCredentialPassword = async () => {
+    if (!selectedVm || credLoading) return;
+    if (!navigator.clipboard?.writeText) {
+      // A no-op fetch here would still write a VIEW_CREDENTIALS audit row, so bail before it.
+      pushToast({ kind: 'error', message: 'Copying needs a secure (HTTPS) connection.' });
+      return;
+    }
     setCredLoading(true);
     try {
       const res = await api.get(`/inventory/${selectedVm.id}/credentials`);
-      setRevealedCreds({ username: res.username ?? selectedVm.osUser, password: res.password });
+      const pw = res.password;
+      if (!pw) {
+        pushToast({ kind: 'error', message: 'Initial password is not available for this VM (provisioned before this feature).' });
+        return;
+      }
+      await navigator.clipboard.writeText(pw);
+      pushToast({ message: 'Initial password copied. Clipboard auto-clears in 30s.' });
+      scheduleClipboardClear(pw);
     } catch (e) {
-      pushToast({ kind: 'error', message: e.message || 'Could not load credentials.' });
+      pushToast({ kind: 'error', message: e.message || 'Could not copy credentials.' });
     } finally {
       setCredLoading(false);
     }
   };
 
-  const copyText = (t) => {
-    if (!t) return;
-    try { navigator.clipboard?.writeText(t); pushToast({ message: 'Copied to clipboard' }); } catch { /* ignore */ }
-  };
+  // Drop any pending clipboard-clear timer when the page unmounts.
+  useEffect(() => () => { if (clipboardClearRef.current) clearTimeout(clipboardClearRef.current); }, []);
 
   const handleOpenEdit = (vm) => {
     setEditModalVm(vm);
@@ -521,6 +550,8 @@ export default function Inventory() {
         return { color: 'bg-rose-500', tooltip: 'Provisioning failed, needs retry or deletion' };
       case 'Expired':
         return { color: 'bg-rose-500', tooltip: 'VM lifecycle has expired' };
+      case 'Unknown':
+        return { color: 'bg-amber-500', tooltip: 'Provider unreachable — VM state unknown' };
       default:
         return { color: 'bg-gray-400', tooltip: 'Unknown status' };
     }
@@ -679,25 +710,17 @@ export default function Inventory() {
                       <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200 font-mono bg-blue-100/50 dark:bg-page px-2 py-0.5 rounded-md border dark:border-theme">{selectedVm.osUser}</span>
                     </div>
                     <div className="flex justify-between items-center gap-2">
-                      <span className="text-[12px] text-gray-500 dark:text-gray-400">Initial Password (one-time):</span>
-                      {revealedCreds ? (
-                        revealedCreds.password ? (
-                          <span className="flex items-center gap-1.5">
-                            <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200 font-mono bg-blue-100/50 dark:bg-page px-2 py-0.5 rounded-md border dark:border-theme select-all">{revealedCreds.password}</span>
-                            <button onClick={() => copyText(revealedCreds.password)} title="Copy password" className="p-1 text-gray-400 hover:text-teal-600 dark:hover:text-teal-400"><Copy size={13} /></button>
-                          </span>
-                        ) : (
-                          <span className="text-[12px] italic text-gray-400 dark:text-gray-500">Not available (provisioned before this feature)</span>
-                        )
-                      ) : (
-                        <button onClick={revealCredentials} disabled={credLoading} className="flex items-center gap-1.5 text-[12px] font-medium text-teal-600 dark:text-teal-400 hover:underline disabled:opacity-50">
-                          <Eye size={13} /> {credLoading ? 'Revealing…' : 'Reveal'}
+                      <span className="text-[12px] text-gray-500 dark:text-gray-400">Initial Password:</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[13px] font-bold text-gray-400 dark:text-gray-500 font-mono bg-blue-100/50 dark:bg-page px-2 py-0.5 rounded-md border dark:border-theme tracking-widest select-none" aria-hidden="true">••••••••</span>
+                        <button onClick={copyCredentialPassword} disabled={credLoading} title="Copy initial password to clipboard" className="flex items-center gap-1.5 text-[12px] font-medium text-teal-600 dark:text-teal-400 hover:underline disabled:opacity-50">
+                          <Copy size={13} /> {credLoading ? 'Copying…' : 'Copy'}
                         </button>
-                      )}
+                      </span>
                     </div>
                     <div className="text-[11px] text-blue-600 dark:text-blue-400 bg-blue-100/50 dark:bg-blue-900/30 p-2 rounded flex items-start gap-1.5 mt-2">
                       <AlertCircle size={12} className="shrink-0 mt-0.5" />
-                      <span>One-time initial password. The user sets their own password on first login; the portal never receives or stores it, so this value stops working once the VM has been logged into. Revealing it is recorded in the audit log.</span>
+                      <span>Copied straight to your clipboard — never shown on screen. Each copy is recorded in the audit log and the clipboard auto-clears after 30s. On Linux VMs this password stops working after the first login; on Windows VMs it stays valid until the first password change or its scheduled rotation.</span>
                     </div>
                   </div>
                 </section>

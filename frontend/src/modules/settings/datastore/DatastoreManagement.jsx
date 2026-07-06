@@ -12,6 +12,7 @@ import DatastoreDiscovery from './DatastoreDiscovery';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useDatastoreContext } from '../../../contexts/DatastoreContext';
 import StatusPill from '../../../components/common/StatusPill';
+import { isOffline } from '../../../lib/resourceStatus';
 import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { formatDateTime } from '../../../lib/datetime';
@@ -200,7 +201,7 @@ export default function DatastoreManagement() {
       );
     }
     if (datastoreProviderFilter !== 'All Providers') sortableData = sortableData.filter(d => d.provider === datastoreProviderFilter);
-    if (datastoreStatusFilter !== 'All Status') sortableData = sortableData.filter(d => d.status === datastoreStatusFilter);
+    if (datastoreStatusFilter !== 'All Status') sortableData = sortableData.filter(d => datastoreStatusFilter === 'Offline / Missing' ? isOffline(d.status) : d.status === datastoreStatusFilter);
 
     if (datastoreSortConfig.key !== null) {
       sortableData.sort((a, b) => {
@@ -237,7 +238,7 @@ export default function DatastoreManagement() {
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Active</div>
               </div>
               <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-                <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">{datastores.filter(n => n.status === 'Offline / Missing').length}</div>
+                <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">{datastores.filter(n => isOffline(n.status)).length}</div>
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Offline / Missing</div>
               </div>
             <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
@@ -354,7 +355,7 @@ export default function DatastoreManagement() {
                 <tbody>
                   {loading && datastores.length === 0 && <TableSkeleton cols={10} />}
                   {sortedDatastores.map((datastore) => (
-                    <tr key={datastore.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
+                    <tr key={datastore.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${isOffline(datastore.status) ? 'opacity-60' : ''}`}>
                       <td className="px-5 py-3">
                         <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px]">{datastore.name}</div>
                         {datastore.description && <div className="text-[12px] text-slate-500 dark:text-zinc-400 mt-0.5">{datastore.description}</div>}
@@ -364,18 +365,23 @@ export default function DatastoreManagement() {
                       <td className="px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px] font-mono">{datastore.providerDatastore}</td>
                       <td className="px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px]">{datastore.type}</td>
                       <td className="px-5 py-3">
-                        <div className="flex flex-col gap-1 w-full max-w-[160px]">
-                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
-                            <span>{datastore.capacity.used} / {datastore.capacity.total}</span>
-                            <span className="font-medium">{datastore.capacity.percentage}%</span>
+                        {isOffline(datastore.status) ? (
+                          // Provider unreachable → the capacity snapshot is stale, so blank it (mirrors the node CPU/RAM bars).
+                          <span className="text-[12px] text-slate-400">— offline</span>
+                        ) : (
+                          <div className="flex flex-col gap-1 w-full max-w-[160px]">
+                            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
+                              <span>{datastore.capacity.used} / {datastore.capacity.total}</span>
+                              <span className="font-medium">{datastore.capacity.percentage}%</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${datastore.capacity.percentage > 90 ? 'bg-rose-500' : datastore.capacity.percentage > 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                style={{ width: `${datastore.capacity.percentage}%` }}
+                              />
+                            </div>
                           </div>
-                          <div className="w-full h-1.5 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full ${datastore.capacity.percentage > 90 ? 'bg-rose-500' : datastore.capacity.percentage > 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                              style={{ width: `${datastore.capacity.percentage}%` }}
-                            />
-                          </div>
-                        </div>
+                        )}
                       </td>
                       <td className="px-5 py-3">
                         <StatusPill status={datastore.status} label={datastore.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" />
@@ -396,8 +402,8 @@ export default function DatastoreManagement() {
                           <button onClick={() => { setOpenDropdownId(null); setDatastoreDrawer({ isOpen: true, datastore }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
                             <Database size={14}/> Datastore Explorer
                           </button>
-                          <button onClick={() => { setOpenDropdownId(null); handleDatastoreActionClick(datastore.status === 'Active' ? 'Disable' : 'Enable', datastore); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                            {datastore.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>} 
+                          <button disabled={isOffline(datastore.status)} title={isOffline(datastore.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(datastore.status)) return; setOpenDropdownId(null); handleDatastoreActionClick(datastore.status === 'Active' ? 'Disable' : 'Enable', datastore); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                            {datastore.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
                             {datastore.status === 'Active' ? 'Disable Datastore' : 'Enable Datastore'}
                           </button>
                           <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>

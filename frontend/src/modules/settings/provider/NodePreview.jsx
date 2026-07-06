@@ -219,7 +219,14 @@ export default function NodePreview() {
             </thead>
             <tbody>
               {filtered.map((n) => {
-                const offline = n.operational === 'Offline';
+                // Two distinct failure modes for a node:
+                //  - The Proxmox CLUSTER API is unreachable (provider Disconnected → governance
+                //    'Provider Offline'): we can't know the node's real state → show Unknown.
+                //  - The cluster IS reachable but Proxmox reports THIS node offline: that's a valid
+                //    per-node fact (other nodes can still be Online) → trust n.operational (Offline).
+                const operational = n.status === 'Provider Offline' ? 'Unknown' : n.operational;
+                // Hide the live CPU/RAM bars when the numbers can't be trusted (offline or unreachable).
+                const offline = operational === 'Offline' || operational === 'Unknown';
                 return (
                   <tr key={n.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                     <td className="px-5 py-3">
@@ -237,7 +244,7 @@ export default function NodePreview() {
                     <td className="px-4 py-3"><UtilBar pct={n.cpuPct} offline={offline} /></td>
                     <td className="px-4 py-3"><UtilBar pct={n.ramPct} offline={offline} /></td>
                     <td className="px-4 py-3">
-                      <StatusPill tone={n.operational === 'Online' ? 'success' : n.operational === 'Offline' ? 'danger' : 'warning'} label={n.operational} variant="soft" shape="full" uppercase />
+                      <StatusPill tone={operational === 'Online' ? 'success' : operational === 'Offline' ? 'danger' : 'warning'} label={operational} variant="soft" shape="full" uppercase />
                     </td>
                     <td className="px-4 py-3 text-[12px] text-slate-500 dark:text-zinc-400">
                       <span className="inline-flex items-center gap-1.5">

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import api from '../lib/api';
 import { makeCrud } from '../lib/crud';
 import { isAuthed } from '../lib/auth';
+import { LIVE_CACHE_EVENT } from '../lib/liveCache';
 
 const CatalogContext = createContext();
 const RESOURCE = '/catalogs';
@@ -64,6 +65,16 @@ export function CatalogProvider({ children }) {
 
   useEffect(() => {
     if (isAuthed()) refetch(); // wait for auth — DataBootstrap re-fetches on login
+  }, [refetch]);
+
+  // Keep the published-catalog view live: piggy-back on the app-wide poll (LiveDataPoller fires
+  // LIVE_CACHE_EVENT ~every 10s). A catalog's status is derived from its provider/node health, so
+  // when a provider goes offline the main Catalog grid + counts drop it without a manual refresh.
+  // Gated on '/inventory' so the two events per poll cycle collapse into one refetch.
+  useEffect(() => {
+    const onLive = (e) => { if (e?.detail?.path === '/inventory' && isAuthed()) refetch({ silent: true }); };
+    window.addEventListener(LIVE_CACHE_EVENT, onLive);
+    return () => window.removeEventListener(LIVE_CACHE_EVENT, onLive);
   }, [refetch]);
 
   const { create, update, remove } = makeCrud(RESOURCE, setCatalogs, refetch, normalizeCatalog);

@@ -74,33 +74,19 @@ function Sidebar({ user }) {
   }
 
   return (
-    <aside className={`${isCollapsed ? 'w-[72px]' : 'w-[240px]'} bg-white dark:bg-card border-r border-gray-200 dark:border-zinc-700/70 flex flex-col shrink-0 transition-[width] duration-[250ms] ease-in-out relative z-40`}>
-      <div className="absolute top-0 left-0 w-[240px] h-[61px] p-[18px_16px_14px] border-b border-gray-200 dark:border-zinc-700/70 flex items-center gap-2 bg-white dark:bg-card z-50">
-        <div className="w-7 h-7 bg-[#185FA5] rounded-md flex items-center justify-center text-white shrink-0">
-          <svg viewBox="0 0 16 16" className="w-4 h-4 fill-current"><path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V3zm0 7a1 1 0 011-1h10a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3z"/></svg>
-        </div>
-        <div className="whitespace-nowrap">
-          <div className="text-[14px] font-medium leading-tight text-gray-900 dark:text-gray-100">Infra<span className="text-[#185FA5]">Cloud</span></div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400 leading-tight">VM Orchestration</div>
-        </div>
+    <aside className={`${isCollapsed ? 'w-[72px]' : 'w-[240px]'} shrink-0 h-full flex flex-col bg-white dark:bg-card border border-gray-200 dark:border-zinc-700/70 rounded-card shadow-card overflow-hidden transition-[width] duration-[250ms] ease-in-out relative z-40`}>
+      <div className="p-4 border-b border-gray-100 dark:border-theme flex items-center justify-between min-h-[53px]">
+        <h2 className={`text-[15px] font-bold text-gray-800 dark:text-gray-100 transition-all duration-[250ms] whitespace-nowrap overflow-hidden ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}`}>Navigation</h2>
+        <button
+          onClick={toggleSidebar}
+          className={`p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-700/50 transition-colors shrink-0 ${isCollapsed ? 'mx-auto' : ''}`}
+          title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+        >
+          <Menu size={18} />
+        </button>
       </div>
 
-      <div className="h-[61px] shrink-0"></div>
-
-      <div className="flex-1 overflow-y-auto py-4 px-3 overflow-x-hidden custom-scrollbar">
-        <div className="flex items-center justify-between px-3 pb-2 pt-2 min-h-[36px]">
-          <div className={`text-[11px] font-semibold text-gray-400 uppercase tracking-widest transition-all duration-[250ms] whitespace-nowrap overflow-hidden ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}`}>
-            Navigation
-          </div>
-          <button
-            onClick={toggleSidebar}
-            className={`p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-700/50 transition-colors shrink-0 ${isCollapsed ? 'mx-auto' : ''}`}
-            title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-          >
-            <Menu size={18} />
-          </button>
-        </div>
-
+      <div className="flex-1 overflow-y-auto p-3 overflow-x-hidden custom-scrollbar">
         <nav className="space-y-1">
           {links.map((link) => {
             const isActive = location.pathname === link.path || (link.path === '/catalog' && location.pathname === '/');
@@ -135,10 +121,8 @@ function Sidebar({ user }) {
 }
 
 function Topbar({ user, onLogout }) {
-  const location = useLocation();
   const isDarkMode = useUI((s) => s.darkMode);
   const toggleDarkMode = useUI((s) => s.toggleDarkMode);
-  const isSidebarCollapsed = useUI((s) => s.sidebarCollapsed);
   const [profileOpen, setProfileOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const profileRef = useRef(null);
@@ -153,65 +137,61 @@ function Topbar({ user, onLogout }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [profileRef]);
 
-  const titles = {
-    '/catalog': 'VM Catalog',
-    '/request-vm': 'Provision New VM',
-    '/inventory': 'VM Inventory',
-    '/approvals': 'Approval Requests',
-    '/settings': 'Settings',
-  };
-  const title = titles[location.pathname] || 'Dashboard';
+  // Each control is a floating circle; a thin "pipe" behind them (visible in the gaps) links the three.
+  const circle = 'relative z-10 w-10 h-10 rounded-full bg-white dark:bg-card border border-gray-200 dark:border-zinc-700/70 shadow-sm flex items-center justify-center transition-colors';
 
   return (
-    <header className={`h-[61px] bg-white dark:bg-card border-b border-gray-200 dark:border-zinc-700/70 flex items-center justify-between px-5 shrink-0 transition-[padding] duration-[250ms] ${isSidebarCollapsed ? 'pl-[188px]' : ''}`}>
-      <div className="text-[15px] font-medium text-gray-800 dark:text-gray-100">{title}</div>
-      <div className="flex items-center gap-4">
-        <NotificationCenter />
+    <div className="relative flex items-center gap-3">
+      <div className="absolute left-5 right-5 top-1/2 -translate-y-1/2 h-[7px] rounded-full bg-white dark:bg-card border border-gray-200 dark:border-zinc-700/70" aria-hidden="true"></div>
 
+      <div className={`${circle} text-gray-500 dark:text-gray-400`}>
+        <NotificationCenter />
+      </div>
+
+      <button
+        onClick={toggleDarkMode}
+        aria-label="Toggle dark mode"
+        className={`${circle} text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700/50`}
+      >
+        {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+      </button>
+
+      <div className="relative z-10" ref={profileRef}>
         <button
-          onClick={toggleDarkMode}
-          className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-700/50"
+          onClick={() => setProfileOpen(!profileOpen)}
+          className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-[12px] font-bold text-white shadow-sm ring-2 ring-white dark:ring-card focus:outline-none focus:ring-teal-500/50 transition-transform hover:scale-105"
         >
-          {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          {initialsOf(user)}
         </button>
 
-        <div className="relative" ref={profileRef}>
-          <button
-            onClick={() => setProfileOpen(!profileOpen)}
-            className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-[12px] font-bold text-white shadow-inner focus:outline-none focus:ring-2 focus:ring-teal-500/50 transition-transform hover:scale-105"
-          >
-            {initialsOf(user)}
-          </button>
-
-          {profileOpen && (
-            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-card rounded-modal shadow-modal border border-gray-100 dark:border-theme py-1 z-50 animate-in slide-in-from-top-2 duration-200">
-              <div className="px-4 py-3 border-b border-gray-100 dark:border-theme">
-                <p className="text-[13px] font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
-              </div>
-              <div className="py-1">
-                <button
-                  onClick={() => { setProfileOpen(false); setResetOpen(true); }}
-                  className="w-full text-left px-4 py-2 text-[13px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700/50 flex items-center gap-2"
-                >
-                  <KeyRound size={14} /> Reset Password
-                </button>
-              </div>
-              <div className="border-t border-gray-100 dark:border-theme py-1">
-                <button
-                  onClick={onLogout}
-                  className="w-full text-left px-4 py-2 text-[13px] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 flex items-center gap-2"
-                >
-                  <LogOut size={14} /> Logout
-                </button>
-              </div>
+        {profileOpen && (
+          <div className="absolute right-0 mt-3 w-48 bg-white dark:bg-card rounded-modal shadow-modal border border-gray-100 dark:border-theme py-1 z-[100] animate-in slide-in-from-top-2 duration-200">
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-theme">
+              <p className="text-[13px] font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
             </div>
-          )}
-        </div>
+            <div className="py-1">
+              <button
+                onClick={() => { setProfileOpen(false); setResetOpen(true); }}
+                className="w-full text-left px-4 py-2 text-[13px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-zinc-700/50 flex items-center gap-2"
+              >
+                <KeyRound size={14} /> Reset Password
+              </button>
+            </div>
+            <div className="border-t border-gray-100 dark:border-theme py-1">
+              <button
+                onClick={onLogout}
+                className="w-full text-left px-4 py-2 text-[13px] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 flex items-center gap-2"
+              >
+                <LogOut size={14} /> Logout
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <ResetPasswordModal open={resetOpen} user={user} onClose={() => setResetOpen(false)} />
-    </header>
+    </div>
   );
 }
 
@@ -249,15 +229,31 @@ function ProtectedLayout() {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden text-[14px] font-sans text-primary bg-page">
+    <div className="flex flex-col h-screen w-full overflow-hidden text-[14px] font-sans text-primary bg-page">
       {/* Single app-wide live driver: WebSocket (Reverb) + adaptive poll fallback; Inventory/
           Approvals/bell consume LIVE_CACHE_EVENT. */}
       <LiveDataPoller />
       <IdleTimeout onLogout={handleLogout} />
-      <Sidebar user={currentUser} />
-      <div className="flex-1 flex flex-col min-w-0 bg-transparent transition-all duration-[250ms]">
+
+      {/* No header bar — the brand floats top-left and the controls float top-right, both on the background. */}
+      <div className="h-[68px] shrink-0 flex items-center justify-between px-6">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 bg-[#185FA5] rounded-lg flex items-center justify-center text-white shrink-0 shadow-sm shadow-blue-500/30">
+            <svg viewBox="0 0 16 16" className="w-5 h-5 fill-current"><path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V3zm0 7a1 1 0 011-1h10a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3z"/></svg>
+          </div>
+          <div className="whitespace-nowrap leading-tight">
+            <div className="text-[15px] font-medium text-gray-900 dark:text-gray-100">Infra<span className="text-[#185FA5]">Cloud</span></div>
+            <div className="text-[11px] text-gray-500 dark:text-gray-400">VM Orchestration</div>
+          </div>
+        </div>
         <Topbar user={currentUser} onLogout={handleLogout} />
-        <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
+      </div>
+
+      {/* Body row: floating sidebar + content. Both start below the strip, so the sidebar top
+          lines up with the Settings sub-navigation. */}
+      <div className="flex-1 min-h-0 flex gap-6 px-6 pb-6">
+        <Sidebar user={currentUser} />
+        <main className="flex-1 min-w-0 overflow-y-auto scroll-smooth">
           <Suspense fallback={<PageFallback />}>
             <Outlet />
           </Suspense>

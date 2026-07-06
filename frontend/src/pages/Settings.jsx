@@ -48,7 +48,7 @@ export default function Settings() {
   return (
     <>
       <style>{scrollbarStyles}</style>
-      <div className="flex h-[calc(100vh-100px)] w-full gap-4 pb-4">
+      <div className="flex h-full w-full gap-4">
         
         {/* Left Sidebar */}
         <div className={`${isSettingsCollapsed ? 'w-[72px]' : 'w-[240px]'} shrink-0 h-full flex flex-col bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card overflow-hidden transition-[width] duration-[250ms] ease-in-out relative z-30`}>

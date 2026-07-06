@@ -98,7 +98,7 @@ class DatastoreController extends Controller
 
         return $request->validate([
             // Datastore name is unique; a discovered storage can back exactly ONE published datastore.
-            'datastore_name' => ['required', 'string', 'max:255', $this->uniqueNameCI('datastores', 'datastore_name', $datastore?->id)],
+            'datastore_name' => [$req, 'string', 'max:255', $this->uniqueNameCI('datastores', 'datastore_name', $datastore?->id)],
             'description' => ['nullable', 'string'],
             'provider_id' => [$req, 'integer', 'exists:providers,id'],
             'provider_datastore_id' => [$req, 'integer', 'exists:provider_datastores,id', Rule::unique('datastores', 'provider_datastore_id')->ignore($datastore?->id)],

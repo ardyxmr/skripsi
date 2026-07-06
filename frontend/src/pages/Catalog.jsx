@@ -17,6 +17,24 @@ const computeCounts = (invRaw, apprRaw) => {
   };
 };
 
+// Catalog card icon: show the uploaded OS logo, but fall back to a neutral icon when the image is
+// missing OR fails to load (a 404 must not leave a blank circle — the old onError hid the <img>).
+function CatalogIcon({ src }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <Server size={38} />;
+  return (
+    <img
+      src={src}
+      alt=""
+      decoding="async"
+      className="w-full h-full object-contain opacity-0 transition-opacity duration-200"
+      ref={(el) => { if (el && el.complete) el.style.opacity = '1'; }}
+      onLoad={(e) => { e.currentTarget.style.opacity = '1'; }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export default function Catalog() {
   const navigate = useNavigate();
   const { catalogs, loading } = useCatalogContext();
@@ -123,17 +141,7 @@ export default function Catalog() {
                 className="group bg-white dark:bg-card border border-gray-100 dark:border-theme rounded-card p-5 shadow-card text-center transition-[transform,box-shadow] duration-200 hover:shadow-xl hover:shadow-teal-500/10 hover:scale-[1.02] hover:border-teal-200 dark:hover:border-teal-700"
               >
                 <div className="w-20 h-20 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-inner bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 overflow-hidden transition-transform group-hover:scale-110">
-                  {cat.catalogImage
-                    ? <img
-                        src={cat.catalogImage}
-                        alt=""
-                        decoding="async"
-                        className="w-full h-full object-contain opacity-0 transition-opacity duration-200"
-                        ref={(el) => { if (el && el.complete) el.style.opacity = '1'; }}
-                        onLoad={(e) => { e.currentTarget.style.opacity = '1'; }}
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                      />
-                    : <Server size={38} />}
+                  <CatalogIcon src={cat.catalogImage} />
                 </div>
                 <div className="text-[15px] font-bold text-gray-800 dark:text-gray-100 mb-1.5">{cat.name}</div>
                 <div className="text-[12px] text-gray-500 dark:text-gray-400 mb-4 leading-relaxed h-[36px] overflow-hidden">

@@ -117,7 +117,7 @@ class EnvironmentController extends Controller
         $req = $creating ? 'required' : 'sometimes';
 
         $validated = $request->validate([
-            'environment_name' => ['required', 'string', 'max:255', $this->uniqueNameCI('environments', 'environment_name', $environment?->id)],
+            'environment_name' => [$req, 'string', 'max:255', $this->uniqueNameCI('environments', 'environment_name', $environment?->id)],
             'description' => ['nullable', 'string'],
             'expiry_type' => [$req, Rule::in(['days', 'hours', 'minutes', 'permanent', 'lifetime', 'custom'])],
             'expiry_value' => ['nullable', 'integer', 'min:1'],

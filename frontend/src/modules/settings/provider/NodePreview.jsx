@@ -92,6 +92,7 @@ export default function NodePreview() {
     e.stopPropagation();
     if (openDropdownId === id) { setOpenDropdownId(null); return; }
     const rect = e.currentTarget.getBoundingClientRect();
+    // Positioning + upward-flip is handled centrally in TableActionMenu now; this value is unused.
     setDropdownPos({ top: rect.bottom, right: window.innerWidth - rect.right });
     setOpenDropdownId(id);
   };

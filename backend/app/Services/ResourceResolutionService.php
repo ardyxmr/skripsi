@@ -32,6 +32,7 @@ class ResourceResolutionService
         // cores = fixed MAX topology (built once, never changes live); vcpus = how many are ONLINE
         // (the tier's cpu). A CPU resize moves vcpus within [1, cores] and hot-plugs with no reboot.
         $maxCores = max((int) config('provisioning.max_cpu_cores'), (int) $tier->cpu);
+        $catalog = $this->resolveCatalog($pr->catalog_id);
 
         return [
             'vm_name' => $vmName,
@@ -44,7 +45,11 @@ class ResourceResolutionService
             // connect KEY-based later (independent of the template's ssh_pwauth). Null → stub default "".
             'ssh_public_keys' => $this->ansiblePublicKey(),
             'target_node' => $this->resolvePublishedNode($pr->node_id),
-            'template' => $this->resolveCatalog($pr->catalog_id)['template'],
+            'template' => $catalog['template'],
+            // Mirror the template firmware into the clone. Only ovmf must be forced (UEFI/Windows);
+            // seabios is the stub default, so leave it null → the tfvars renderer omits the line and the
+            // Linux path is untouched. Without this a UEFI template clones to SeaBIOS → "no bootable device".
+            'bios' => ($catalog['bios'] ?? null) === 'ovmf' ? 'ovmf' : null,
             'network' => $this->resolveNetwork($pr->network_id),
             'storage' => $this->resolveDatastore($pr->datastore_id),
             'cores' => $maxCores,
@@ -71,6 +76,7 @@ class ResourceResolutionService
         return [
             'template' => $c->providerTemplate?->template_name,
             'node' => $c->providerNode?->node_name,
+            'bios' => $c->providerTemplate?->bios,
         ];
     }
 

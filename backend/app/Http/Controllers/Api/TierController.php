@@ -75,12 +75,16 @@ class TierController extends Controller
 
     private function validateData(Request $request, ?Tier $tier): array
     {
+        // On update (existing $tier) only validate fields that are actually sent, so a status-only
+        // change (Disable/Enable) doesn't fail on the untouched name/cpu/ram/disk.
+        $req = $tier === null ? 'required' : 'sometimes';
+
         return $request->validate([
-            'tier_name' => ['required', 'string', 'max:255', $this->uniqueNameCI('tiers', 'tier_name', $tier?->id)],
+            'tier_name' => [$req, 'string', 'max:255', $this->uniqueNameCI('tiers', 'tier_name', $tier?->id)],
             'description' => ['nullable', 'string'],
-            'cpu' => ['required', 'integer', 'min:1'],
-            'ram_mb' => ['required', 'integer', 'min:1'],
-            'disk_gb' => ['required', 'integer', 'min:1'],
+            'cpu' => [$req, 'integer', 'min:1'],
+            'ram_mb' => [$req, 'integer', 'min:1'],
+            'disk_gb' => [$req, 'integer', 'min:1'],
             'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
         ]);
     }

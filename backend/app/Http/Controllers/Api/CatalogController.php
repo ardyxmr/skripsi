@@ -248,7 +248,10 @@ class CatalogController extends Controller
 
     private function imageUrl(?string $path): ?string
     {
-        return $path ? asset('storage/'.$path) : null;
+        // Return a RELATIVE URL so the browser fetches it same-origin (through the Vite /storage proxy
+        // in dev, nginx in prod). asset() bakes in APP_URL (http://localhost:8000), which 404s from any
+        // non-localhost access (VM-IP / forwarded port) and leaves the catalog icon blank.
+        return $path ? '/storage/'.$path : null;
     }
 
     private function nodeForTemplate(?int $templateId): ?int
@@ -262,7 +265,7 @@ class CatalogController extends Controller
 
         return $request->validate([
             // Catalog name is unique; a discovered template can back exactly ONE catalog.
-            'catalog_name' => ['required', 'string', 'max:255', $this->uniqueNameCI('catalogs', 'catalog_name', $catalog?->id)],
+            'catalog_name' => [$req, 'string', 'max:255', $this->uniqueNameCI('catalogs', 'catalog_name', $catalog?->id)],
             'catalog_description' => ['nullable', 'string'],
             'provider_id' => [$req, 'integer', 'exists:providers,id'],
             'provider_template_id' => [$req, 'integer', 'exists:provider_templates,id', Rule::unique('catalogs', 'provider_template_id')->ignore($catalog?->id)],

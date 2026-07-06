@@ -94,7 +94,7 @@ class NetworkController extends Controller
 
         return $request->validate([
             // Network name is unique; a discovered bridge can back exactly ONE published network.
-            'network_name' => ['required', 'string', 'max:255', $this->uniqueNameCI('networks', 'network_name', $network?->id)],
+            'network_name' => [$req, 'string', 'max:255', $this->uniqueNameCI('networks', 'network_name', $network?->id)],
             'description' => ['nullable', 'string'],
             'provider_id' => [$req, 'integer', 'exists:providers,id'],
             'provider_network_id' => [$req, 'integer', 'exists:provider_networks,id', Rule::unique('networks', 'provider_network_id')->ignore($network?->id)],

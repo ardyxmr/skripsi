@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import {
   Search, RefreshCw, ChevronRight, ChevronDown, MoreVertical,
   X, Calendar, Server, Clock, AlertCircle, Shield, FileText, CheckCircle2,
@@ -277,6 +277,7 @@ export default function Inventory() {
   // Action Dropdown State
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
+  const menuRef = useRef(null); // the open action menu, measured to flip it upward near the viewport bottom
 
   const handleActionClick = (e, id) => {
     e.stopPropagation();
@@ -284,10 +285,24 @@ export default function Inventory() {
       setOpenDropdownId(null);
     } else {
       const rect = e.currentTarget.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom + 5, right: window.innerWidth - rect.right });
+      // Store the trigger anchors; the layout effect below flips the menu up if it would overflow.
+      setDropdownPos({ top: rect.bottom + 5, upAnchor: rect.top, right: window.innerWidth - rect.right });
       setOpenDropdownId(id);
     }
   };
+
+  // Flip the action menu upward when there isn't room below (last VM row near the taskbar). Measured
+  // after render (useLayoutEffect → before paint, so no flash) so it's exact for any menu length.
+  useLayoutEffect(() => {
+    if (!openDropdownId || !menuRef.current) return;
+    const h = menuRef.current.offsetHeight;
+    setDropdownPos((p) => {
+      const nextTop = (p.top + h > window.innerHeight - 8) && p.upAnchor != null
+        ? Math.max(8, p.upAnchor - h - 4)
+        : p.top;
+      return nextTop === p.top ? p : { ...p, top: nextTop };
+    });
+  }, [openDropdownId]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -1560,6 +1575,7 @@ export default function Inventory() {
         if (!activeVm) return null;
         return (
           <div 
+            ref={menuRef}
             style={{ top: dropdownPos.top, right: dropdownPos.right }}
             className="fixed w-48 bg-white dark:bg-card rounded-modal shadow-modal border border-gray-100 dark:border-theme py-1 z-[70] animate-in fade-in slide-in-from-top-2 duration-100 text-left overflow-hidden action-dropdown-menu"
           >

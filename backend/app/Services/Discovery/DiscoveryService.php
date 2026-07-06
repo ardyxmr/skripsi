@@ -73,6 +73,16 @@ class DiscoveryService
                 $vmid = (string) $vm['vmid'];
 
                 if ((int) ($vm['template'] ?? 0) === 1) {
+                    // Mirror the template firmware so provisioning can clone a UEFI/Windows template
+                    // with bios=ovmf. Proxmox omits the `bios` line when it is the seabios default, so a
+                    // missing key means seabios; a config-fetch failure just keeps the default.
+                    $bios = 'seabios';
+                    try {
+                        $bios = $driver->getVmConfig($node, $vmid)['bios'] ?? 'seabios';
+                    } catch (\Throwable) {
+                        // keep the seabios default on parse/HTTP error
+                    }
+
                     ProviderTemplate::updateOrCreate(
                         ['provider_id' => $provider->id, 'external_template_id' => $vmid],
                         [
@@ -80,6 +90,7 @@ class DiscoveryService
                             'template_name' => $vm['name'] ?? "vm-{$vmid}",
                             'node_name' => $node,
                             'template_type' => 'VM Template',
+                            'bios' => $bios,
                             'discovered_status' => 'Active',
                             'last_sync_at' => $runAt,
                         ],

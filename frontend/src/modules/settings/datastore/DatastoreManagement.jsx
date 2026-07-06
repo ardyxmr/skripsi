@@ -479,6 +479,11 @@ export default function DatastoreManagement() {
                     {datastoreActionModal.action === 'Enable' && 'This will make the datastore available for provisioning.'}
                     {datastoreActionModal.action === 'Disable' && 'This will prevent new provisioning requests from using this datastore.'}
                   </div>
+                  {datastoreActionModal.action === 'Disable' && datastoreActionModal.datastore?.activeVMs > 0 && (
+                    <div className="text-[12px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
+                      ⚠️ {datastoreActionModal.datastore.activeVMs} active VM(s) still use this datastore. Disabling only stops NEW provisioning — existing VMs keep running.
+                    </div>
+                  )}
                   <div className="bg-slate-50 dark:bg-surface p-3 rounded-card text-[12px] border border-gray-200 dark:border-theme">
                     <div className="font-semibold text-slate-700 dark:text-zinc-300 mb-1">Datastore:</div>
                     <div className="text-slate-500 dark:text-zinc-400 font-mono">{datastoreActionModal.datastore?.name}</div>

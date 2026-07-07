@@ -7,6 +7,7 @@ use App\Models\ApprovalRequest;
 use App\Models\Inventory;
 use App\Models\ProvisionRequest;
 use App\Services\ApprovalWorkflowService;
+use App\Services\AuditService;
 use App\Services\LifecycleService;
 use App\Services\NodeCapacityService;
 use App\Services\ProvisionRequestService;
@@ -23,6 +24,7 @@ class ApprovalController extends Controller
         private ProvisionRequestService $provisioning,
         private LifecycleService $lifecycle,
         private NodeCapacityService $capacity,
+        private AuditService $audit,
     ) {}
 
     // Role-scoped: Managers/Admins see all requests (to act on); a regular user sees only their own.
@@ -76,20 +78,27 @@ class ApprovalController extends Controller
     private function run(Request $request, ApprovalRequest $approval, string $action): JsonResponse
     {
         $reason = $request->validate(['action_reason' => ['required', 'string']])['action_reason'];
-        $this->workflow->act($approval, $request->user(), $action, $reason);
 
         $provision = $approval->request_type === 'PROVISION' ? ProvisionRequest::with(['environment', 'provider', 'catalog', 'tier', 'node.providerNode.datastores'])->find($approval->reference_id) : null;
         $inventory = in_array($approval->request_type, self::LIFECYCLE_TYPES, true) ? Inventory::with(['environment', 'provider', 'catalog', 'tier', 'node.providerNode.datastores'])->find($approval->reference_id) : null;
 
+        // Gate BEFORE recording the decision: re-check capacity (it may have crossed critical since
+        // submit) and refuse to approve a PROVISION onto a hard-blocked node — otherwise the request
+        // would be left Approved-but-undispatched. Only NEW provisioning is gated (a lifecycle change
+        // acts on a VM already on the node). The refused attempt is written to the audit trail.
+        if ($action === 'Approve' && $provision) {
+            $node = $provision->node;
+            if ($node?->providerNode && $this->capacity->snapshot($node->providerNode->loadMissing('datastores'))['provisioning_blocked']) {
+                $this->audit->log($request->user(), 'PROVISION_BLOCKED', "Approve refused for {$provision->vm_name}: node \"{$node->node_name}\" at critical capacity (hard-block enabled)", $request, ['vm_name' => $provision->vm_name, 'node' => $node->node_name]);
+                abort(422, "Node \"{$node->node_name}\" is at critical capacity and provisioning is blocked. Free up resources or disable the block on the node, then approve.");
+            }
+        }
+
+        $this->workflow->act($approval, $request->user(), $action, $reason);
+
         // Approving a request applies it: PROVISION → per-VM jobs (Stage 6); lifecycle → LifecycleService (Stage 7).
         if ($action === 'Approve') {
             if ($provision) {
-                // Re-check at approve time — capacity may have crossed critical since submit. Only
-                // NEW provisioning is gated (lifecycle acts on a VM already on the node).
-                $node = $provision->node;
-                if ($node?->providerNode && $this->capacity->snapshot($node->providerNode->loadMissing('datastores'))['provisioning_blocked']) {
-                    abort(422, "Node \"{$node->node_name}\" is at critical capacity and provisioning is blocked. Free up resources or disable the block on the node, then approve.");
-                }
                 $this->provisioning->dispatchProvisioning($provision);
             } elseif ($inventory) {
                 $this->lifecycle->applyApproved($approval->fresh());

@@ -49,11 +49,17 @@ class NodeController extends Controller
         $node->update($this->validateData($request, false, $node));
 
         // Admin capacity hard-block toggle lives on the PHYSICAL node (discovery-safe). Optional in the
-        // payload so a normal node edit that omits it leaves the flag untouched.
+        // payload so a normal node edit that omits it leaves the flag untouched. Audited explicitly so
+        // the trail shows WHO armed/disarmed a node's block — not just a generic "node updated".
         if ($request->has('block_on_critical') && $node->providerNode) {
-            $node->providerNode->update(['block_on_critical' => $request->boolean('block_on_critical')]);
+            $next = $request->boolean('block_on_critical');
+            if ((bool) $node->providerNode->block_on_critical !== $next) {
+                $node->providerNode->update(['block_on_critical' => $next]);
+                $this->audit->log($request->user(), $next ? 'NODE_HARDBLOCK_ENABLED' : 'NODE_HARDBLOCK_DISABLED', ($next ? 'Enabled' : 'Disabled')." capacity hard-block on node {$node->node_name}", $request, ['node' => $node->node_name]);
+            }
+        } else {
+            $this->audit->log($request->user(), 'UPDATE_NODE', "Updated node {$node->node_name}", $request);
         }
-        $this->audit->log($request->user(), 'UPDATE_NODE', "Updated node {$node->node_name}", $request);
 
         return response()->json($this->transform($node->fresh(['provider', 'providerNode.datastores'])));
     }

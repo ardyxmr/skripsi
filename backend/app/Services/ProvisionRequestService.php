@@ -45,7 +45,7 @@ class ProvisionRequestService
     {
         $env = Environment::with(['providers:id', 'nodes:id', 'tiers:id'])->findOrFail($data['environment_id']);
         $node = Node::with('providerNode.datastores')->findOrFail($data['node_id']);
-        $this->validatePolicy($env, $node, $data);
+        $this->validatePolicy($env, $node, $data, $requester);
 
         $data['requester_id'] = $requester->id;
         $pr = ProvisionRequest::create($data);
@@ -81,7 +81,7 @@ class ProvisionRequestService
 
         $env = Environment::with(['providers:id', 'nodes:id', 'tiers:id'])->findOrFail($data['environment_id']);
         $node = Node::with('providerNode.datastores')->findOrFail($data['node_id']);
-        $this->validatePolicy($env, $node, $data);
+        $this->validatePolicy($env, $node, $data, $actor);
 
         $approval = ApprovalRequest::where('request_type', 'PROVISION')->where('reference_id', $pr->id)->latest('id')->first();
         abort_if($approval && $approval->status !== 'Reverted', 422, 'Only reverted requests can be edited and resubmitted.');
@@ -132,7 +132,7 @@ class ProvisionRequestService
     }
 
     /** Node-centric policy check: provider/node/tier ∈ env; catalog/network/datastore Active & on the node. */
-    private function validatePolicy(Environment $env, Node $node, array $data): void
+    private function validatePolicy(Environment $env, Node $node, array $data, User $actor): void
     {
         $errors = [];
 
@@ -155,6 +155,7 @@ class ProvisionRequestService
             $errors['node_id'] = 'Node does not belong to the selected provider.';
         } elseif ($node->providerNode && $this->capacity->snapshot($node->providerNode)['provisioning_blocked']) {
             $errors['node_id'] = 'Node is at critical capacity and blocked for provisioning by an administrator.';
+            $this->audit->log($actor, 'PROVISION_BLOCKED', "Submit refused for {$data['vm_name']}: node \"{$node->node_name}\" at critical capacity (hard-block enabled)", null, ['vm_name' => $data['vm_name'] ?? null, 'node' => $node->node_name]);
         }
 
         $tier = Tier::find($data['tier_id']);

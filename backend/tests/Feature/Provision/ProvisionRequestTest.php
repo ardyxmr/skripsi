@@ -217,6 +217,8 @@ class ProvisionRequestTest extends TestCase
             ->assertStatus(422)
             ->assertJsonStructure(['error' => ['details' => ['node_id']]]);
         Bus::assertNotDispatched(ProvisionVmJob::class);
+        // The refused attempt is recorded in the audit trail.
+        $this->assertDatabaseHas('audit_logs', ['action_type' => 'PROVISION_BLOCKED']);
     }
 
     public function test_critical_node_without_the_block_toggle_still_provisions(): void

@@ -47,11 +47,11 @@ Windows needs a modern chipset and UEFI. Same live-resize topology as the Linux 
 built / 1 online vCPU / NUMA + hotplug) so the portal's Edit Resources works on clones.
 
 ```bash
-VMID=9004
+VMID=8000
 qm create $VMID --name winserver2022 \
   --machine q35 --bios ovmf \
   --efidisk0 vmdata:0,efitype=4m,pre-enrolled-keys=1 \
-  --memory 4096 --sockets 1 --cores 16 --vcpus 1 --cpu host --numa 1 \
+  --memory 4096 --sockets 1 --cores 8 --vcpus 1 --cpu host --numa 1 \
   --scsihw virtio-scsi-single --scsi0 vmdata:60 \
   --net0 virtio,bridge=vmbr0 \
   --ostype win11 --agent enabled=1 \
@@ -101,10 +101,13 @@ groups=Administrators
 inject_user_password=true
 first_logon_behaviour=no
 metadata_services=cloudbaseinit.metadata.services.configdrive.ConfigDriveService,cloudbaseinit.metadata.services.nocloudservice.NoCloudConfigDriveService
-plugins=cloudbaseinit.plugins.common.mtu.MTUPlugin,cloudbaseinit.plugins.common.sethostname.SetHostNamePlugin,cloudbaseinit.plugins.windows.createuser.CreateUserPlugin,cloudbaseinit.plugins.common.setuserpassword.SetUserPasswordPlugin,cloudbaseinit.plugins.common.networkconfig.NetworkConfigPlugin,cloudbaseinit.plugins.windows.extendvolumes.ExtendVolumesPlugin,cloudbaseinit.plugins.common.userdata.UserDataPlugin
-allow_reboot=false
+plugins=cloudbaseinit.plugins.common.mtu.MTUPlugin,cloudbaseinit.plugins.common.sethostname.SetHostNamePlugin,cloudbaseinit.plugins.windows.createuser.CreateUserPlugin,cloudbaseinit.plugins.common.setuserpassword.SetUserPasswordPlugin,cloudbaseinit.plugins.common.networkconfig.NetworkConfigPlugin,cloudbaseinit.plugins.windows.extendvolumes.ExtendVolumesPlugin,cloudbaseinit.plugins.common.localscripts.LocalScriptsPlugin,cloudbaseinit.plugins.common.userdata.UserDataPlugin
+local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
+verbose=true
 log-dir=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log\
 log-file=cloudbase-init.log
+allow_reboot=false
+stop_service_on_exit=false
 ```
 
 What matters:
@@ -188,9 +191,43 @@ The clean base was built by **strip-and-reseal**: take a working VM, delete expe
 markers, delete the test `sysuser`, then sysprep. Verify it is clean before sealing (no leftover tasks,
 `C:\CloudInit` only holds `pwpolicy.ps1`, `first_logon_behaviour=no`, Administrator password baked, NLA=1).
 
+**⚠️ Make C: the LAST partition first — or a bigger tier won't grow.** Windows only extends a partition into
+free space *immediately after it*. On a default install the **Recovery (WinRE) partition often lands AFTER
+C:**, so when a clone's disk is enlarged the extra space appears behind Recovery and ExtendVolumes CANNOT
+grow C: into it (you get an `Unallocated` tail + an under-sized C:). For a cloud template WinRE is unused
+(recovery = re-clone), so delete the trailing Recovery partition so C: ends the disk. Run once in the base
+image, before sysprep:
+```powershell
+# Check the layout — if a Recovery partition sits AFTER the C: partition, remove it:
+Get-Partition -DiskNumber 0
+# delete the trailing recovery partition (use its real number from the list above):
+Remove-Partition -DiskNumber 0 -PartitionNumber <recovery#> -Confirm:$false
+# (Disk Management GUI can't delete Recovery — this / diskpart `delete partition override` can.)
+```
+Leave the tail as free space — the per-clone `ExtendVolumes` grows C: to the tier size on first boot. Now seal:
+
 ```powershell
 & "C:\Windows\System32\Sysprep\sysprep.exe" /generalize /oobe /shutdown /unattend:"C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\Unattend.xml"
 ```
+
+**⚠️ Troubleshooting — "Sysprep was not able to validate your Windows installation."**
+The dialog is generic; the real reason is in `%WINDIR%\System32\Sysprep\Panther\setupact.log`. Always read it first:
+```powershell
+Select-String -Path C:\Windows\System32\Sysprep\Panther\setupact.log -Pattern 'SYSPRP','Error','0x' | Select-Object -Last 25
+```
+
+- **Pending Windows Update reboot** (the common one). Log shows `Sysprep_Clean_Validate_Opk: There are one or more Windows updates that require a reboot` (`hr = 0x8007139f`) + `WinMain: File operations pending`. The eval box pulled updates during the build (hit at **Lampung 2026-07-07**; the Jakarta build hadn't updated). Fix — **reboot, confirm nothing pending, then re-seal via the CLI command above:**
+  ```powershell
+  Restart-Computer -Force
+  # after reboot BOTH must be False — else reboot / finish Windows Update again:
+  Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+  Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
+  ```
+  Stuck flag after a clean reboot? `Stop-Service wuauserv -Force`, then delete the `RebootRequired` key + the `PendingFileRenameOperations` value, and retry.
+- **AppX mismatch** — log shows `Package … was installed for a user, but not provisioned` / `0x80073cf2` (also from Windows Update). Fix: `Get-AppxPackage -AllUsers | Remove-AppxPackage -AllUsers` then `Get-AppxProvisionedPackage -Online | Remove-AppxProvisionedPackage -Online`.
+- **Rearm limit** — log shows `maximum number of Sysprep executions has been exceeded`. You ran the **System Preparation Tool GUI** (skips `SkipRearm`). Always seal via the CLI `/unattend` command above (its `Unattend.xml` sets `SkipRearm=1`), never the GUI.
+
+**Prevention:** finish Windows Update (*"You're up to date"* + reboot) BEFORE sysprep, and always seal via the CLI `/unattend` command — not the GUI.
 
 When the VM shuts down, on the node add the cloud-init drive and convert to a template:
 ```bash
@@ -240,6 +277,8 @@ Clean up: `qm stop 990 ; qm destroy 990 --purge`.
 - **Activation**: evaluation editions (Server 180-day) — note as a thesis limitation.
 - **Live resize**: Windows hot-ADDs vCPU + balloons RAM, no hot-remove (reboot to shrink).
 - **Windows 11 extras**: TPM 2.0 + Secure Boot (§1); build as VMID 9005.
+- **Sysprep "could not validate"** → 90% a **pending Windows Update reboot** (`Sysprep_Clean_Validate_Opk`, `0x8007139f`); reboot + confirm nothing pending, seal via CLI not GUI (§6 troubleshooting).
+- **C: doesn't grow to the tier size** (`Unallocated` tail in Disk Management) → the **Recovery partition sits after C:** and blocks the extend. Delete the trailing Recovery partition in the base image so C: is last (§6); ExtendVolumes only fills contiguous free space.
 
 ## 10. Faster path (optional)
 

@@ -21,7 +21,7 @@ One pass bakes the agent, SSH password auth, the forced first-login reset, the `
 and resets the cloned-machine identity. No boot or login needed (cloud images are passwordless).
 
 ```bash
-VMID=9001
+VMID=8003
 IMG=/var/lib/vz/template/Ubuntu-server-26-lts.qcow2
 
 virt-customize -a "$IMG" \
@@ -53,7 +53,7 @@ No `--selinux-relabel` here: Ubuntu uses **AppArmor**, not SELinux, so the relab
 
 ```bash
 qm create $VMID --name ubuntu26-cloud --memory 2048 \
-  --sockets 1 --cores 16 --vcpus 1 --cpu host --numa 1 \
+  --sockets 1 --cores 8 --vcpus 1 --cpu host --numa 1 \
   --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-single \
   --ostype l26 --agent enabled=1 \
   --serial0 socket --vga serial0 \

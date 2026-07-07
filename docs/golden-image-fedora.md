@@ -23,7 +23,7 @@ the serial console, and resets the cloned-machine identity. `--selinux-relabel` 
 baked file gets the correct SELinux context on first boot.
 
 ```bash
-VMID=9002
+VMID=8001
 IMG=/var/lib/vz/template/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2
 
 virt-customize -a "$IMG" \
@@ -54,17 +54,19 @@ What each group does (same as Ubuntu, with the EL deltas marked):
 - **`--selinux-relabel`** *(EL delta)* — Fedora enforces SELinux, so the baked `authorized_keys` and `sudoers.d` files must be relabeled or key login is denied. **Required.** Keep it last.
 
 ## 2. Create the VM, import the disk, seal as a template
-
+STORAGE=vmdata-zfs0     # e.g. vmdata or local-lvm on Lampung
+BRIDGE=vmbr0         # e.g. vmbr0 once created
 ```bash
 qm create $VMID --name fedora44-cloud --memory 2048 \
-  --sockets 1 --cores 16 --vcpus 1 --cpu host --numa 1 \
-  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-single \
+  --sockets 1 --cores 8 --vcpus 1 --cpu host --numa 1 \
+  --net0 virtio,bridge=$BRIDGE --scsihw virtio-scsi-single \
   --ostype l26 --agent enabled=1 \
   --serial0 socket --vga serial0 \
   --hotplug disk,network,usb,cpu,memory
-qm importdisk $VMID "$IMG" vmdata
-qm set $VMID --scsi0 vmdata:vm-$VMID-disk-0
-qm set $VMID --ide2 vmdata:cloudinit --boot order=scsi0
+
+qm importdisk $VMID "$IMG" $STORAGE
+qm set $VMID --scsi0 $STORAGE:vm-$VMID-disk-0
+qm set $VMID --ide2 $STORAGE:cloudinit --boot order=scsi0
 qm template $VMID
 ```
 

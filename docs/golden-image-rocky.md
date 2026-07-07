@@ -73,11 +73,11 @@ Notes (same as Fedora):
 Set the Lampung storage and bridge names first (they may differ from Jakarta):
 
 ```bash
-STORAGE=<lampung-datastore>     # e.g. vmdata or local-lvm on Lampung
-BRIDGE=<lampung-bridge>         # e.g. vmbr0 once created
+STORAGE=vmdata-zfs0     # e.g. vmdata or local-lvm on Lampung
+BRIDGE=vmbr0         # e.g. vmbr0 once created
 
 qm create $VMID --name rocky10-cloud --memory 2048 \
-  --sockets 1 --cores 16 --vcpus 1 --cpu host --numa 1 \
+  --sockets 1 --cores 8 --vcpus 1 --cpu host --numa 1 \
   --net0 virtio,bridge=$BRIDGE --scsihw virtio-scsi-single \
   --ostype l26 --agent enabled=1 \
   --serial0 socket --vga serial0 \

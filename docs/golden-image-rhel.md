@@ -34,7 +34,7 @@ only enables the agent that the image already ships. Everything else (password a
 
 ```bash
 VMID=9003
-IMG=/var/lib/vz/template/rhel-10-x86_64-20260626.qcow2
+IMG=/var/lib/vz/template/rhel-10-x86_64.qcow2
 
 virt-customize -a "$IMG" \
   --run-command 'systemctl enable qemu-guest-agent 2>/dev/null || true' \
@@ -72,15 +72,15 @@ The `ssh_pwauth`, forced-reset, `sysadmin`, and identity-reset lines are identic
 
 ```bash
 qm create $VMID --name rhel10-cloud --memory 2048 \
-  --sockets 1 --cores 16 --vcpus 1 --cpu host --numa 1 \
+  --sockets 1 --cores 8 --vcpus 1 --cpu host --numa 1 \
   --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-single \
   --ostype l26 --agent enabled=1 \
   --serial0 socket --vga serial0 \
   --hotplug disk,network,usb,cpu,memory
-qm importdisk $VMID "$IMG" vmdata
-qm set $VMID --scsi0 vmdata:vm-$VMID-disk-0
-qm set $VMID --ide2 vmdata:cloudinit --boot order=scsi0
-qm template $VMID
+qm importdisk $VMID "$IMG" vmdata-zfs0
+qm set $VMID --scsi0 vmdata-zfs0:vm-$VMID-disk-0
+qm set $VMID --ide2 vmdata-zfs0:cloudinit --boot order=scsi0
+qm template $VMID`
 ```
 
 Same hardware contract as the other templates (16-core topology, 1 online vCPU, NUMA + CPU/Memory

@@ -50,15 +50,15 @@ built / 1 online vCPU / NUMA + hotplug) so the portal's Edit Resources works on 
 VMID=8000
 qm create $VMID --name winserver2022 \
   --machine q35 --bios ovmf \
-  --efidisk0 vmdata:0,efitype=4m,pre-enrolled-keys=1 \
+  --efidisk0 vmdata-zfs0:0,efitype=4m,pre-enrolled-keys=1 \
   --memory 4096 --sockets 1 --cores 8 --vcpus 1 --cpu host --numa 1 \
-  --scsihw virtio-scsi-single --scsi0 vmdata:60 \
+  --scsihw virtio-scsi-single --scsi0 vmdata-zfs0:40 \
   --net0 virtio,bridge=vmbr0 \
   --ostype win11 --agent enabled=1 \
   --vga std \
   --hotplug disk,network,usb,cpu,memory \
-  --ide0 local:iso/Windows_server_2022_EVAL_x64FRE_en-us.iso,media=cdrom \
-  --ide1 local:iso/virtio-win.iso,media=cdrom \
+  --ide0 local:iso/SERVER2022_EVAL_x64FRE_en-us.iso,media=cdrom \
+  --ide1 local:iso/virtio-win-0.1.285.iso,media=cdrom \
   --boot order='ide0;scsi0'
 qm start $VMID          # open the noVNC Console and run the installer
 ```
@@ -201,7 +201,7 @@ image, before sysprep:
 # Check the layout — if a Recovery partition sits AFTER the C: partition, remove it:
 Get-Partition -DiskNumber 0
 # delete the trailing recovery partition (use its real number from the list above):
-Remove-Partition -DiskNumber 0 -PartitionNumber <recovery#> -Confirm:$false
+Remove-Partition -DiskNumber 0 -PartitionNumber <recovery#> -Confirm:$false  (Remove-Partition -DiskNumber 0 -PartitionNumber 4 -Confirm:$false)
 # (Disk Management GUI can't delete Recovery — this / diskpart `delete partition override` can.)
 ```
 Leave the tail as free space — the per-clone `ExtendVolumes` grows C: to the tier size on first boot. Now seal:
@@ -231,15 +231,15 @@ Select-String -Path C:\Windows\System32\Sysprep\Panther\setupact.log -Pattern 'S
 
 When the VM shuts down, on the node add the cloud-init drive and convert to a template:
 ```bash
-qm set 9004 --ide0 none --ide1 none          # remove install media (if still attached)
-qm set 9004 --ide2 vmdata:cloudinit --boot order=scsi0
-qm template 9004
+qm set 8000 --ide0 none --ide1 none          # remove install media (if still attached)
+qm set 8000 --ide2 vmdata-zfs0:cloudinit --boot order=scsi0
+qm template 8000
 ```
 
 ## 7. Verify BEFORE publishing
 
 ```bash
-qm clone 9004 990 --name win-verify --full
+qm clone 8000 990 --name win-verify --full
 qm set 990 --ciuser sysuser --cipassword 'Str0ng#Pass1!' --ipconfig0 ip=dhcp --agent enabled=1
 qm resize 990 scsi0 64G
 qm start 990 ; sleep 180        # Windows boots slower + runs a specialize pass
@@ -250,6 +250,11 @@ RDP to that IP:
 - **`sysuser`** / `Str0ng#Pass1!` logs in (no forced reset). `C:` grew to 64 GB (ExtendVolumes).
 - **`Administrator`** / `P@ssw0rd` logs in, no OOBE prompt.
 - If the 90-day policy is baked, wait ~3 min (the task fires every 2 min) then `net user sysuser` shows expiry ~90 days out and `net user Administrator` shows **Never**.
+
+
+Get-LocalUser sysuser,Administrator | Format-Table Name, PasswordExpires, PasswordLastSet
+
+Get-ScheduledTask PortalPwPolicy | Get-ScheduledTaskInfo   # LastRunTime + LastTaskResult (0 = sukses)
 
 Clean up: `qm stop 990 ; qm destroy 990 --purge`.
 

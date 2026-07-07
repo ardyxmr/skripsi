@@ -7,12 +7,14 @@ use App\Models\ApprovalRequest;
 use App\Models\Catalog;
 use App\Models\Datastore;
 use App\Models\Environment;
+use App\Models\Inventory;
 use App\Models\Network;
 use App\Models\Node;
 use App\Models\Provider;
 use App\Models\ProvisionRequest;
 use App\Models\Tier;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -46,6 +48,7 @@ class ProvisionRequestService
         $env = Environment::with(['providers:id', 'nodes:id', 'tiers:id'])->findOrFail($data['environment_id']);
         $node = Node::with('providerNode.datastores')->findOrFail($data['node_id']);
         $this->validatePolicy($env, $node, $data, $requester);
+        $this->assertNamesAvailable($data, $requester);
 
         $data['requester_id'] = $requester->id;
         $pr = ProvisionRequest::create($data);
@@ -82,6 +85,7 @@ class ProvisionRequestService
         $env = Environment::with(['providers:id', 'nodes:id', 'tiers:id'])->findOrFail($data['environment_id']);
         $node = Node::with('providerNode.datastores')->findOrFail($data['node_id']);
         $this->validatePolicy($env, $node, $data, $actor);
+        $this->assertNamesAvailable($data, $actor, $pr->id);
 
         $approval = ApprovalRequest::where('request_type', 'PROVISION')->where('reference_id', $pr->id)->latest('id')->first();
         abort_if($approval && $approval->status !== 'Reverted', 422, 'Only reverted requests can be edited and resubmitted.');
@@ -118,16 +122,44 @@ class ProvisionRequestService
      */
     public function dispatchProvisioning(ProvisionRequest $pr): void
     {
-        $n = max(1, (int) $pr->instance_count);
+        foreach ($this->targetNames($pr->vm_name, (int) $pr->instance_count) as $name) {
+            ProvisionVmJob::dispatch($pr->id, $name);
+        }
+    }
 
+    /** The exact VM names a request will create — single keeps the name, a batch gets -01..-0N.
+     *  Single source of truth for both dispatch and the pre-flight uniqueness check. */
+    private function targetNames(string $vmName, int $count): array
+    {
+        $n = max(1, $count);
         if ($n === 1) {
-            ProvisionVmJob::dispatch($pr->id, $pr->vm_name);
-
-            return;
+            return [$vmName];
         }
 
-        for ($i = 1; $i <= $n; $i++) {
-            ProvisionVmJob::dispatch($pr->id, sprintf('%s-%02d', $pr->vm_name, $i));
+        return array_map(fn ($i) => sprintf('%s-%02d', $vmName, $i), range(1, $n));
+    }
+
+    /**
+     * Reject a request whose target name(s) collide with an existing, non-deleted VM. Duplicate
+     * names would create two Proxmox VMs sharing a hostname (and two inventory rows) — confusing and
+     * a real footgun — so they're blocked at submit. Case-insensitive (hostnames aren't case-unique).
+     */
+    private function assertNamesAvailable(array $data, User $actor, ?int $ignoreRequestId = null): void
+    {
+        $names = $this->targetNames($data['vm_name'], (int) ($data['instance_count'] ?? 1));
+        $lower = array_map('strtolower', $names);
+
+        $taken = Inventory::query()
+            ->whereNotIn('status', ['Deleted'])
+            ->when($ignoreRequestId, fn ($q) => $q->where('provision_request_id', '!=', $ignoreRequestId))
+            ->whereIn(DB::raw('LOWER(vm_name)'), $lower)
+            ->orderBy('vm_name')->pluck('vm_name')->unique()->values();
+
+        if ($taken->isNotEmpty()) {
+            $this->audit->log($actor, 'PROVISION_BLOCKED', "Submit refused: VM name(s) {$taken->implode(', ')} already in use", null, ['vm_name' => $data['vm_name'] ?? null, 'conflicts' => $taken->all()]);
+            throw ValidationException::withMessages([
+                'vm_name' => 'A VM named '.$taken->implode(', ').' already exists. Pick a different name.',
+            ]);
         }
     }
 

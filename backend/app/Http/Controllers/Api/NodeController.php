@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Concerns\EnforcesUniqueness;
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Node;
 use App\Models\ProviderDatastore;
 use App\Models\ProviderNetwork;
@@ -33,12 +34,36 @@ class NodeController extends Controller
         return response()->json($rows->map(fn (Node $n) => $this->transform($n)));
     }
 
+    // Recent node capacity threshold crossings + recoveries (last 24h) — the notification bell's source
+    // for edge-triggered "reached threshold" / "back to normal" alerts. Recorded by NodeCapacityMonitor
+    // as audit events, so each is a distinct row (crossing the line again fires a fresh one).
+    public function capacityEvents(): JsonResponse
+    {
+        $rows = AuditLog::whereIn('action_type', ['NODE_CAPACITY_BREACH', 'NODE_CAPACITY_RECOVERED'])
+            ->where('created_at', '>=', now()->subDay())
+            ->orderByDesc('id')->limit(40)->get();
+
+        return response()->json($rows->map(fn (AuditLog $r) => [
+            'id' => $r->id,
+            'type' => $r->action_type,                 // NODE_CAPACITY_BREACH | NODE_CAPACITY_RECOVERED
+            'node' => $r->metadata['node'] ?? null,
+            'band' => $r->metadata['band'] ?? null,    // ok | warning | critical
+            'message' => $r->description,
+            'created_at' => $r->created_at,
+        ]));
+    }
+
     public function store(Request $request): JsonResponse
     {
         $data = $this->validateData($request, true, null);
         $data['created_by'] = $request->user()->id;
 
         $node = Node::create($data);
+        // Capacity hard-block toggle lives on the physical node — arm it now if the form asked.
+        if ($request->boolean('block_on_critical') && $node->providerNode) {
+            $node->providerNode->update(['block_on_critical' => true]);
+            $this->audit->log($request->user(), 'NODE_HARDBLOCK_ENABLED', "Enabled capacity hard-block on node {$node->node_name}", $request, ['node' => $node->node_name]);
+        }
         $this->audit->log($request->user(), 'CREATE_NODE', "Published node {$node->node_name}", $request);
 
         return response()->json($this->transform($node->fresh(['provider', 'providerNode.datastores'])), 201);
@@ -49,17 +74,16 @@ class NodeController extends Controller
         $node->update($this->validateData($request, false, $node));
 
         // Admin capacity hard-block toggle lives on the PHYSICAL node (discovery-safe). Optional in the
-        // payload so a normal node edit that omits it leaves the flag untouched. Audited explicitly so
-        // the trail shows WHO armed/disarmed a node's block — not just a generic "node updated".
+        // payload so a node edit that omits it leaves the flag untouched. Log a dedicated audit entry
+        // only when the value actually FLIPS, so the trail shows WHO armed/disarmed a node's block.
         if ($request->has('block_on_critical') && $node->providerNode) {
             $next = $request->boolean('block_on_critical');
             if ((bool) $node->providerNode->block_on_critical !== $next) {
                 $node->providerNode->update(['block_on_critical' => $next]);
                 $this->audit->log($request->user(), $next ? 'NODE_HARDBLOCK_ENABLED' : 'NODE_HARDBLOCK_DISABLED', ($next ? 'Enabled' : 'Disabled')." capacity hard-block on node {$node->node_name}", $request, ['node' => $node->node_name]);
             }
-        } else {
-            $this->audit->log($request->user(), 'UPDATE_NODE', "Updated node {$node->node_name}", $request);
         }
+        $this->audit->log($request->user(), 'UPDATE_NODE', "Updated node {$node->node_name}", $request);
 
         return response()->json($this->transform($node->fresh(['provider', 'providerNode.datastores'])));
     }
@@ -145,8 +169,9 @@ class NodeController extends Controller
 
         return $request->validate([
             // Friendly name is unique across published nodes; the discovered provider_node can
-            // back exactly ONE published node (1 node → 1 published node).
-            'node_name' => ['required', 'string', 'max:255', $this->uniqueNameCI('nodes', 'node_name', $node?->id)],
+            // back exactly ONE published node (1 node → 1 published node). Uses $req so a PARTIAL
+            // update (e.g. unpublish {status} or a bare capacity-toggle) isn't 422'd for a missing name.
+            'node_name' => [$req, 'string', 'max:255', $this->uniqueNameCI('nodes', 'node_name', $node?->id)],
             'description' => ['nullable', 'string'],
             'provider_id' => [$req, 'integer', 'exists:providers,id'],
             'provider_node_id' => [$req, 'integer', 'exists:provider_nodes,id', Rule::unique('nodes', 'provider_node_id')->ignore($node?->id)],

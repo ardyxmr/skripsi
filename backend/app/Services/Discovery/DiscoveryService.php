@@ -9,6 +9,7 @@ use App\Models\ProviderNode;
 use App\Models\ProviderTemplate;
 use App\Models\ProviderVm;
 use App\Services\AuditService;
+use App\Services\NodeCapacityMonitor;
 
 /**
  * Orchestrates a full discovery sync for a provider via the driver, upserts the
@@ -20,6 +21,7 @@ class DiscoveryService
     public function __construct(
         private AuditService $audit,
         private ProviderSyncGuard $guard,
+        private NodeCapacityMonitor $capacityMonitor,
     ) {}
 
     public function discover(Provider $provider): array
@@ -163,6 +165,13 @@ class DiscoveryService
                     ->where('last_sync_at', '<', $runAt)
                     ->update(['discovered_status' => 'Missing']);
             }
+
+            // 6. Edge-triggered node-capacity alerts: nodes + datastores are fresh now, so compare each
+            // online node's band to its last and audit any threshold crossing / recovery (the bell reads
+            // these events). Rescued so a capacity hiccup never fails the whole discovery run.
+            ProviderNode::with('datastores')->where('provider_id', $provider->id)
+                ->where('discovered_status', 'Active')->where('status', 'online')->get()
+                ->each(fn (ProviderNode $pn) => rescue(fn () => $this->capacityMonitor->check($pn)));
 
             $provider->discovery_status = 'success';
             $provider->status = 'Connected';

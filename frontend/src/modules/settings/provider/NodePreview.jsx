@@ -56,17 +56,6 @@ export default function NodePreview() {
   // Success notifications go through the global top-center toast (same as the error toasts).
   const flash = (m) => pushToast({ kind: 'success', message: m });
 
-  // Admin capacity hard-block toggle. When ON, provisioning onto this node is refused while it is
-  // Critical (wizard grays it out, approve is rejected server-side). Errors surface via the api toast.
-  const toggleBlock = async (n) => {
-    setOpenDropdownId(null);
-    const next = !n.blockOnCritical;
-    try {
-      await update(n.id, { blockOnCritical: next });
-      flash(`Hard-block ${next ? 'enabled' : 'disabled'} for ${n.name}.`);
-    } catch { /* api.js surfaces the error toast */ }
-  };
-
   // Close the form, but confirm first if it has unsaved edits (otherwise close directly).
   const closeForm = (force = false) => {
     if (hasUnsavedChanges && !force) {
@@ -118,6 +107,7 @@ export default function NodePreview() {
       providerId: Number(fd.get('providerId')) || null,
       providerNodeId: Number(fd.get('providerNodeId')) || null,
       status: fd.get('status'),
+      blockOnCritical: fd.get('block_on_critical') === 'on',   // capacity hard-block toggle (admin)
     };
     // Defense-in-depth: never POST an incomplete node (no provider/node) — the form already
     // gates Save, but this guarantees a stray submit can't fire a doomed request.
@@ -292,9 +282,6 @@ export default function NodePreview() {
                         </button>
                         <button type="button" onClick={() => handleSync(n)} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-emerald-600 dark:text-emerald-400">
                           <RefreshCw size={14} /> Sync now
-                        </button>
-                        <button type="button" onClick={() => toggleBlock(n)} className={`w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 ${n.blockOnCritical ? 'text-slate-700 dark:text-zinc-200' : 'text-amber-600 dark:text-amber-400'}`}>
-                          <Ban size={14} /> {n.blockOnCritical ? 'Disable hard-block' : 'Enable hard-block'}
                         </button>
                         <button type="button" onClick={() => { setOpenDropdownId(null); setDrawer({ isOpen: true, node: n }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
                           <Layers size={14} /> Node Explorer

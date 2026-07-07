@@ -91,6 +91,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Published node publishing (write) + scoped sync/explorer. Specific routes
         // before the apiResource so /sync and /explorer aren't captured as {node}.
+        Route::get('nodes/capacity-events', [NodeController::class, 'capacityEvents']); // bell: threshold crossings/recoveries
         Route::post('nodes/{node}/sync', [NodeController::class, 'sync']);
         Route::get('nodes/{node}/explorer', [NodeController::class, 'explorer']);
         Route::post('nodes', [NodeController::class, 'store']);

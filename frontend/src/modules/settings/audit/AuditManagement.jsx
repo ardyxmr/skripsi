@@ -178,7 +178,7 @@ export default function AuditManagement() {
 
   const getActionColor = (action) => {
     if (action.includes('APPROVE') || action.includes('CREATE')) return 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20';
-    if (action.includes('REJECT') || action.includes('DELETE')) return 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20';
+    if (action.includes('REJECT') || action.includes('DELETE') || action.includes('BREACH')) return 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20';
     if (action.includes('REQUEST') || action.includes('RETRY')) return 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20';
     return 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20';
   };

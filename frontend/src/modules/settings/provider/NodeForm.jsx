@@ -9,6 +9,7 @@ export default function NodeForm({ isOpen, mode, data, providers, publishedNodeI
   const [nodeName, setNodeName] = useState('');
   const [discoveredNodes, setDiscoveredNodes] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [blockOnCritical, setBlockOnCritical] = useState(false);   // admin capacity hard-block toggle
 
   // Seed fields when the modal opens (edit prefills; add starts empty).
   useEffect(() => {
@@ -16,6 +17,7 @@ export default function NodeForm({ isOpen, mode, data, providers, publishedNodeI
       setProviderId(data?.providerId ?? '');
       setNodeId(data?.providerNodeId ?? '');
       setNodeName(data?.nodeName ?? data?.name ?? '');
+      setBlockOnCritical(!!data?.blockOnCritical);
     }
   }, [isOpen, data]);
 
@@ -103,6 +105,25 @@ export default function NodeForm({ isOpen, mode, data, providers, publishedNodeI
                   <p className="text-[11px] text-slate-400 mt-1">Publishing makes the node Active; Inactive unpublishes it from the wizard.</p>
                 </div>
               </div>
+            </div>
+
+            {/* Capacity guard — admin hard-block toggle. A warning always shows near capacity; this
+                only controls whether provisioning is REFUSED once the node hits critical. */}
+            <div className="bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+              <label className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-3 block">Capacity Guard</label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="block_on_critical"
+                  checked={blockOnCritical}
+                  onChange={(e) => setBlockOnCritical(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-theme text-rose-600 focus:ring-rose-500 cursor-pointer"
+                />
+                <span>
+                  <span className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300">Hard-block provisioning at critical capacity</span>
+                  <span className="block text-[11px] text-slate-400 mt-0.5">When enabled, this node is grayed out in the wizard and new-VM approvals are refused while its CPU / RAM / disk is at critical capacity. A warning badge still shows regardless of this setting.</span>
+                </span>
+              </label>
             </div>
           </div>
 

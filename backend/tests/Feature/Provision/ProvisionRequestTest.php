@@ -233,4 +233,47 @@ class ProvisionRequestTest extends TestCase
             ->assertJson(['status' => 'dispatched']);
         Bus::assertDispatched(ProvisionVmJob::class, 1);
     }
+
+    // ---- Duplicate VM name guard ----------------------------------------
+
+    public function test_duplicate_vm_name_is_rejected(): void
+    {
+        $s = $this->seedScenario();
+        $user = $this->regularUser();
+        $this->inventoryVm($user, $s, ['vm_name' => 'STRESS']);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'STRESS', 'instance_count' => 1]))
+            ->assertStatus(422)
+            ->assertJsonStructure(['error' => ['details' => ['vm_name']]]);
+        Bus::assertNotDispatched(ProvisionVmJob::class);
+        // The refused attempt is recorded in the audit trail.
+        $this->assertDatabaseHas('audit_logs', ['action_type' => 'PROVISION_BLOCKED']);
+    }
+
+    public function test_batch_name_collision_with_an_existing_vm_is_rejected(): void
+    {
+        $s = $this->seedScenario();
+        $user = $this->regularUser();
+        // A batch "STRESS" ×3 expands to STRESS-01/02/03; STRESS-02 already exists → the whole request is refused.
+        $this->inventoryVm($user, $s, ['vm_name' => 'STRESS-02']);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'STRESS', 'instance_count' => 3]))
+            ->assertStatus(422)
+            ->assertJsonStructure(['error' => ['details' => ['vm_name']]]);
+        Bus::assertNotDispatched(ProvisionVmJob::class);
+    }
+
+    public function test_a_deleted_vms_name_can_be_reused(): void
+    {
+        $s = $this->seedScenario(['approval_required' => false]);
+        $user = $this->regularUser();
+        $this->inventoryVm($user, $s, ['vm_name' => 'STRESS', 'status' => 'Deleted']);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'STRESS', 'instance_count' => 1]))
+            ->assertCreated();
+        Bus::assertDispatched(ProvisionVmJob::class, 1);
+    }
 }

@@ -136,7 +136,7 @@ export default function Catalog() {
             {usable.map((cat) => (
               <div
                 key={cat.id}
-                className="group bg-white dark:bg-card border border-gray-100 dark:border-theme rounded-card p-5 shadow-card text-center transition-[transform,box-shadow] duration-200 hover:shadow-xl hover:shadow-teal-500/10 hover:scale-[1.02] hover:border-teal-200 dark:hover:border-teal-700"
+                className="group bg-white dark:bg-card border border-gray-100 dark:border-theme rounded-card p-5 shadow-card text-center transition-[transform,box-shadow] duration-200 ease-out hover:shadow-xl hover:shadow-teal-500/10 hover:-translate-y-1 hover:scale-[1.02] hover:border-teal-200 dark:hover:border-teal-700"
               >
                 <div className="w-20 h-20 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-inner bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 overflow-hidden transition-transform group-hover:scale-110">
                   <CatalogIcon src={cat.catalogImage} />

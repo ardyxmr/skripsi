@@ -254,7 +254,9 @@ function ProtectedLayout() {
           lines up with the Settings sub-navigation. */}
       <div className="flex-1 min-h-0 flex gap-6 px-6 pb-6">
         <Sidebar user={currentUser} />
-        <main className="flex-1 min-w-0 overflow-y-auto scroll-smooth">
+        {/* p-2 gives hover-float/scale cards a breathing zone so their lifted top + side edges aren't
+            clipped by this scroll container's overflow boundary (Catalog / Inventory / Approvals). */}
+        <main className="flex-1 min-w-0 overflow-y-auto scroll-smooth p-2">
           <Suspense fallback={<PageFallback />}>
             <Outlet />
           </Suspense>

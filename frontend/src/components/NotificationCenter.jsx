@@ -1,12 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Bell, CheckCircle, Clock, AlertTriangle, Shield, PlusCircle, Check, XCircle, Server } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import api from '../lib/api';
 import { getCached, LIVE_CACHE_EVENT } from '../lib/liveCache';
 import { useUserContext } from '../contexts/UserContext';
 import { useProviderContext } from '../contexts/ProviderContext';
-import { useNodeContext } from '../contexts/NodeContext';
 import { canApprove, isAdmin } from '../lib/rbac';
-import { capacityBadge } from '../lib/nodeCapacity';
 
 // Friendly request-type labels for notification copy.
 const REQ_LABEL = {
@@ -22,6 +21,7 @@ const daysUntil = (iso) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86
 // time-sorted activity feed never buries a standing alert, and a wall of expiry warnings never buries
 // a fresh approval.
 const ATTENTION_TYPES = new Set(['PROVIDER_OFFLINE', 'NODE_CAPACITY', 'PROVISION_FAILED', 'EXPIRY_WARNING']);
+// NODE_CAPACITY_OK (a node recovering to green) is good news → lives in Recent Activity, not Attention.
 
 function timeAgo(ms) {
   if (!ms) return '';
@@ -44,7 +44,7 @@ const decisionType = (s) => (s === 'Rejected' ? 'APPROVAL_REJECTED' : s === 'Rev
 //  • Requesters → decisions (Approved/Rejected/Reverted) on their own requests.
 //  • Everyone   → their VMs that are expiring soon or failed to provision.
 // Each item carries a STABLE id so the read-state survives polls/reloads.
-function deriveNotifications(approvals, inventory, providers, nodes, user) {
+function deriveNotifications(approvals, inventory, providers, capEvents, user) {
   const approver = canApprove(user);
   const items = [];
 
@@ -59,29 +59,36 @@ function deriveNotifications(approvals, inventory, providers, nodes, user) {
           type: 'PROVIDER_OFFLINE',
           priority: 0,
           message: `Provider "${p.providerName ?? p.name ?? 'unknown'}" is disconnected — its nodes, catalogs, networks and datastores are offline`,
-          link: '/settings',
+          link: '/settings?tab=Provider%20Management',
           when: tsMs(p.lastDiscoveryAt) || Date.now(),
         });
       }
     }
 
-    // Admin-only: a published node that has crossed the capacity warn/critical line. Standing
-    // condition (like expiry) → when=now + priority so critical floats above a warning. The id
-    // embeds the level so a warning→critical escalation re-notifies (new id → unread again).
-    for (const n of nodes || []) {
-      const cap = n.capacity;
-      if (!cap || cap.level === 'ok' || n.operational !== 'Online') continue;
-      const critical = cap.level === 'critical';
-      const cb = capacityBadge(cap);
-      items.push({
-        id: `node-capacity-${n.id}-${cap.level}`,
-        type: 'NODE_CAPACITY',
-        priority: critical ? 0.5 : 3.6,
-        message: `Node "${n.name}" is at ${critical ? 'critical capacity' : 'high load'} (${cb?.detail || cb?.label})${cap.provisioningBlocked ? ' — provisioning blocked' : ''}`,
-        link: '/settings',
-        when: Date.now(),
-        timeLabel: critical ? 'critical' : 'high load',
-      });
+    // Admin-only: edge-triggered node-capacity transitions recorded by the backend (NodeCapacityMonitor,
+    // last 24h). Each crossing/recovery is a DISTINCT event → its own notification, so crossing the line
+    // again fires a fresh unread one, and a recovery shows exactly once. Breach → Needs Attention;
+    // recovery ("back to normal") → Recent Activity (good news).
+    for (const ev of capEvents || []) {
+      if (ev.type === 'NODE_CAPACITY_BREACH') {
+        const critical = ev.band === 'critical';
+        items.push({
+          id: `capev-${ev.id}`,
+          type: 'NODE_CAPACITY',
+          priority: critical ? 0.5 : 3.6,
+          message: ev.message,
+          link: '/settings?tab=Provider%20Management',
+          when: tsMs(ev.createdAt),
+        });
+      } else if (ev.type === 'NODE_CAPACITY_RECOVERED') {
+        items.push({
+          id: `capev-${ev.id}`,
+          type: 'NODE_CAPACITY_OK',
+          message: ev.message,
+          link: '/settings?tab=Provider%20Management',
+          when: tsMs(ev.createdAt),
+        });
+      }
     }
   }
 
@@ -124,12 +131,24 @@ export default function NotificationCenter() {
   // in sync with whatever Inventory/Approvals last fetched.
   const [approvals, setApprovals] = useState(() => getCached('/approvals') || []);
   const [inventory, setInventory] = useState(() => getCached('/inventory') || []);
+  const [capEvents, setCapEvents] = useState([]);   // recent node-capacity transitions (admin only)
   const [readIds, setReadIds] = useState(() => new Set());
   const popoverRef = useRef(null);
   const navigate = useNavigate();
   const { currentUser } = useUserContext();
   const { providers } = useProviderContext();   // admin-only data (empty for other roles); drives the provider-offline alert
-  const { nodes } = useNodeContext();           // drives the admin node-capacity alerts (warn/critical)
+
+  // Admin-only: pull recent node-capacity threshold crossings/recoveries, refreshed on the same ~10s
+  // heartbeat the poller fires (LIVE_CACHE_EVENT '/inventory') so a new crossing surfaces promptly.
+  useEffect(() => {
+    if (!isAdmin(currentUser)) { setCapEvents([]); return undefined; }
+    let active = true;
+    const load = () => api.get('/nodes/capacity-events').then((r) => { if (active) setCapEvents(r || []); }).catch(() => {});
+    load();
+    const onLive = (e) => { if (e?.detail?.path === '/inventory') load(); };
+    window.addEventListener(LIVE_CACHE_EVENT, onLive);
+    return () => { active = false; window.removeEventListener(LIVE_CACHE_EVENT, onLive); };
+  }, [currentUser]);
 
   const readKey = currentUser ? `notif_read_${currentUser.id}` : 'notif_read_anon';
 
@@ -167,8 +186,8 @@ export default function NotificationCenter() {
   }, [applyFromCache]);
 
   const notifications = useMemo(
-    () => deriveNotifications(approvals, inventory, providers, nodes, currentUser),
-    [approvals, inventory, providers, nodes, currentUser],
+    () => deriveNotifications(approvals, inventory, providers, capEvents, currentUser),
+    [approvals, inventory, providers, capEvents, currentUser],
   );
   // Split the flat feed into the two rendered sections. Attention is ordered by urgency
   // (priority asc: offline → failed → grace → soonest expiry); activity stays newest-first.
@@ -217,6 +236,7 @@ export default function NotificationCenter() {
       case 'RENEWAL_REQUEST': return <div className="p-2 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-500"><Clock size={16} /></div>;
       case 'PERMANENT_REQUEST': return <div className="p-2 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500"><Shield size={16} /></div>;
       case 'NODE_CAPACITY': return <div className="p-2 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-500"><Server size={16} /></div>;
+      case 'NODE_CAPACITY_OK': return <div className="p-2 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500"><Server size={16} /></div>;
       case 'PROVIDER_OFFLINE':
       case 'PROVISION_FAILED':
       case 'EXPIRY_WARNING': return <div className="p-2 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-500"><AlertTriangle size={16} /></div>;

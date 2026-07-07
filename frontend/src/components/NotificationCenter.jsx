@@ -15,6 +15,12 @@ const REQ_LABEL = {
 const tsMs = (iso) => (iso ? new Date(iso).getTime() : 0);
 const daysUntil = (iso) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
 
+// "Needs Attention" = standing conditions that persist until resolved (expiry / failure / provider down).
+// Everything else = discrete activity events (approvals, decisions). Kept in separate sections so the
+// time-sorted activity feed never buries a standing alert, and a wall of expiry warnings never buries
+// a fresh approval.
+const ATTENTION_TYPES = new Set(['PROVIDER_OFFLINE', 'PROVISION_FAILED', 'EXPIRY_WARNING']);
+
 function timeAgo(ms) {
   if (!ms) return '';
   const sec = Math.floor((Date.now() - ms) / 1000);
@@ -49,6 +55,7 @@ function deriveNotifications(approvals, inventory, providers, user) {
         items.push({
           id: `provider-down-${p.id}-${p.lastDiscoveryAt ?? ''}`,
           type: 'PROVIDER_OFFLINE',
+          priority: 0,
           message: `Provider "${p.providerName ?? p.name ?? 'unknown'}" is disconnected — its nodes, catalogs, networks and datastores are offline`,
           link: '/settings',
           when: tsMs(p.lastDiscoveryAt) || Date.now(),
@@ -73,20 +80,21 @@ function deriveNotifications(approvals, inventory, providers, user) {
   for (const v of inventory || []) {
     const vm = v.vmName || v.name || 'a VM';
     if (v.status === 'Failed') {
-      items.push({ id: `vm-failed-${v.id}`, type: 'PROVISION_FAILED', message: `Provisioning failed for ${vm}`, link: '/inventory', when: tsMs(v.createdAt) });
+      items.push({ id: `vm-failed-${v.id}`, type: 'PROVISION_FAILED', priority: 1, message: `Provisioning failed for ${vm}`, link: '/inventory', when: tsMs(v.createdAt) });
     } else if (v.status === 'Expired') {
       // Past expiry, in the grace window before auto-destroy.
-      items.push({ id: `vm-grace-${v.id}`, type: 'EXPIRY_WARNING', message: `${vm} has expired — auto-delete pending (grace period)`, link: '/inventory', when: Date.now(), timeLabel: 'in grace period' });
+      items.push({ id: `vm-grace-${v.id}`, type: 'EXPIRY_WARNING', priority: 2.5, message: `${vm} has expired — auto-delete pending (grace period)`, link: '/inventory', when: Date.now(), timeLabel: 'in grace period' });
     } else if (v.expiryDate && !v.isPermanent && !['Deleted', 'Deleting'].includes(v.status)) {
       const d = daysUntil(v.expiryDate);
       if (d >= 0 && d <= 7) {
-        items.push({ id: `vm-expiry-${v.id}`, type: 'EXPIRY_WARNING', message: `${vm} expires ${d === 0 ? 'today' : `in ${d} day${d === 1 ? '' : 's'}`}`, link: '/inventory', when: Date.now(), timeLabel: d === 0 ? 'today' : `in ${d} day${d === 1 ? '' : 's'}` });
+        // priority: soonest-to-expire floats to the top of the attention section (0d → 7d).
+        items.push({ id: `vm-expiry-${v.id}`, type: 'EXPIRY_WARNING', priority: 3 + d / 10, message: `${vm} expires ${d === 0 ? 'today' : `in ${d} day${d === 1 ? '' : 's'}`}`, link: '/inventory', when: Date.now(), timeLabel: d === 0 ? 'today' : `in ${d} day${d === 1 ? '' : 's'}` });
       }
     }
   }
 
   items.sort((a, b) => b.when - a.when);
-  return items.slice(0, 30);
+  return items.slice(0, 50);
 }
 
 export default function NotificationCenter() {
@@ -140,7 +148,20 @@ export default function NotificationCenter() {
     () => deriveNotifications(approvals, inventory, providers, currentUser),
     [approvals, inventory, providers, currentUser],
   );
-  const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
+  // Split the flat feed into the two rendered sections. Attention is ordered by urgency
+  // (priority asc: offline → failed → grace → soonest expiry); activity stays newest-first.
+  const attention = useMemo(
+    () => notifications
+      .filter((n) => ATTENTION_TYPES.has(n.type))
+      .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99) || b.when - a.when),
+    [notifications],
+  );
+  const activity = useMemo(
+    () => notifications.filter((n) => !ATTENTION_TYPES.has(n.type)).sort((a, b) => b.when - a.when),
+    [notifications],
+  );
+  const visible = useMemo(() => [...attention, ...activity], [attention, activity]);
+  const unreadCount = visible.filter((n) => !readIds.has(n.id)).length;
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -154,7 +175,7 @@ export default function NotificationCenter() {
 
   const handleMarkAllRead = () => {
     const next = new Set(readIds);
-    notifications.forEach((n) => next.add(n.id));
+    visible.forEach((n) => next.add(n.id));
     persistRead(next);
   };
 
@@ -178,6 +199,35 @@ export default function NotificationCenter() {
       case 'EXPIRY_WARNING': return <div className="p-2 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-500"><AlertTriangle size={16} /></div>;
       default: return <div className="p-2 rounded-full bg-gray-50 dark:bg-gray-800 text-gray-500"><Bell size={16} /></div>;
     }
+  };
+
+  // One row, shared by both sections. `extra` adds the section-specific accent (e.g. attention spine).
+  const renderRow = (n, extra = '') => {
+    const isRead = readIds.has(n.id);
+    return (
+      <div
+        key={n.id}
+        onClick={() => handleNotificationClick(n.id, n.link)}
+        className={`px-4 py-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-opacity flex gap-3 ${extra} ${!isRead ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''}`}
+      >
+        <div className="shrink-0 pt-0.5">
+          {getIcon(n.type)}
+        </div>
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <p className={`text-[13px] leading-snug ${!isRead ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'}`}>
+            {n.message}
+          </p>
+          <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500">
+            {n.timeLabel || timeAgo(n.when)}
+          </span>
+        </div>
+        {!isRead && (
+          <div className="shrink-0 flex items-center justify-center">
+            <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5"></div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -218,38 +268,33 @@ export default function NotificationCenter() {
 
           {/* List */}
           <div className="max-h-[400px] overflow-y-auto custom-scrollbar flex flex-col divide-y divide-gray-50 dark:divide-theme">
-            {notifications.length === 0 ? (
+            {visible.length === 0 ? (
               <div className="px-4 py-8 text-center text-[13px] text-gray-500 dark:text-gray-400">
                 You're all caught up.
               </div>
             ) : (
-              notifications.map((n) => {
-                const isRead = readIds.has(n.id);
-                return (
-                  <div
-                    key={n.id}
-                    onClick={() => handleNotificationClick(n.id, n.link)}
-                    className={`px-4 py-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-opacity flex gap-3 ${!isRead ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''}`}
-                  >
-                    <div className="shrink-0 pt-0.5">
-                      {getIcon(n.type)}
+              <>
+                {attention.length > 0 && (
+                  <>
+                    <div className="px-4 py-1.5 bg-rose-50/60 dark:bg-rose-500/[0.06] flex items-center gap-1.5">
+                      <AlertTriangle size={11} className="text-rose-500 shrink-0" />
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Needs Attention</span>
+                      <span className="text-[10px] font-semibold text-rose-400/90 dark:text-rose-500/70">· {attention.length}</span>
                     </div>
-                    <div className="flex-1 min-w-0 flex flex-col gap-1">
-                      <p className={`text-[13px] leading-snug ${!isRead ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'}`}>
-                        {n.message}
-                      </p>
-                      <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                        {n.timeLabel || timeAgo(n.when)}
-                      </span>
+                    {attention.map((n) => renderRow(n, 'border-l-2 border-rose-300 dark:border-rose-500/40'))}
+                  </>
+                )}
+                {activity.length > 0 && (
+                  <>
+                    <div className="px-4 py-1.5 bg-slate-50/70 dark:bg-zinc-800/30 flex items-center gap-1.5">
+                      <Bell size={11} className="text-gray-400 shrink-0" />
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Recent Activity</span>
+                      <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500">· {activity.length}</span>
                     </div>
-                    {!isRead && (
-                      <div className="shrink-0 flex items-center justify-center">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5"></div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+                    {activity.map((n) => renderRow(n))}
+                  </>
+                )}
+              </>
             )}
           </div>
 

@@ -8,6 +8,7 @@ import { ensureMinDuration } from '../lib/minDuration';
 import { useUserContext } from '../contexts/UserContext';
 import { canApprove } from '../lib/rbac';
 import StatusPill from '../components/common/StatusPill';
+import { capacityBadge } from '../lib/nodeCapacity';
 
 const REQUEST_TYPE_LABEL = {
   PROVISION: 'Create New VM',
@@ -356,6 +357,12 @@ export default function Approvals() {
       actionTargetIds.includes(r.id) && r.status === 'Pending'
       && (actionType !== 'Revert' || r.requestType === 'PROVISION'));
 
+    // Guard: the backend refuses to approve a PROVISION onto a hard-blocked critical node (422).
+    // Stop here so the approver gets a clear message instead of a raw error.
+    if (actionType === 'Approve' && targets.some((r) => r.requestType === 'PROVISION' && r.nodeCapacity?.provisioningBlocked)) {
+      return pushToast({ kind: 'error', message: 'Cannot approve: the target node is at critical capacity and blocked by an administrator.' });
+    }
+
     try {
       await Promise.all(
         targets.map((req) => api.post(`/approvals/${req.id}/${endpoint}`, { actionReason }))
@@ -411,6 +418,15 @@ export default function Approvals() {
     );
   };
 
+  // Target-node capacity for the open Approve modal — drives the warning banner + Confirm gating.
+  const actionTargets = requests.filter((r) => actionTargetIds.includes(r.id));
+  const approveBlockedTargets = actionType === 'Approve'
+    ? actionTargets.filter((r) => r.requestType === 'PROVISION' && r.nodeCapacity?.provisioningBlocked)
+    : [];
+  const approveHotTarget = actionType === 'Approve'
+    ? actionTargets.find((r) => r.requestType === 'PROVISION' && !r.nodeCapacity?.provisioningBlocked && r.nodeCapacity && r.nodeCapacity.level !== 'ok')
+    : null;
+
   return (
     <div className="animate-in fade-in duration-300 relative h-auto flex flex-col">
       {/* Action Modal */}
@@ -429,6 +445,18 @@ export default function Approvals() {
               </button>
             </div>
             <div className="p-5 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-4">
+              {approveBlockedTargets.length > 0 && (
+                <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12px] text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                  <div><span className="font-semibold">Provisioning blocked.</span> {approveBlockedTargets.length === 1 ? 'The target node is' : `${approveBlockedTargets.length} target nodes are`} at critical capacity and hard-blocked by an administrator. Free up resources or disable the block, then approve.</div>
+                </div>
+              )}
+              {approveBlockedTargets.length === 0 && approveHotTarget && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                  <div><span className="font-semibold">High node load.</span> The target node is near capacity ({capacityBadge(approveHotTarget.nodeCapacity)?.detail}). You can still approve.</div>
+                </div>
+              )}
               <div className="bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
                 <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-2">Reason for {actionType.toLowerCase()} <span className="text-rose-500">*</span></label>
                 <textarea 
@@ -449,11 +477,12 @@ export default function Approvals() {
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={executeWorkflowAction}
-                className={`px-4 py-2 text-[13px] font-medium text-white rounded-input transition-colors shadow-sm
-                  ${actionType === 'Approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 
-                    actionType === 'Reject' ? 'bg-rose-600 hover:bg-rose-700' : 
+                disabled={approveBlockedTargets.length > 0}
+                className={`px-4 py-2 text-[13px] font-medium text-white rounded-input transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed
+                  ${actionType === 'Approve' ? 'bg-emerald-600 hover:bg-emerald-700' :
+                    actionType === 'Reject' ? 'bg-rose-600 hover:bg-rose-700' :
                     'bg-orange-600 hover:bg-orange-700'}`}
               >
                 Confirm {actionType}

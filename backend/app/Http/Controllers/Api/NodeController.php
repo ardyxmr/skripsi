@@ -11,6 +11,7 @@ use App\Models\ProviderTemplate;
 use App\Models\ProviderVm;
 use App\Services\AuditService;
 use App\Services\Discovery\DiscoveryService;
+use App\Services\NodeCapacityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,11 +24,11 @@ class NodeController extends Controller
 {
     use EnforcesUniqueness;
 
-    public function __construct(private AuditService $audit) {}
+    public function __construct(private AuditService $audit, private NodeCapacityService $capacity) {}
 
     public function index(): JsonResponse
     {
-        $rows = Node::with(['provider', 'providerNode'])->orderBy('id')->get();
+        $rows = Node::with(['provider', 'providerNode.datastores'])->orderBy('id')->get();
 
         return response()->json($rows->map(fn (Node $n) => $this->transform($n)));
     }
@@ -40,15 +41,21 @@ class NodeController extends Controller
         $node = Node::create($data);
         $this->audit->log($request->user(), 'CREATE_NODE', "Published node {$node->node_name}", $request);
 
-        return response()->json($this->transform($node->fresh(['provider', 'providerNode'])), 201);
+        return response()->json($this->transform($node->fresh(['provider', 'providerNode.datastores'])), 201);
     }
 
     public function update(Request $request, Node $node): JsonResponse
     {
         $node->update($this->validateData($request, false, $node));
+
+        // Admin capacity hard-block toggle lives on the PHYSICAL node (discovery-safe). Optional in the
+        // payload so a normal node edit that omits it leaves the flag untouched.
+        if ($request->has('block_on_critical') && $node->providerNode) {
+            $node->providerNode->update(['block_on_critical' => $request->boolean('block_on_critical')]);
+        }
         $this->audit->log($request->user(), 'UPDATE_NODE', "Updated node {$node->node_name}", $request);
 
-        return response()->json($this->transform($node->fresh(['provider', 'providerNode'])));
+        return response()->json($this->transform($node->fresh(['provider', 'providerNode.datastores'])));
     }
 
     public function destroy(Request $request, Node $node): JsonResponse
@@ -80,7 +87,7 @@ class NodeController extends Controller
         }
         $this->audit->log($request->user(), 'SYNC_NODE', "Synced node {$node->node_name}", $request);
 
-        return response()->json($this->transform($node->fresh(['provider', 'providerNode'])));
+        return response()->json($this->transform($node->fresh(['provider', 'providerNode.datastores'])));
     }
 
     // Node-scoped twin of /providers/{id}/explorer — only discovered rows on this node.
@@ -92,7 +99,7 @@ class NodeController extends Controller
             : collect();
 
         return response()->json([
-            'node' => $this->transform($node->load(['provider', 'providerNode'])),
+            'node' => $this->transform($node->load(['provider', 'providerNode.datastores'])),
             'templates' => $scoped(ProviderTemplate::class),
             'networks' => $scoped(ProviderNetwork::class),
             'datastores' => $scoped(ProviderDatastore::class),
@@ -120,6 +127,8 @@ class NodeController extends Controller
             'operational_status' => $pn?->status,               // online | offline | unknown
             'last_sync_at' => $pn?->last_sync_at,
             'status' => $n->effectiveStatus(),                  // governance: Active|Inactive|Provider Offline|Missing
+            'block_on_critical' => (bool) $pn?->block_on_critical, // admin toggle: enforce hard-block at critical
+            'capacity' => $this->capacity->snapshot($pn),       // {cpu_pct,ram_pct,disk_pct,level,breached,provisioning_blocked}
             'updated_at' => $n->updated_at,
         ];
     }

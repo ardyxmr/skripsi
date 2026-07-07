@@ -8,6 +8,7 @@ import { useCatalogContext } from '../contexts/CatalogContext';
 import { useTierContext } from '../contexts/TierContext';
 import { useNodeContext } from '../contexts/NodeContext';
 import { checkEnvCompat } from '../lib/envCompat';
+import { capacityBadge } from '../lib/nodeCapacity';
 import { useNetworkContext } from '../contexts/NetworkContext';
 import { useDatastoreContext } from '../contexts/DatastoreContext';
 
@@ -156,6 +157,8 @@ export default function VmRequest() {
   );
   const selectedNode = (allNodes || []).find((n) => String(n.id) === String(nodeId));
   const selPnid = selectedNode?.providerNodeId;
+  // Admin hard-block: a node at critical capacity with the block toggle on can't be provisioned to.
+  const nodeBlocked = !!selectedNode?.capacity?.provisioningBlocked;
 
   // Catalog/network/datastore are bound to the node: filter to the selected node's discovered node.
   const availableCatalogs = useMemo(
@@ -201,7 +204,7 @@ export default function VmRequest() {
 
   // Per-step completeness — drives both the button state and the "fill all fields" warning.
   const step1Valid = !!(environmentId && providerId);
-  const step2Valid = !!(nodeId && catalogId && vmNameValid && vmCount && tierId && networkId && datastoreId);
+  const step2Valid = !!(nodeId && catalogId && vmNameValid && vmCount && tierId && networkId && datastoreId) && !nodeBlocked;
   const totalCpu = (selectedTier?.cpu || 0) * count;
   const totalRam = (selectedTier ? selectedTier.ramMb / 1024 : 0) * count;
   const totalDisk = (selectedTier?.diskGb || 0) * count;
@@ -220,7 +223,7 @@ export default function VmRequest() {
 
   const handleNext = (nextStep) => {
     if (nextStep === 2 && (!environmentId || !providerId)) return;
-    if (nextStep === 3 && (!nodeId || !catalogId || !vmPrefix || !vmCount || !tierId || !networkId || !datastoreId)) return;
+    if (nextStep === 3 && (!nodeId || !catalogId || !vmPrefix || !vmCount || !tierId || !networkId || !datastoreId || nodeBlocked)) return;
     setStep(nextStep);
   };
 
@@ -439,15 +442,36 @@ export default function VmRequest() {
                     onChange={(e) => { setNodeId(e.target.value); setCatalogId(''); setNetworkId(''); setDatastoreId(''); }}
                   >
                     <option value="" disabled>{providerNodes.length === 0 ? 'No nodes allowed here' : 'Select Node...'}</option>
-                    {providerNodes.map((n) => (
-                      <option key={n.id} value={n.id}>{n.name}</option>
-                    ))}
+                    {providerNodes.map((n) => {
+                      const blocked = !!n.capacity?.provisioningBlocked;
+                      const suffix = blocked ? ' — blocked (critical capacity)' : n.capacity?.level === 'warning' ? ' — high load' : '';
+                      return (
+                        <option key={n.id} value={n.id} disabled={blocked}>{n.name}{suffix}</option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
               {!nodeId && (
                 <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">Select a node to load its catalogs, networks and datastores below.</p>
               )}
+              {selectedNode && (() => {
+                const cb = capacityBadge(selectedNode.capacity);
+                if (!cb) return null;
+                return (
+                  <div className={`mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] ${cb.level === 'critical'
+                    ? 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/30 dark:text-rose-300'
+                    : 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300'}`}>
+                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                    <div>
+                      <span className="font-semibold">{cb.level === 'critical' ? 'Node at critical capacity' : 'Node under high load'} — {cb.detail}.</span>{' '}
+                      {cb.blocked
+                        ? 'An administrator has blocked provisioning on this node. Pick another node or free up resources.'
+                        : 'You can still provision here, but consider another node if one is lighter.'}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-4">

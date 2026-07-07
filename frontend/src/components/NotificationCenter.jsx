@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Bell, CheckCircle, Clock, AlertTriangle, Shield, PlusCircle, Check, XCircle } from 'lucide-react';
+import { Bell, CheckCircle, Clock, AlertTriangle, Shield, PlusCircle, Check, XCircle, Server } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getCached, LIVE_CACHE_EVENT } from '../lib/liveCache';
 import { useUserContext } from '../contexts/UserContext';
 import { useProviderContext } from '../contexts/ProviderContext';
+import { useNodeContext } from '../contexts/NodeContext';
 import { canApprove, isAdmin } from '../lib/rbac';
+import { capacityBadge } from '../lib/nodeCapacity';
 
 // Friendly request-type labels for notification copy.
 const REQ_LABEL = {
@@ -19,7 +21,7 @@ const daysUntil = (iso) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86
 // Everything else = discrete activity events (approvals, decisions). Kept in separate sections so the
 // time-sorted activity feed never buries a standing alert, and a wall of expiry warnings never buries
 // a fresh approval.
-const ATTENTION_TYPES = new Set(['PROVIDER_OFFLINE', 'PROVISION_FAILED', 'EXPIRY_WARNING']);
+const ATTENTION_TYPES = new Set(['PROVIDER_OFFLINE', 'NODE_CAPACITY', 'PROVISION_FAILED', 'EXPIRY_WARNING']);
 
 function timeAgo(ms) {
   if (!ms) return '';
@@ -42,7 +44,7 @@ const decisionType = (s) => (s === 'Rejected' ? 'APPROVAL_REJECTED' : s === 'Rev
 //  • Requesters → decisions (Approved/Rejected/Reverted) on their own requests.
 //  • Everyone   → their VMs that are expiring soon or failed to provision.
 // Each item carries a STABLE id so the read-state survives polls/reloads.
-function deriveNotifications(approvals, inventory, providers, user) {
+function deriveNotifications(approvals, inventory, providers, nodes, user) {
   const approver = canApprove(user);
   const items = [];
 
@@ -61,6 +63,25 @@ function deriveNotifications(approvals, inventory, providers, user) {
           when: tsMs(p.lastDiscoveryAt) || Date.now(),
         });
       }
+    }
+
+    // Admin-only: a published node that has crossed the capacity warn/critical line. Standing
+    // condition (like expiry) → when=now + priority so critical floats above a warning. The id
+    // embeds the level so a warning→critical escalation re-notifies (new id → unread again).
+    for (const n of nodes || []) {
+      const cap = n.capacity;
+      if (!cap || cap.level === 'ok' || n.operational !== 'Online') continue;
+      const critical = cap.level === 'critical';
+      const cb = capacityBadge(cap);
+      items.push({
+        id: `node-capacity-${n.id}-${cap.level}`,
+        type: 'NODE_CAPACITY',
+        priority: critical ? 0.5 : 3.6,
+        message: `Node "${n.name}" is at ${critical ? 'critical capacity' : 'high load'} (${cb?.detail || cb?.label})${cap.provisioningBlocked ? ' — provisioning blocked' : ''}`,
+        link: '/settings',
+        when: Date.now(),
+        timeLabel: critical ? 'critical' : 'high load',
+      });
     }
   }
 
@@ -108,6 +129,7 @@ export default function NotificationCenter() {
   const navigate = useNavigate();
   const { currentUser } = useUserContext();
   const { providers } = useProviderContext();   // admin-only data (empty for other roles); drives the provider-offline alert
+  const { nodes } = useNodeContext();           // drives the admin node-capacity alerts (warn/critical)
 
   const readKey = currentUser ? `notif_read_${currentUser.id}` : 'notif_read_anon';
 
@@ -145,8 +167,8 @@ export default function NotificationCenter() {
   }, [applyFromCache]);
 
   const notifications = useMemo(
-    () => deriveNotifications(approvals, inventory, providers, currentUser),
-    [approvals, inventory, providers, currentUser],
+    () => deriveNotifications(approvals, inventory, providers, nodes, currentUser),
+    [approvals, inventory, providers, nodes, currentUser],
   );
   // Split the flat feed into the two rendered sections. Attention is ordered by urgency
   // (priority asc: offline → failed → grace → soonest expiry); activity stays newest-first.
@@ -194,6 +216,7 @@ export default function NotificationCenter() {
       case 'APPROVAL_REJECTED': return <div className="p-2 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-500"><XCircle size={16} /></div>;
       case 'RENEWAL_REQUEST': return <div className="p-2 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-500"><Clock size={16} /></div>;
       case 'PERMANENT_REQUEST': return <div className="p-2 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500"><Shield size={16} /></div>;
+      case 'NODE_CAPACITY': return <div className="p-2 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-500"><Server size={16} /></div>;
       case 'PROVIDER_OFFLINE':
       case 'PROVISION_FAILED':
       case 'EXPIRY_WARNING': return <div className="p-2 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-500"><AlertTriangle size={16} /></div>;
@@ -304,7 +327,7 @@ export default function NotificationCenter() {
               onClick={() => { setIsOpen(false); navigate('/approvals'); }}
               className="text-[12px] font-semibold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 transition-opacity"
             >
-              View all activity
+              View all requests
             </button>
           </div>
         </div>

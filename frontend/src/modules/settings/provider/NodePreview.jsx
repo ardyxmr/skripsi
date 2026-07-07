@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Server, Search, Plus, Edit2, RefreshCw, Layers, Trash2, AlertTriangle } from 'lucide-react';
+import { Server, Search, Plus, Edit2, RefreshCw, Layers, Trash2, AlertTriangle, Ban } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
 import ResizableTh from '../../../components/ResizableTh';
 import NodeForm from './NodeForm';
@@ -9,6 +9,7 @@ import { useNodeContext } from '../../../contexts/NodeContext';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import StatusPill from '../../../components/common/StatusPill';
 import { useUI } from '../../../stores/uiStore';
+import { capacityBadge } from '../../../lib/nodeCapacity';
 
 // Relative freshness label for the Sync column, e.g. "synced 2m ago".
 const ago = (ts) => {
@@ -54,6 +55,17 @@ export default function NodePreview() {
 
   // Success notifications go through the global top-center toast (same as the error toasts).
   const flash = (m) => pushToast({ kind: 'success', message: m });
+
+  // Admin capacity hard-block toggle. When ON, provisioning onto this node is refused while it is
+  // Critical (wizard grays it out, approve is rejected server-side). Errors surface via the api toast.
+  const toggleBlock = async (n) => {
+    setOpenDropdownId(null);
+    const next = !n.blockOnCritical;
+    try {
+      await update(n.id, { blockOnCritical: next });
+      flash(`Hard-block ${next ? 'enabled' : 'disabled'} for ${n.name}.`);
+    } catch { /* api.js surfaces the error toast */ }
+  };
 
   // Close the form, but confirm first if it has unsaved edits (otherwise close directly).
   const closeForm = (force = false) => {
@@ -230,11 +242,32 @@ export default function NodePreview() {
                 return (
                   <tr key={n.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                     <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200">{n.name}</span>
                         {n.status !== 'Active' && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-surface text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-theme">
                             {n.status === 'Inactive' ? 'Inactive' : n.status}
+                          </span>
+                        )}
+                        {!offline && (() => {
+                          const cb = capacityBadge(n.capacity);
+                          return cb ? (
+                            <span
+                              title={`Capacity: ${cb.detail}${cb.blocked ? ' — provisioning blocked' : ''}`}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1 ${cb.level === 'critical'
+                                ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30'
+                                : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30'}`}
+                            >
+                              <AlertTriangle size={10} /> {cb.label}
+                            </span>
+                          ) : null;
+                        })()}
+                        {n.blockOnCritical && (
+                          <span
+                            title="Hard-block enabled: provisioning is refused while this node is Critical"
+                            className="px-1.5 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1 bg-slate-100 text-slate-600 border-slate-300 dark:bg-zinc-700 dark:text-zinc-300 dark:border-zinc-600"
+                          >
+                            <Ban size={10} /> Block
                           </span>
                         )}
                       </div>
@@ -259,6 +292,9 @@ export default function NodePreview() {
                         </button>
                         <button type="button" onClick={() => handleSync(n)} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-emerald-600 dark:text-emerald-400">
                           <RefreshCw size={14} /> Sync now
+                        </button>
+                        <button type="button" onClick={() => toggleBlock(n)} className={`w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 ${n.blockOnCritical ? 'text-slate-700 dark:text-zinc-200' : 'text-amber-600 dark:text-amber-400'}`}>
+                          <Ban size={14} /> {n.blockOnCritical ? 'Disable hard-block' : 'Enable hard-block'}
                         </button>
                         <button type="button" onClick={() => { setOpenDropdownId(null); setDrawer({ isOpen: true, node: n }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
                           <Layers size={14} /> Node Explorer

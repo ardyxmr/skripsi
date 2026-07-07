@@ -8,6 +8,7 @@ use App\Models\Catalog;
 use App\Models\CatalogHardeningVersion;
 use App\Models\ProviderTemplate;
 use App\Services\AuditService;
+use App\Services\NodeCapacityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
@@ -19,11 +20,11 @@ class CatalogController extends Controller
 {
     use EnforcesUniqueness;
 
-    public function __construct(private AuditService $audit) {}
+    public function __construct(private AuditService $audit, private NodeCapacityService $capacity) {}
 
     public function index(): JsonResponse
     {
-        $catalogs = Catalog::with(['provider', 'providerTemplate', 'providerNode'])
+        $catalogs = Catalog::with(['provider', 'providerTemplate', 'providerNode.datastores'])
             ->withCount(['inventories as active_vms' => fn ($q) => $q->whereNotIn('status', ['Deleted'])])
             ->orderBy('id')->get();
 
@@ -39,7 +40,7 @@ class CatalogController extends Controller
         $catalog = Catalog::create($data);
         $this->audit->log($request->user(), 'CREATE_CATALOG', "Published catalog {$catalog->catalog_name}", $request);
 
-        return response()->json($this->transform($catalog->fresh(['provider', 'providerTemplate', 'providerNode'])), 201);
+        return response()->json($this->transform($catalog->fresh(['provider', 'providerTemplate', 'providerNode.datastores'])), 201);
     }
 
     public function update(Request $request, Catalog $catalog): JsonResponse
@@ -52,7 +53,7 @@ class CatalogController extends Controller
         $catalog->update($data);
         $this->audit->log($request->user(), 'UPDATE_CATALOG', "Updated catalog {$catalog->catalog_name}", $request);
 
-        return response()->json($this->transform($catalog->fresh(['provider', 'providerTemplate', 'providerNode'])));
+        return response()->json($this->transform($catalog->fresh(['provider', 'providerTemplate', 'providerNode.datastores'])));
     }
 
     public function destroy(Request $request, Catalog $catalog): JsonResponse
@@ -240,6 +241,9 @@ class CatalogController extends Controller
             'provider_name' => $c->provider?->provider_name,
             'node_name' => $c->providerNode?->node_name,
             'provider_template_name' => $c->providerTemplate?->template_name,
+            // Capacity of the node this catalog is bound to → wizard shows a warning badge and grays
+            // the catalog out when provisioning_blocked (admin toggle + critical).
+            'node_capacity' => $this->capacity->snapshot($c->providerNode),
             'status' => $c->effectiveStatus(),
             'catalog_image' => $this->imageUrl($c->catalog_image),
             'updated_at' => $c->updated_at,

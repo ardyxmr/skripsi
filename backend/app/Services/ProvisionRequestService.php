@@ -26,6 +26,7 @@ class ProvisionRequestService
     public function __construct(
         private AuditService $audit,
         private ApproverResolutionService $approverResolution,
+        private NodeCapacityService $capacity,
     ) {}
 
     /**
@@ -43,7 +44,7 @@ class ProvisionRequestService
     public function create(User $requester, array $data): ProvisionRequest
     {
         $env = Environment::with(['providers:id', 'nodes:id', 'tiers:id'])->findOrFail($data['environment_id']);
-        $node = Node::findOrFail($data['node_id']);
+        $node = Node::with('providerNode.datastores')->findOrFail($data['node_id']);
         $this->validatePolicy($env, $node, $data);
 
         $data['requester_id'] = $requester->id;
@@ -79,7 +80,7 @@ class ProvisionRequestService
         abort_unless($actor->id === $pr->requester_id || $actor->isPrivileged(), 403, 'You cannot edit this request.');
 
         $env = Environment::with(['providers:id', 'nodes:id', 'tiers:id'])->findOrFail($data['environment_id']);
-        $node = Node::findOrFail($data['node_id']);
+        $node = Node::with('providerNode.datastores')->findOrFail($data['node_id']);
         $this->validatePolicy($env, $node, $data);
 
         $approval = ApprovalRequest::where('request_type', 'PROVISION')->where('reference_id', $pr->id)->latest('id')->first();
@@ -152,6 +153,8 @@ class ProvisionRequestService
             $errors['node_id'] = 'Node is not active.';
         } elseif ((int) $node->provider_id !== (int) $data['provider_id']) {
             $errors['node_id'] = 'Node does not belong to the selected provider.';
+        } elseif ($node->providerNode && $this->capacity->snapshot($node->providerNode)['provisioning_blocked']) {
+            $errors['node_id'] = 'Node is at critical capacity and blocked for provisioning by an administrator.';
         }
 
         $tier = Tier::find($data['tier_id']);

@@ -83,6 +83,12 @@ class Inventory extends Model
         return $this->belongsTo(Datastore::class);
     }
 
+    /** The originating provision request — source of the VM's user-entered description. */
+    public function provisionRequest(): BelongsTo
+    {
+        return $this->belongsTo(ProvisionRequest::class);
+    }
+
     public function disks(): HasMany
     {
         return $this->hasMany(InventoryDisk::class);

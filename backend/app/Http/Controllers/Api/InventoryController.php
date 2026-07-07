@@ -30,7 +30,7 @@ class InventoryController extends Controller
         $rows = $this->scopedQuery($request->user())
             ->whereNot(fn ($q) => $q->where('status', 'Deleted')
                 ->where(fn ($w) => $w->whereNull('destroyed_at')->orWhere('destroyed_at', '<', $cutoff)))
-            ->with(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'network', 'datastore', 'disks', 'pendingApprovals', 'hardenedVersion'])
+            ->with(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'network', 'datastore', 'disks', 'pendingApprovals', 'hardenedVersion', 'provisionRequest'])
             ->orderByDesc('id')->get();
 
         return response()->json($rows->map(fn (Inventory $i) => $this->transform($i)));
@@ -76,7 +76,7 @@ class InventoryController extends Controller
         $rows = $this->scopedQuery($request->user())
             ->whereNot(fn ($q) => $q->where('status', 'Deleted')
                 ->where(fn ($w) => $w->whereNull('destroyed_at')->orWhere('destroyed_at', '<', $cutoff)))
-            ->with(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'network', 'datastore', 'disks', 'pendingApprovals', 'hardenedVersion'])
+            ->with(['owner', 'environment', 'provider', 'node', 'catalog', 'tier', 'network', 'datastore', 'disks', 'pendingApprovals', 'hardenedVersion', 'provisionRequest'])
             ->orderByDesc('id')->get();
 
         return response()->json($rows->map(fn (Inventory $i) => $this->transform($i)));
@@ -349,6 +349,7 @@ class InventoryController extends Controller
         return [
             'id' => $i->id,
             'vm_name' => $i->vm_name,
+            'description' => $i->provisionRequest?->description,   // user-entered purpose from the original request
             'login_username' => $i->login_username,   // username only; the password is reveal-on-demand (see credentials())
             'owner_name' => $i->owner?->name,
             'created_by' => $i->owner?->name,          // "Created By" in the expand row = the requesting owner

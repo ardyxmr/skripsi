@@ -140,8 +140,8 @@ trait BuildsInfra
         $env->providers()->attach($provider);
         $env->nodes()->attach($node);
         $env->tiers()->attach($tier);
-        $env->networks()->attach($network);
-        $env->datastores()->attach($datastore);
+        // Networks & datastores are NODE-scoped (validated via the node, not the env) since the
+        // node-centric refactor — the Environment model no longer exposes networks()/datastores().
 
         return [
             'provider' => $provider,

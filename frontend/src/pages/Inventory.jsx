@@ -777,7 +777,9 @@ export default function Inventory() {
                 <section>
                   <h3 className="text-[12px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider mb-4 flex items-center gap-2"><FileText size={14}/> Description</h3>
                   <div className="text-[13px] text-gray-600 dark:text-gray-300 bg-transparent dark:bg-transparent p-4 rounded-card border border-gray-100 dark:border-theme leading-relaxed">
-                    {selectedVm.description}
+                    {selectedVm.description?.trim()
+                      ? selectedVm.description
+                      : <span className="text-gray-400 italic">No description provided</span>}
                   </div>
                 </section>
               </div>

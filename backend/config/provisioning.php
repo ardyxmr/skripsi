@@ -55,4 +55,12 @@ return [
     // within this window into a single live call (one active sync chain per VM). MUST stay below
     // the bounded IP follow-up delay (5s) so the chain never throttles itself.
     'sync_throttle_seconds' => (int) env('VM_SYNC_THROTTLE_SECONDS', 3),
+
+    // --- Node capacity thresholds (CPU / RAM / datastore utilization) ---
+    // Two tiers computed from the discovered node snapshot. `warn` = amber informational badge in the
+    // wizard/approval/node list (never blocks). `critical` = red; it only BLOCKS provisioning when an
+    // admin has opted the node in (provider_nodes.block_on_critical). Whichever resource peaks highest
+    // drives the level. Override for smoke-testing.
+    'node_capacity_warn_pct' => (int) env('NODE_CAPACITY_WARN_PCT', 90),
+    'node_capacity_critical_pct' => (int) env('NODE_CAPACITY_CRITICAL_PCT', 95),
 ];

@@ -8,6 +8,7 @@ use App\Models\Inventory;
 use App\Models\ProvisionRequest;
 use App\Services\ApprovalWorkflowService;
 use App\Services\LifecycleService;
+use App\Services\NodeCapacityService;
 use App\Services\ProvisionRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class ApprovalController extends Controller
         private ApprovalWorkflowService $workflow,
         private ProvisionRequestService $provisioning,
         private LifecycleService $lifecycle,
+        private NodeCapacityService $capacity,
     ) {}
 
     // Role-scoped: Managers/Admins see all requests (to act on); a regular user sees only their own.
@@ -33,9 +35,9 @@ class ApprovalController extends Controller
         $approvals = $query->get();
 
         // Batch-load the referenced PROVISION requests and lifecycle inventory VMs.
-        $provisions = ProvisionRequest::with(['environment', 'provider', 'catalog', 'tier'])
+        $provisions = ProvisionRequest::with(['environment', 'provider', 'catalog', 'tier', 'node.providerNode.datastores'])
             ->whereIn('id', $approvals->where('request_type', 'PROVISION')->pluck('reference_id'))->get()->keyBy('id');
-        $inventories = Inventory::with(['environment', 'provider', 'catalog', 'tier'])
+        $inventories = Inventory::with(['environment', 'provider', 'catalog', 'tier', 'node.providerNode.datastores'])
             ->whereIn('id', $approvals->whereIn('request_type', self::LIFECYCLE_TYPES)->pluck('reference_id'))->get()->keyBy('id');
 
         return response()->json($approvals->map(fn (ApprovalRequest $a) => $this->transform(
@@ -76,12 +78,18 @@ class ApprovalController extends Controller
         $reason = $request->validate(['action_reason' => ['required', 'string']])['action_reason'];
         $this->workflow->act($approval, $request->user(), $action, $reason);
 
-        $provision = $approval->request_type === 'PROVISION' ? ProvisionRequest::with(['environment', 'provider', 'catalog', 'tier'])->find($approval->reference_id) : null;
-        $inventory = in_array($approval->request_type, self::LIFECYCLE_TYPES, true) ? Inventory::with(['environment', 'provider', 'catalog', 'tier'])->find($approval->reference_id) : null;
+        $provision = $approval->request_type === 'PROVISION' ? ProvisionRequest::with(['environment', 'provider', 'catalog', 'tier', 'node.providerNode.datastores'])->find($approval->reference_id) : null;
+        $inventory = in_array($approval->request_type, self::LIFECYCLE_TYPES, true) ? Inventory::with(['environment', 'provider', 'catalog', 'tier', 'node.providerNode.datastores'])->find($approval->reference_id) : null;
 
         // Approving a request applies it: PROVISION → per-VM jobs (Stage 6); lifecycle → LifecycleService (Stage 7).
         if ($action === 'Approve') {
             if ($provision) {
+                // Re-check at approve time — capacity may have crossed critical since submit. Only
+                // NEW provisioning is gated (lifecycle acts on a VM already on the node).
+                $node = $provision->node;
+                if ($node?->providerNode && $this->capacity->snapshot($node->providerNode->loadMissing('datastores'))['provisioning_blocked']) {
+                    abort(422, "Node \"{$node->node_name}\" is at critical capacity and provisioning is blocked. Free up resources or disable the block on the node, then approve.");
+                }
                 $this->provisioning->dispatchProvisioning($provision);
             } elseif ($inventory) {
                 $this->lifecycle->applyApproved($approval->fresh());
@@ -118,6 +126,8 @@ class ApprovalController extends Controller
             'provider_id' => $ctx?->provider_id,
             'provider_name' => $ctx?->provider?->provider_name,
             'node_id' => $ctx?->node_id,
+            // Target-node capacity so the approver decides with load in mind; approve is refused when blocked.
+            'node_capacity' => $this->capacity->snapshot($ctx?->node?->providerNode),
             'catalog_id' => $ctx?->catalog_id,
             'catalog_name' => $ctx?->catalog?->catalog_name,
             'tier_id' => $ctx?->tier_id,

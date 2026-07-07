@@ -203,4 +203,32 @@ class ProvisionRequestTest extends TestCase
             ->assertStatus(422)
             ->assertJsonStructure(['error' => ['details' => ['tier_id']]]);
     }
+
+    // ---- Node capacity hard-block (admin opt-in) -------------------------
+
+    public function test_provisioning_onto_a_blocked_critical_node_is_rejected(): void
+    {
+        $s = $this->seedScenario();
+        // Push the node's snapshot over the critical line (default 95%) and arm the admin hard-block.
+        $s['providerNode']->forceFill(['cpu_utilization' => 99, 'block_on_critical' => true])->save();
+        Sanctum::actingAs($this->regularUser());
+
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s))
+            ->assertStatus(422)
+            ->assertJsonStructure(['error' => ['details' => ['node_id']]]);
+        Bus::assertNotDispatched(ProvisionVmJob::class);
+    }
+
+    public function test_critical_node_without_the_block_toggle_still_provisions(): void
+    {
+        $s = $this->seedScenario(['approval_required' => false]);
+        // Critical capacity, but the admin has NOT enabled the hard-block → warn only, not blocked.
+        $s['providerNode']->forceFill(['cpu_utilization' => 99, 'block_on_critical' => false])->save();
+        Sanctum::actingAs($this->regularUser());
+
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s))
+            ->assertCreated()
+            ->assertJson(['status' => 'dispatched']);
+        Bus::assertDispatched(ProvisionVmJob::class, 1);
+    }
 }

@@ -83,3 +83,48 @@
     background-color: var(--table-row-hover);
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Scrollbars — thin, rounded, subtle overlay style like the Claude
+ * desktop app. Theme-aware, no stepper arrows, transparent track.
+ * Applies app-wide; the .custom-scrollbar class is kept as an explicit
+ * opt-in that now inherits this same look.
+ * ------------------------------------------------------------------ */
+* {
+  scrollbar-width: thin;                              /* Firefox */
+  scrollbar-color: rgba(17, 24, 39, 0.25) transparent;
+}
+.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(17, 24, 39, 0.25);
+  border-radius: 9999px;
+  border: 2px solid transparent;   /* padding around the thumb → thin pill */
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(17, 24, 39, 0.40);
+}
+::-webkit-scrollbar-button {          /* no stepper arrows (0-sized, but still layout-able) */
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.32);
+}

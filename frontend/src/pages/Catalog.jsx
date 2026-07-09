@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Server, Boxes, Database, FileText } from 'lucide-react';
 import api from '../lib/api';
@@ -59,7 +59,35 @@ export default function Catalog() {
   }, []);
 
   // Only catalogs that are actually usable for provisioning.
-  const usable = (catalogs || []).filter((c) => c.status === 'Active');
+  const usable = useMemo(() => (catalogs || []).filter((c) => c.status === 'Active'), [catalogs]);
+
+  // Provider filter for the template grid. The option list is DERIVED from the usable catalogs (not a
+  // separate /providers fetch): a catalog's status follows its provider health, so when a provider
+  // disconnects its catalogs drop out of `usable` and the provider disappears from this dropdown on
+  // its own — same net behaviour as the provisioning wizard, no extra wiring.
+  const providerOptions = useMemo(() => {
+    const seen = new Map(); // providerId -> providerName, first-wins, insertion-ordered
+    for (const c of usable) {
+      const key = c.providerId != null ? String(c.providerId) : c.provider;
+      if (key && !seen.has(key)) seen.set(key, c.provider || 'Unknown provider');
+    }
+    return [...seen.entries()].map(([id, name]) => ({ id, name }));
+  }, [usable]);
+
+  const [providerFilter, setProviderFilter] = useState(''); // '' = All Providers
+
+  // If the selected provider drops out (e.g. it just disconnected), fall back to "All Providers" so the
+  // grid never gets stuck on an empty filter.
+  useEffect(() => {
+    if (providerFilter && !providerOptions.some((p) => p.id === providerFilter)) {
+      setProviderFilter('');
+    }
+  }, [providerFilter, providerOptions]);
+
+  const visible = useMemo(
+    () => (providerFilter ? usable.filter((c) => String(c.providerId) === providerFilter) : usable),
+    [usable, providerFilter]
+  );
 
   const handleSelect = (catalogId, tierId) => {
     if (catalogId && tierId) navigate('/request-vm', { state: { catalogId, tierId } });
@@ -109,9 +137,29 @@ export default function Catalog() {
 
       {/* Catalog Grid */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <div className="text-[16px] font-bold text-gray-800 dark:text-gray-100">VM Templates</div>
-          <span className="text-[13px] text-gray-500 dark:text-gray-400 font-medium">Select a template to provision</span>
+          <div className="flex items-center gap-3">
+            {providerOptions.length > 0 && (
+              <div className="relative">
+                <select
+                  value={providerFilter}
+                  onChange={(e) => setProviderFilter(e.target.value)}
+                  className="pl-3 pr-8 py-2 text-[12px] font-medium border border-gray-200 dark:border-theme rounded-lg outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 bg-gray-50 dark:bg-surface dark:text-gray-100 appearance-none cursor-pointer"
+                  aria-label="Filter templates by provider"
+                >
+                  <option value="">All Providers</option>
+                  {providerOptions.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 dark:text-gray-500">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+              </div>
+            )}
+            <span className="text-[13px] text-gray-500 dark:text-gray-400 font-medium">Select a template to provision</span>
+          </div>
         </div>
 
         {loading && catalogs.length === 0 ? (
@@ -133,7 +181,7 @@ export default function Catalog() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {usable.map((cat) => (
+            {visible.map((cat) => (
               <div
                 key={cat.id}
                 className="group bg-white dark:bg-card border border-gray-100 dark:border-theme rounded-card p-5 shadow-card text-center transition-[transform,box-shadow] duration-200 ease-out hover:shadow-xl hover:shadow-teal-500/10 hover:-translate-y-1 hover:scale-[1.02] hover:border-teal-200 dark:hover:border-teal-700"

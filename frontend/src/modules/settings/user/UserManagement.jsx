@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Shield, Users, User, Search, Plus, Edit2, Trash2, X, AlertTriangle, Loader2, MoreVertical, RefreshCw } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import ResizableTh from '../../../components/ResizableTh';
+import Colgroup from '../../../components/common/Colgroup';
+import PaginationBar from '../../../components/common/PaginationBar';
+import { useClientPagination } from '../../../components/common/useClientPagination';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { useUserContext } from '../../../contexts/UserContext';
 import UserForm from './UserForm';
@@ -10,6 +12,14 @@ import RoleForm from './RoleForm';
 import GroupForm from './GroupForm';
 import UserActionModal from './UserActionModal';
 import { useUI } from '../../../stores/uiStore';
+
+// Fixed column widths (px) shared by each table's pinned-header table and its scrolling body table
+// so their columns stay aligned under `table-fixed`. The sum is the table's min width (horizontal
+// scroll kicks in below it). Two-table split (like Approvals) puts the vertical scrollbar UNDER the
+// column titles, not level with them.
+const USER_COL_WIDTHS = [190, 230, 120, 150, 100, 130, 130, 70]; // 8 cols ≈ 1120
+const ROLE_COL_WIDTHS = [140, 200, 110, 100, 100, 70];           // 6 cols ≈ 720
+const GROUP_COL_WIDTHS = [150, 180, 130, 110, 100, 70];          // 6 cols ≈ 740
 
 export default function UserManagement() {
   const [openDropdownId, setOpenDropdownId] = useState(null);
@@ -191,10 +201,15 @@ export default function UserManagement() {
   });
 
   const sortedGroups = [...groups].filter(g => !g.deletedAt).sort((a, b) => {
-    return groupSortDesc 
-      ? new Date(b.createdAt) - new Date(a.createdAt) 
+    return groupSortDesc
+      ? new Date(b.createdAt) - new Date(a.createdAt)
       : new Date(a.createdAt) - new Date(b.createdAt);
   });
+
+  // Client-side pagination for each table (data is already in memory + live-polled — slice locally).
+  const rolesPager = useClientPagination(sortedRoles, 10);
+  const groupsPager = useClientPagination(sortedGroups, 10);
+  const usersPager = useClientPagination(sortedUsers, 10);
 
   const totalRoles = roles.filter(r => !r.deletedAt).length;
   const totalGroups = groups.filter(g => !g.deletedAt).length;
@@ -274,7 +289,7 @@ export default function UserManagement() {
                 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 shrink-0">
                   {/* Role Management Panel */}
-                  <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col max-h-[350px]">
+                  <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col max-h-[420px]">
                     <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme bg-transparent dark:bg-transparent rounded-t-card shrink-0">
                       <div className="flex items-center gap-2 text-slate-800 dark:text-zinc-200 font-semibold text-sm">
                         <Shield size={18} className="text-blue-600 dark:text-blue-500" />
@@ -284,24 +299,30 @@ export default function UserManagement() {
                         <Plus size={14} /> Add Role
                       </button>
                     </div>
-                    
-                    {/* Desktop Table */}
-                    <div className="hidden md:block overflow-x-auto max-h-[300px] overflow-y-auto custom-scrollbar">
-                      <table className="w-full border-collapse text-[13px] text-left">
-                        <thead className="sticky top-0 z-20 shadow-sm">
-                          <tr>
-                            <ResizableTh width={150}>Role Name</ResizableTh>
-                            <ResizableTh width={200}>Role/permission</ResizableTh>
-                            <ResizableTh width={120} onClick={() => setRoleSortDesc(!roleSortDesc)}>
+
+                    {/* Desktop Table — pinned header table + separately-scrolling body (scrollbar starts UNDER the titles) */}
+                    <div className="hidden md:flex flex-auto min-h-0 overflow-x-auto overflow-y-hidden custom-scrollbar flex-col">
+                      <div className="min-w-[720px] w-full h-full flex flex-col">
+                      <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
+                        <Colgroup widths={ROLE_COL_WIDTHS} />
+                        <thead className="bg-gray-50 dark:bg-surface shadow-sm">
+                          <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-theme">
+                            <th className="px-3 py-3">Role Name</th>
+                            <th className="px-3 py-3">Role / Permission</th>
+                            <th className="px-3 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setRoleSortDesc(!roleSortDesc)}>
                               Created {roleSortDesc ? '↓' : '↑'}
-                            </ResizableTh>
-                            <ResizableTh width={100}>User Count</ResizableTh>
-                            <ResizableTh width={100}>Status</ResizableTh>
-                            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider table-header-optimized border-b border-slate-100 dark:border-theme w-16">ACTION</th>
+                            </th>
+                            <th className="px-3 py-3">User Count</th>
+                            <th className="px-3 py-3">Status</th>
+                            <th className="px-3 py-3 text-center">Action</th>
                           </tr>
                         </thead>
+                      </table>
+                      <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+                      <table className="w-full border-collapse text-[13px] text-left table-fixed">
+                        <Colgroup widths={ROLE_COL_WIDTHS} />
                         <tbody>
-                          {sortedRoles.map((role) => (
+                          {rolesPager.paged.map((role) => (
                             <tr key={role.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                               <td className="p-3 font-medium text-slate-800 dark:text-zinc-200">{role.name}</td>
                               <td className="p-3">
@@ -345,7 +366,7 @@ export default function UserManagement() {
                               </td>
                             </tr>
                           ))}
-                          {sortedRoles.length === 0 && (
+                          {rolesPager.total === 0 && (
                             <tr>
                               <td colSpan="6" className="p-8 text-center text-slate-500 dark:text-zinc-400">
                                 <div className="flex flex-col items-center justify-center">
@@ -361,11 +382,14 @@ export default function UserManagement() {
                           )}
                         </tbody>
                       </table>
+                      </div>
+                      </div>
                     </div>
+                    <PaginationBar pager={rolesPager} noun="Roles" />
                   </div>
 
                   {/* Group / Division Management Panel */}
-                  <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col max-h-[350px]">
+                  <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col max-h-[420px]">
                     <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-theme bg-transparent dark:bg-transparent rounded-t-card shrink-0">
                       <div className="flex items-center gap-2 text-slate-800 dark:text-zinc-200 font-semibold text-sm">
                         <Users size={18} className="text-purple-600 dark:text-purple-400" />
@@ -375,23 +399,29 @@ export default function UserManagement() {
                         <Plus size={14} /> Add Group
                       </button>
                     </div>
-                    
-                    <div className="hidden md:block overflow-x-auto max-h-[300px] overflow-y-auto custom-scrollbar">
-                      <table className="w-full border-collapse text-[13px] text-left whitespace-nowrap">
-                        <thead className="sticky top-0 z-20 shadow-sm">
-                          <tr>
-                            <ResizableTh width={150}>Group Name</ResizableTh>
-                            <ResizableTh width={150}>Manager</ResizableTh>
-                            <ResizableTh width={120}>Room/Floor</ResizableTh>
-                            <ResizableTh width={120} onClick={() => setGroupSortDesc(!groupSortDesc)}>
+
+                    <div className="hidden md:flex flex-auto min-h-0 overflow-x-auto overflow-y-hidden custom-scrollbar flex-col">
+                      <div className="min-w-[740px] w-full h-full flex flex-col">
+                      <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
+                        <Colgroup widths={GROUP_COL_WIDTHS} />
+                        <thead className="bg-gray-50 dark:bg-surface shadow-sm">
+                          <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-theme">
+                            <th className="px-3 py-3">Group Name</th>
+                            <th className="px-3 py-3">Manager</th>
+                            <th className="px-3 py-3">Room / Floor</th>
+                            <th className="px-3 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setGroupSortDesc(!groupSortDesc)}>
                               Created {groupSortDesc ? '↓' : '↑'}
-                            </ResizableTh>
-                            <ResizableTh width={100}>Members</ResizableTh>
-                            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider table-header-optimized border-b border-slate-100 dark:border-theme w-16">ACTION</th>
+                            </th>
+                            <th className="px-3 py-3">Members</th>
+                            <th className="px-3 py-3 text-center">Action</th>
                           </tr>
                         </thead>
+                      </table>
+                      <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+                      <table className="w-full border-collapse text-[13px] text-left table-fixed whitespace-nowrap">
+                        <Colgroup widths={GROUP_COL_WIDTHS} />
                         <tbody>
-                          {sortedGroups.map((group) => (
+                          {groupsPager.paged.map((group) => (
                             <tr key={group.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                               <td className="p-3 font-medium text-slate-800 dark:text-zinc-200">{group.name}</td>
                               <td className="p-3 text-[12px] text-slate-600 dark:text-zinc-300">
@@ -430,7 +460,7 @@ export default function UserManagement() {
                               </td>
                             </tr>
                           ))}
-                          {sortedGroups.length === 0 && (
+                          {groupsPager.total === 0 && (
                             <tr>
                               <td colSpan="6" className="p-8 text-center text-slate-500 dark:text-zinc-400">
                                 <div className="flex flex-col items-center justify-center">
@@ -446,13 +476,16 @@ export default function UserManagement() {
                           )}
                         </tbody>
                       </table>
+                      </div>
+                      </div>
                     </div>
+                    <PaginationBar pager={groupsPager} noun="Groups" />
                   </div>
                 </div>
 
                 {/* User Management Panel */}
-                <div className="block w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0">
-                  <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between">
+                <div className="flex flex-col w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card min-h-0">
+                  <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between shrink-0">
                     <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100">User Overview</h3>
                     <div className="flex items-center gap-2 relative">
                       <button 
@@ -469,7 +502,7 @@ export default function UserManagement() {
                     </div>
                   </div>
                   
-                  <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex flex-wrap items-center gap-3">
+                  <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex flex-wrap items-center gap-3 shrink-0">
                     <div className="relative w-[300px]">
                       <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input 
@@ -511,24 +544,30 @@ export default function UserManagement() {
                     </select>
                   </div>
 
-                  <div className="w-full overflow-x-auto overflow-y-visible">
-                      <table className="w-full border-collapse text-[13px] text-left whitespace-nowrap">
-                        <thead className="sticky top-0 z-20 shadow-sm">
-                          <tr>
-                            <ResizableTh width={180}>Full Name</ResizableTh>
-                            <ResizableTh width={200}>Email</ResizableTh>
-                            <ResizableTh width={120}>Role</ResizableTh>
-                            <ResizableTh width={150}>Group</ResizableTh>
-                            <ResizableTh width={100}>Status</ResizableTh>
-                            <ResizableTh width={120} onClick={() => setUserSortDesc(!userSortDesc)}>
+                  <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
+                    <div className="min-w-[1120px] w-full h-full flex flex-col">
+                      <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
+                        <Colgroup widths={USER_COL_WIDTHS} />
+                        <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
+                          <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <th className="px-5 py-3">Full Name</th>
+                            <th className="px-5 py-3">Email</th>
+                            <th className="px-5 py-3">Role</th>
+                            <th className="px-5 py-3">Group</th>
+                            <th className="px-5 py-3">Status</th>
+                            <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setUserSortDesc(!userSortDesc)}>
                               Created {userSortDesc ? '↓' : '↑'}
-                            </ResizableTh>
-                            <ResizableTh width={120}>Last Login</ResizableTh>
-                            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider table-header-optimized border-b border-slate-100 dark:border-theme w-16">ACTION</th>
+                            </th>
+                            <th className="px-5 py-3">Last Login</th>
+                            <th className="px-5 py-3 text-center">Action</th>
                           </tr>
                         </thead>
-                        <tbody>
-                          {sortedUsers.map((user) => (
+                      </table>
+                      <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+                        <table className="w-full border-collapse text-[13px] text-left table-fixed">
+                          <Colgroup widths={USER_COL_WIDTHS} />
+                          <tbody>
+                            {usersPager.paged.map((user) => (
                             <tr key={user.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                               <td className="px-5 py-3 font-medium text-slate-800 dark:text-zinc-200">{user.name}</td>
                               <td className="px-5 py-3 text-slate-500 dark:text-zinc-400 text-[12px]">{user.email}</td>
@@ -570,33 +609,27 @@ export default function UserManagement() {
                               </td>
                             </tr>
                           ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {/* Pagination */}
-                    <div className="h-[56px] bg-white dark:bg-transparent border-t border-gray-100 dark:border-theme flex items-center justify-between px-5">
-                      <div className="text-[12px] font-medium text-gray-500 dark:text-gray-400">
-                        Showing {sortedUsers.length > 0 ? 1 : 0}–{sortedUsers.length} of {sortedUsers.length} Users
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] text-gray-500 dark:text-gray-400">Rows per page:</span>
-                          <select className="bg-transparent text-[12px] font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-theme rounded-md px-2 py-1 outline-none cursor-pointer">
-                            <option value="10">10</option>
-                            <option value="25">25</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                          </select>
-                        </div>
-                        <div className="w-px h-4 bg-gray-200 dark:bg-zinc-700"></div>
-                        <div className="flex items-center gap-1.5">
-                          <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-400 dark:text-gray-500 rounded-input text-[12px] font-medium cursor-not-allowed">←</button>
-                          <button className="w-8 h-8 flex items-center justify-center border-none bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-input shadow-sm text-[12px] font-bold cursor-default">1</button>
-                          <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-400 dark:text-gray-500 rounded-input text-[12px] font-medium cursor-not-allowed">→</button>
-                        </div>
+                            {usersPager.total === 0 && (
+                              <tr>
+                                <td colSpan="8" className="p-10 text-center text-slate-500 dark:text-zinc-400">
+                                  <div className="flex flex-col items-center justify-center">
+                                    <User size={32} className="text-slate-300 dark:text-zinc-600 mb-3" />
+                                    <div className="font-bold text-slate-800 dark:text-zinc-200 mb-1">No Users Found</div>
+                                    <div className="text-[12px] mb-4">Add your first user or adjust the filters.</div>
+                                    <button onClick={() => openModal('user', 'add')} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[12px]">
+                                      + Add User
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
+                  <PaginationBar pager={usersPager} noun="Users" />
+                </div>
               </div>
             </div>
 

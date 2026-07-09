@@ -75,7 +75,7 @@ function Sidebar({ user }) {
   }
 
   return (
-    <aside className={`${isCollapsed ? 'w-[72px]' : 'w-[240px]'} shrink-0 h-full flex flex-col bg-white dark:bg-card border border-gray-200 dark:border-zinc-700/70 rounded-card shadow-card overflow-hidden transition-[width] duration-[250ms] ease-in-out relative z-40`}>
+    <aside className={`${isCollapsed ? 'w-[72px]' : 'w-[240px]'} shrink-0 my-2 h-[calc(100%-1rem)] flex flex-col bg-white dark:bg-card border border-gray-200 dark:border-zinc-700/70 rounded-card shadow-card overflow-hidden transition-[width] duration-[250ms] ease-in-out relative z-40`}>
       <div className="p-4 border-b border-gray-100 dark:border-theme flex items-center justify-between min-h-[53px]">
         <h2 className={`text-[15px] font-bold text-gray-800 dark:text-gray-100 transition-all duration-[250ms] whitespace-nowrap overflow-hidden ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto'}`}>Navigation</h2>
         <button
@@ -250,13 +250,14 @@ function ProtectedLayout() {
         <Topbar user={currentUser} onLogout={handleLogout} />
       </div>
 
-      {/* Body row: floating sidebar + content. Both start below the strip, so the sidebar top
-          lines up with the Settings sub-navigation. */}
+      {/* Body row: floating sidebar + content. <main> carries p-2 (breathing room for hover-scale
+          cards — see the p-2 note below); the sidebar mirrors that with my-2 + h-[calc(100%-1rem)] so
+          its top/bottom line up exactly with the content and the Settings sub-navigation. */}
       <div className="flex-1 min-h-0 flex gap-6 px-6 pb-6">
         <Sidebar user={currentUser} />
         {/* p-2 gives hover-float/scale cards a breathing zone so their lifted top + side edges aren't
             clipped by this scroll container's overflow boundary (Catalog / Inventory / Approvals). */}
-        <main className="flex-1 min-w-0 overflow-y-auto scroll-smooth p-2">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden scroll-smooth p-2">
           <Suspense fallback={<PageFallback />}>
             <Outlet />
           </Suspense>

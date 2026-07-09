@@ -13,23 +13,6 @@ import AuditManagement from '../modules/settings/audit/AuditManagement';
 
 
 
-const scrollbarStyles = `
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar:hover::-webkit-scrollbar-track {
-    background: #E5E7EB;
-    border-radius: 4px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #3B82F6;
-  }
-`;
-
 export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'User Management';
@@ -47,7 +30,6 @@ export default function Settings() {
   
   return (
     <>
-      <style>{scrollbarStyles}</style>
       <div className="flex h-full w-full gap-4">
         
         {/* Left Sidebar */}

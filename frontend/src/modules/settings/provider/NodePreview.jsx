@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Server, Search, Plus, Edit2, RefreshCw, Layers, Trash2, AlertTriangle, Ban } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import ResizableTh from '../../../components/ResizableTh';
+import Colgroup from '../../../components/common/Colgroup';
+import PaginationBar from '../../../components/common/PaginationBar';
+import { useClientPagination } from '../../../components/common/useClientPagination';
 import NodeForm from './NodeForm';
 import NodeExplorer from './NodeExplorer';
 import { useNodeContext } from '../../../contexts/NodeContext';
@@ -10,6 +12,10 @@ import { useProviderContext } from '../../../contexts/ProviderContext';
 import StatusPill from '../../../components/common/StatusPill';
 import { useUI } from '../../../stores/uiStore';
 import { capacityBadge } from '../../../lib/nodeCapacity';
+
+// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
+// `table-fixed`). 7 columns; sum ≈ 1030 = the table's min width.
+const NODE_COL_WIDTHS = [220, 160, 150, 150, 120, 160, 70];
 
 // Relative freshness label for the Sync column, e.g. "synced 2m ago".
 const ago = (ts) => {
@@ -160,31 +166,19 @@ export default function NodePreview() {
     setDel({ isOpen: false, node: null, blocked: false });
   };
 
-  const filtered = nodes.filter((n) =>
+  const filtered = useMemo(() => nodes.filter((n) =>
     (n.name || '').toLowerCase().includes(search.toLowerCase()) ||
     (n.rawNode || '').toLowerCase().includes(search.toLowerCase()) ||
     (n.provider || '').toLowerCase().includes(search.toLowerCase())
-  );
+  ), [nodes, search]);
+  const nodesPager = useClientPagination(filtered, 10);
 
   return (
-    <div className="block w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0">
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between">
-        <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-          Node Preview
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-surface text-slate-600 dark:text-zinc-300 border border-slate-200 dark:border-theme">{nodes.length}</span>
-        </h3>
+    <div className="flex flex-col w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0 max-h-[600px]">
+      {/* Header — title + action, matching Provider Overview */}
+      <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between shrink-0">
+        <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100">Node Preview</h3>
         <div className="flex items-center gap-2 relative">
-          <div className="relative w-[240px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search Node..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white dark:bg-surface border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 dark:text-gray-100"
-            />
-          </div>
           <button
             type="button"
             onClick={() => setModal({ isOpen: true, mode: 'add', data: null })}
@@ -195,32 +189,56 @@ export default function NodePreview() {
         </div>
       </div>
 
+      {/* Filters — own row, matching Provider Overview */}
+      <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center gap-3 shrink-0">
+        <div className="relative w-[300px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search Node..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-surface border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 dark:text-gray-100"
+          />
+        </div>
+      </div>
+
       {/* Table */}
-      <div className="w-full overflow-x-auto overflow-y-visible">
-        {nodes.length === 0 ? (
-          <div className="w-full py-16 flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
-            <Server size={48} className="mb-4 opacity-20" />
-            <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Published Nodes</h4>
-            <p className="text-[13px] mb-4 text-center max-w-sm">Publish a node to give users a friendly name instead of the raw hypervisor node.</p>
-            <button type="button" onClick={() => setModal({ isOpen: true, mode: 'add', data: null })} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-500/20">
-              <Plus size={14} /> Add Node
-            </button>
-          </div>
-        ) : (
-          <table className="w-full text-left border-collapse text-[13px]">
-            <thead className="sticky top-0 bg-white dark:bg-card z-10 shadow-sm border-b border-gray-100 dark:border-theme">
-              <tr>
-                <ResizableTh width={220} storageKey="node_preview_column_widths" columnKey="name">Node Name</ResizableTh>
-                <ResizableTh width={160} storageKey="node_preview_column_widths" columnKey="provider">Provider</ResizableTh>
-                <ResizableTh width={140} storageKey="node_preview_column_widths" columnKey="cpu">CPU Utilization</ResizableTh>
-                <ResizableTh width={140} storageKey="node_preview_column_widths" columnKey="ram">RAM Utilization</ResizableTh>
-                <ResizableTh width={110} storageKey="node_preview_column_widths" columnKey="status">Status</ResizableTh>
-                <ResizableTh width={150} storageKey="node_preview_column_widths" columnKey="sync">Sync</ResizableTh>
-                <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider table-header-optimized border-b border-slate-100 dark:border-theme w-16">ACTION</th>
+      <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
+        <div className="min-w-[1030px] w-full h-full flex flex-col">
+          <table className="w-full text-left border-collapse text-[13px] table-fixed shrink-0">
+            <Colgroup widths={NODE_COL_WIDTHS} />
+            <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
+              <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-5 py-3">Node Name</th>
+                <th className="px-4 py-3">Provider</th>
+                <th className="px-4 py-3">CPU Utilization</th>
+                <th className="px-4 py-3">RAM Utilization</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Sync</th>
+                <th className="px-5 py-3 text-center">Action</th>
               </tr>
             </thead>
+          </table>
+          <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+          <table className="w-full text-left border-collapse text-[13px] table-fixed">
+            <Colgroup widths={NODE_COL_WIDTHS} />
             <tbody>
-              {filtered.map((n) => {
+              {nodesPager.total === 0 && (
+                <tr>
+                  <td colSpan="7" className="py-16">
+                    <div className="w-full flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
+                      <Server size={48} className="mb-4 opacity-20" />
+                      <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Published Nodes</h4>
+                      <p className="text-[13px] mb-4 text-center max-w-sm">Publish a node to give users a friendly name instead of the raw hypervisor node.</p>
+                      <button type="button" onClick={() => setModal({ isOpen: true, mode: 'add', data: null })} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-500/20">
+                        <Plus size={14} /> Add Node
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {nodesPager.paged.map((n) => {
                 // Two distinct failure modes for a node:
                 //  - The Proxmox CLUSTER API is unreachable (provider Disconnected → governance
                 //    'Provider Offline'): we can't know the node's real state → show Unknown.
@@ -297,8 +315,10 @@ export default function NodePreview() {
               })}
             </tbody>
           </table>
-        )}
+          </div>
+        </div>
       </div>
+      <PaginationBar pager={nodesPager} noun="Nodes" />
 
       <NodeForm
         isOpen={modal.isOpen}

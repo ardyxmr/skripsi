@@ -202,12 +202,24 @@ export default function VmRequest() {
   })();
   const vmNameValid = !!vmPrefix && !vmNameErr;
 
+  // Boot disk must be ≥ the tier/template floor. Empty = use the tier default (allowed); any typed
+  // value below the floor gets a warning and blocks Next.
+  const bootDiskErr = (() => {
+    if (bootDiskGb === '' || !tierDiskFloor) return null;
+    const v = parseInt(bootDiskGb, 10);
+    if (Number.isNaN(v) || v < tierDiskFloor) return `Minimum ${tierDiskFloor} GB (tier size). Increase it or leave empty for the default.`;
+    return null;
+  })();
+
   // Per-step completeness — drives both the button state and the "fill all fields" warning.
   const step1Valid = !!(environmentId && providerId);
-  const step2Valid = !!(nodeId && catalogId && vmNameValid && vmCount && tierId && networkId && datastoreId) && !nodeBlocked;
+  const step2Valid = !!(nodeId && catalogId && vmNameValid && vmCount && tierId && networkId && datastoreId) && !nodeBlocked && !bootDiskErr;
   const totalCpu = (selectedTier?.cpu || 0) * count;
   const totalRam = (selectedTier ? selectedTier.ramMb / 1024 : 0) * count;
-  const totalDisk = (selectedTier?.diskGb || 0) * count;
+  // Per-VM boot disk: use the user's custom size when provided (floored at the tier size),
+  // otherwise fall back to the tier default. Mirrors the submit payload (effectiveBootDisk).
+  const perVmDisk = bootDiskGb === '' ? tierDiskFloor : Math.max(parseInt(bootDiskGb, 10) || 0, tierDiskFloor);
+  const totalDisk = perVmDisk * count;
 
   // Unsaved-changes protection.
   useEffect(() => {
@@ -570,13 +582,18 @@ export default function VmRequest() {
                 <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Boot Disk Size (GB)</label>
                 <input
                   type="number"
-                  className={inputCls}
+                  className={`${inputCls}${bootDiskErr ? ' border-rose-500 ring-1 ring-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}`}
                   value={bootDiskGb}
                   min={tierDiskFloor || 1}
                   onChange={(e) => setBootDiskGb(e.target.value)}
                   placeholder={tierDiskFloor ? `Default ${tierDiskFloor} GB (min)` : 'Template default'}
+                  aria-invalid={!!bootDiskErr}
                 />
-                <p className="text-[11px] text-gray-400 mt-1">Boot/root disk. Grown on first boot via cloud-init. Must be ≥ tier/template size{tierDiskFloor ? ` (${tierDiskFloor} GB)` : ''}.</p>
+                {bootDiskErr ? (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{bootDiskErr}</p>
+                ) : (
+                  <p className="text-[11px] text-gray-400 mt-1">Boot/root disk. Grown on first boot via cloud-init. Must be ≥ tier/template size{tierDiskFloor ? ` (${tierDiskFloor} GB)` : ''}.</p>
+                )}
               </div>
             </div>
 

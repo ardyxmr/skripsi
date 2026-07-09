@@ -126,6 +126,33 @@ function computeRenewBounds(vm, nowTs) {
   };
 }
 
+// Fixed column widths (px) shared by the pinned header table and the scrolling body table so their
+// columns stay aligned under `table-fixed`. 10 columns; sum ≈ 1300 = the table's min width.
+const INVENTORY_COL_WIDTHS = [36, 36, 180, 160, 140, 120, 170, 160, 220, 80];
+function InventoryColgroup() {
+  return (
+    <colgroup>
+      {INVENTORY_COL_WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}
+    </colgroup>
+  );
+}
+
+// Compact page-number list for the pager: show every page when there are few, otherwise the first,
+// last, and a small window around the current page, with 'gap' markers rendered as an ellipsis.
+function paginationRange(current, last) {
+  if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1);
+  const wanted = [1, last, current, current - 1, current + 1].filter((p) => p >= 1 && p <= last);
+  const sorted = [...new Set(wanted)].sort((a, b) => a - b);
+  const out = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (p - prev > 1) out.push(`gap-${p}`);
+    out.push(p);
+    prev = p;
+  }
+  return out;
+}
+
 export default function Inventory() {
   const navigate = useNavigate();
   const pushToast = useUI((s) => s.pushToast);
@@ -184,7 +211,11 @@ export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [envFilter, setEnvFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
-  
+
+  // Client-side pagination (all rows are already in memory + kept live by the poller).
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
   // Widget Filter State
   const [activeWidgetFilter, setActiveWidgetFilter] = useState('Total VM');
   
@@ -421,6 +452,17 @@ export default function Inventory() {
     });
   }, [vms, searchTerm, envFilter, statusFilter, activeWidgetFilter]);
 
+  // Derived pagination over the filtered set.
+  const lastPage = Math.max(1, Math.ceil(filteredVms.length / perPage));
+  const pageSafe = Math.min(page, lastPage);
+  const pageStart = filteredVms.length === 0 ? 0 : (pageSafe - 1) * perPage + 1;
+  const pageEnd = Math.min(pageSafe * perPage, filteredVms.length);
+  const pagedVms = filteredVms.slice((pageSafe - 1) * perPage, pageSafe * perPage);
+
+  // Any filter/size change jumps back to page 1; a shrinking list (filter or live poll) clamps the page.
+  useEffect(() => { setPage(1); }, [searchTerm, envFilter, statusFilter, activeWidgetFilter, perPage]);
+  useEffect(() => { if (page > lastPage) setPage(lastPage); }, [page, lastPage]);
+
   const toggleExpand = (id) => {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
   };
@@ -608,8 +650,8 @@ export default function Inventory() {
   const renewBounds = extendModalVm ? computeRenewBounds(extendModalVm, nowTs) : null;
 
   return (
-    <div className="animate-in fade-in duration-300 relative h-auto flex flex-col">
-      
+    <div className="animate-in fade-in duration-300 relative h-full flex flex-col">
+
       {/* Toast Notification */}
       {toastMessage && (
         <div className="absolute -top-4 left-0 right-0 flex justify-center z-[100] pointer-events-none">
@@ -655,7 +697,7 @@ export default function Inventory() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col h-auto overflow-hidden relative">
+      <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col min-h-0 overflow-hidden relative">
       
       {/* Drawer */}
       <div className={`fixed inset-0 z-50 transition-opacity duration-300 ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
@@ -1316,17 +1358,18 @@ export default function Inventory() {
         </div>
       </div>
 
-      {/* Main Content Area - Table with Horizontal and Vertical Scrolling */}
-      <div className="bg-transparent overflow-hidden flex flex-col relative border-t border-transparent">
-        
-        {/* Table Container with max-height 70vh and overflow auto */}
-        <div className="overflow-auto custom-scrollbar pb-4" style={{ maxHeight: '70vh' }}>
-          <table className="w-full text-left border-collapse min-w-[1300px]">
-            <thead className="sticky top-0 z-20 bg-transparent dark:bg-transparent backdrop-blur-sm border-b border-gray-200 dark:border-theme shadow-sm">
+      {/* Table area: pinned header table + a separately-scrolling body table below it (same pattern as
+          Approvals) — the vertical scrollbar starts UNDER the titles. Both tables use table-fixed with
+          the SAME <InventoryColgroup/> so columns align; one outer horizontal scroll wraps both. */}
+      <div className="flex-auto min-h-0 overflow-x-auto overflow-y-hidden custom-scrollbar flex flex-col border-t border-transparent">
+        <div className="min-w-[1300px] w-full h-full flex flex-col">
+          {/* Pinned column-title header (does not scroll vertically) */}
+          <table className="w-full text-left border-collapse table-fixed shrink-0">
+            <InventoryColgroup />
+            <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
               <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                <th className="px-3 py-3 w-8 text-center"></th>
-                {/* Status dot */}
-                <th className="px-3 py-3 w-8 text-center"></th>
+                <th className="px-3 py-3 text-center"></th>
+                <th className="px-3 py-3 text-center"></th>
                 <th className="px-4 py-3">VM Name</th>
                 <th className="px-4 py-3">OS</th>
                 <th className="px-4 py-3">Environment</th>
@@ -1337,7 +1380,13 @@ export default function Inventory() {
                 <th className="px-4 py-3 text-center">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-theme relative">
+          </table>
+
+          {/* Scrolling body — the vertical scrollbar lives on THIS element, below the header. */}
+          <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+            <table className="w-full text-left border-collapse table-fixed">
+              <InventoryColgroup />
+              <tbody className="divide-y divide-gray-100 dark:divide-theme relative">
               {loading && vms.length === 0 ? (
                 <SkeletonRows cols={10} />
               ) : filteredVms.length === 0 ? (
@@ -1359,7 +1408,7 @@ export default function Inventory() {
                   </td>
                 </tr>
               ) : (
-                filteredVms.map(vm => {
+                pagedVms.map(vm => {
                   const isExpanded = !!expandedRows[vm.id];
                   const statusConf = getStatusConfig(effectiveVmStatus(vm));
                   const expiryConf = getExpiryDisplay(vm.expiryDate);
@@ -1561,19 +1610,25 @@ export default function Inventory() {
                   );
                 })
               )}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
-        
-        {/* Pagination Bar */}
+      </div>
+
+      {/* Pagination Bar */}
         <div className="h-[56px] bg-white dark:bg-transparent border-t border-gray-100 dark:border-theme flex items-center justify-between px-5 shrink-0 z-10">
           <div className="text-[12px] font-medium text-gray-500 dark:text-gray-400">
-            Showing {filteredVms.length > 0 ? 1 : 0}–{filteredVms.length} of {filteredVms.length} VMs
+            Showing {pageStart}–{pageEnd} of {filteredVms.length} VMs
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-gray-500 dark:text-gray-400">Rows per page:</span>
-              <select className="bg-transparent text-[12px] font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-theme rounded-md px-2 py-1 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-500/20 cursor-pointer">
+              <select
+                value={perPage}
+                onChange={(e) => setPerPage(Number(e.target.value))}
+                className="bg-white dark:bg-surface text-[12px] font-medium text-slate-700 dark:text-zinc-300 border border-gray-200 dark:border-theme rounded-md px-2 py-1 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-500/20 cursor-pointer"
+              >
                 <option value="10">10</option>
                 <option value="50">50</option>
                 <option value="100">100</option>
@@ -1583,17 +1638,44 @@ export default function Inventory() {
             <div className="w-px h-4 bg-gray-200 dark:bg-zinc-700/50"></div>
             
             <div className="flex items-center gap-1.5">
-              <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-400 dark:text-gray-500 rounded-input text-[12px] font-medium cursor-not-allowed">←</button>
-              <button className="w-8 h-8 flex items-center justify-center border-none bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-input shadow-sm text-[12px] font-bold cursor-default">1</button>
-              <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input text-[12px] font-medium">2</button>
-              <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input text-[12px] font-medium">→</button>
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pageSafe <= 1}
+                aria-label="Previous page"
+                className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input transition-[border-color,opacity] text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white dark:disabled:hover:bg-card"
+              >
+                ←
+              </button>
+              {paginationRange(pageSafe, lastPage).map((p) =>
+                typeof p === 'number' ? (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    aria-current={p === pageSafe ? 'page' : undefined}
+                    className={p === pageSafe
+                      ? 'w-8 h-8 flex items-center justify-center border-none bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-input shadow-sm text-[12px] font-bold'
+                      : 'w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input transition-[border-color,opacity] text-[12px] font-medium'}
+                  >
+                    {p}
+                  </button>
+                ) : (
+                  <span key={p} className="w-8 h-8 flex items-center justify-center text-gray-400 dark:text-gray-500 text-[12px] select-none">…</span>
+                )
+              )}
+              <button
+                onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
+                disabled={pageSafe >= lastPage}
+                aria-label="Next page"
+                className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input transition-[border-color,opacity] text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white dark:disabled:hover:bg-card"
+              >
+                →
+              </button>
             </div>
           </div>
         </div>
 
       </div>
-      </div>
-      
+
       {/* Floating Action Dropdown Menu */}
       {openDropdownId && (() => {
         const activeVm = vms.find(v => v.id === openDropdownId);

@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Cloud, Search, Plus, Edit2, CheckCircle2, Database, Layers, Trash2, RefreshCw, AlertTriangle } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import ResizableTh from '../../../components/ResizableTh';
+import Colgroup from '../../../components/common/Colgroup';
+import PaginationBar from '../../../components/common/PaginationBar';
+import { useClientPagination } from '../../../components/common/useClientPagination';
 import ProviderForm from './ProviderForm';
 import ProviderDiscovery from './ProviderDiscovery';
 import ProviderActionModal from './ProviderActionModal';
@@ -16,6 +18,10 @@ import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { formatDateTime } from '../../../lib/datetime';
 import { useUI } from '../../../stores/uiStore';
 import { ensureMinDuration } from '../../../lib/minDuration';
+
+// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
+// `table-fixed`). 12 columns; sum ≈ 1480 = the table's min width (horizontal scroll below it).
+const PROVIDER_COL_WIDTHS = [180, 110, 190, 90, 110, 110, 110, 120, 120, 150, 120, 70];
 
 export default function ProviderManagement() {
   const { providers, loading, refetch, create, update, remove } = useProviderContext();
@@ -204,6 +210,22 @@ export default function ProviderManagement() {
   // Networks / Datastores) count connected providers only, matching what can actually be provisioned.
   const connectedProviders = providers.filter((p) => p.status === 'Connected');
 
+  // Filtered + sorted list (was inline in the tbody); feeds the client-side pager.
+  const filteredProviders = useMemo(() => {
+    return providers.filter(p =>
+      (providerTypeFilter === 'All Types' || p.providerType === providerTypeFilter) &&
+      (providerStatusFilter === 'All Status' || p.status === providerStatusFilter) &&
+      ((p.providerName || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+       (p.endpoint || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+       (p.providerType || '').toLowerCase().includes(debouncedSearch.toLowerCase()))
+    ).sort((a, b) => {
+      if (a[providerSortConfig.key] < b[providerSortConfig.key]) return providerSortConfig.direction === 'asc' ? -1 : 1;
+      if (a[providerSortConfig.key] > b[providerSortConfig.key]) return providerSortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [providers, providerTypeFilter, providerStatusFilter, debouncedSearch, providerSortConfig]);
+  const providersPager = useClientPagination(filteredProviders, 10);
+
   return (
     <>
           {/* Provider Management */}
@@ -247,8 +269,8 @@ export default function ProviderManagement() {
                 {/* Scrollable Container for Tables Only */}
                 <div className="flex-1 w-full overflow-y-auto custom-scrollbar flex flex-col gap-6 pr-1 pb-1">
                   {/* Provider Overview Table */}
-                  <div className="block w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0">
-                  <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between">
+                  <div className="flex flex-col w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card min-h-0">
+                  <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between shrink-0">
                     <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100">Provider Overview</h3>
                     <div className="flex items-center gap-2 relative">
                       <button 
@@ -268,7 +290,7 @@ export default function ProviderManagement() {
                     </div>
                   </div>
                   
-                  <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center gap-3">
+                  <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center gap-3 shrink-0">
                     <div className="relative w-[300px]">
                       <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input 
@@ -300,60 +322,55 @@ export default function ProviderManagement() {
                     </select>
                   </div>
                   
-                  <div className="w-full overflow-x-auto overflow-y-visible">
-                    {providers.length === 0 && !loading ? (
-                      <div className="w-full py-16 flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
-                        <Cloud size={48} className="mb-4 opacity-20" />
-                        <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Providers Configured</h4>
-                        <p className="text-[13px] mb-4 text-center max-w-sm">Register your first infrastructure provider to begin VM provisioning.</p>
-                        <button onClick={() => openModal('add', null)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-500/20">
-                          <Plus size={14} /> Add Provider
-                        </button>
-                      </div>
-                    ) : (
-                      <table className="w-full text-left border-collapse text-[13px]">
-                        <thead className="sticky top-0 bg-white dark:bg-card z-10 shadow-sm border-b border-gray-100 dark:border-theme">
-                          <tr>
-                            <ResizableTh width={180} onClick={() => handleProviderSort('name')} storageKey="provider_management_column_widths" columnKey="name">
+                  <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
+                    <div className="min-w-[1480px] w-full h-full flex flex-col">
+                      <table className="w-full text-left border-collapse text-[13px] table-fixed shrink-0">
+                        <Colgroup widths={PROVIDER_COL_WIDTHS} />
+                        <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
+                          <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('name')}>
                               Provider Name {providerSortConfig.key === 'name' ? (providerSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                            </ResizableTh>
-                            <ResizableTh width={100} storageKey="provider_management_column_widths" columnKey="type">Type</ResizableTh>
-                            <ResizableTh width={180} storageKey="provider_management_column_widths" columnKey="endpoint">Endpoint</ResizableTh>
-                            <ResizableTh width={80} storageKey="provider_management_column_widths" columnKey="nodes">Nodes</ResizableTh>
-                            <ResizableTh width={100} onClick={() => handleProviderSort('templates')} storageKey="provider_management_column_widths" columnKey="templates">
+                            </th>
+                            <th className="px-4 py-3">Type</th>
+                            <th className="px-4 py-3">Endpoint</th>
+                            <th className="px-4 py-3">Nodes</th>
+                            <th className="px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('templates')}>
                               Templates {providerSortConfig.key === 'templates' ? (providerSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                            </ResizableTh>
-                            <ResizableTh width={100} onClick={() => handleProviderSort('networks')} storageKey="provider_management_column_widths" columnKey="networks">
+                            </th>
+                            <th className="px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('networks')}>
                               Networks {providerSortConfig.key === 'networks' ? (providerSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                            </ResizableTh>
-                            <ResizableTh width={100} onClick={() => handleProviderSort('datastores')} storageKey="provider_management_column_widths" columnKey="datastores">
+                            </th>
+                            <th className="px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('datastores')}>
                               Datastores {providerSortConfig.key === 'datastores' ? (providerSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                            </ResizableTh>
-                            <ResizableTh width={100} storageKey="provider_management_column_widths" columnKey="connection">Connection</ResizableTh>
-
-                            <ResizableTh width={100} storageKey="provider_management_column_widths" columnKey="discovery">Discovery</ResizableTh>
-                            <ResizableTh width={140} storageKey="provider_management_column_widths" columnKey="lastDiscovery">Last Discovery</ResizableTh>
-                            <ResizableTh width={110} storageKey="provider_management_column_widths" columnKey="syncMode">Sync Mode</ResizableTh>
-                            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider table-header-optimized border-b border-slate-100 dark:border-theme w-16">ACTION</th>
+                            </th>
+                            <th className="px-4 py-3">Connection</th>
+                            <th className="px-4 py-3">Discovery</th>
+                            <th className="px-4 py-3">Last Discovery</th>
+                            <th className="px-4 py-3">Sync Mode</th>
+                            <th className="px-5 py-3 text-center">Action</th>
                           </tr>
                         </thead>
+                      </table>
+                      <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+                      <table className="w-full text-left border-collapse text-[13px] table-fixed">
+                        <Colgroup widths={PROVIDER_COL_WIDTHS} />
                         <tbody>
                           {loading && providers.length === 0 && <TableSkeleton cols={12} />}
-                          {providers.filter(p =>
-                            (providerTypeFilter === 'All Types' || p.providerType === providerTypeFilter) &&
-                            (providerStatusFilter === 'All Status' || p.status === providerStatusFilter) &&
-                            ((p.providerName || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-                             (p.endpoint || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-                             (p.providerType || '').toLowerCase().includes(debouncedSearch.toLowerCase()))
-                          ).sort((a, b) => {
-                            if (a[providerSortConfig.key] < b[providerSortConfig.key]) {
-                              return providerSortConfig.direction === 'asc' ? -1 : 1;
-                            }
-                            if (a[providerSortConfig.key] > b[providerSortConfig.key]) {
-                              return providerSortConfig.direction === 'asc' ? 1 : -1;
-                            }
-                            return 0;
-                          }).map((p) => (
+                          {!loading && providersPager.total === 0 && (
+                            <tr>
+                              <td colSpan="12" className="py-16">
+                                <div className="w-full flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
+                                  <Cloud size={48} className="mb-4 opacity-20" />
+                                  <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Providers Configured</h4>
+                                  <p className="text-[13px] mb-4 text-center max-w-sm">Register your first infrastructure provider to begin VM provisioning.</p>
+                                  <button onClick={() => openModal('add', null)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-500/20">
+                                    <Plus size={14} /> Add Provider
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          {providersPager.paged.map((p) => (
                             <tr key={p.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${p.status !== 'Connected' ? 'opacity-60' : ''}`}>
                               <td className="px-5 py-3">
                                 <div className="text-[13px] font-bold text-gray-800 dark:text-gray-200">{p.providerName}</div>
@@ -413,29 +430,10 @@ export default function ProviderManagement() {
                           ))}
                         </tbody>
                       </table>
-                    )}
-                  </div>
-                  {/* Pagination */}
-                  <div className="h-[56px] bg-white dark:bg-transparent border-t border-gray-100 dark:border-theme flex items-center justify-between px-5">
-                    <div className="text-[12px] font-medium text-gray-500 dark:text-gray-400">
-                      Showing {providers.length > 0 ? 1 : 0}–{providers.length} of {providers.length} Providers
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] text-gray-500 dark:text-gray-400">Rows per page:</span>
-                        <select className="bg-transparent text-[12px] font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-theme rounded-md px-2 py-1 outline-none cursor-pointer">
-                          <option value="10">10</option>
-                          <option value="50">50</option>
-                        </select>
-                      </div>
-                      <div className="w-px h-4 bg-gray-200 dark:bg-zinc-700"></div>
-                      <div className="flex items-center gap-1.5">
-                        <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-400 dark:text-gray-500 rounded-input text-[12px] font-medium cursor-not-allowed">←</button>
-                        <button className="w-8 h-8 flex items-center justify-center border-none bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-input shadow-sm text-[12px] font-bold cursor-default">1</button>
-                        <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-400 dark:text-gray-500 rounded-input text-[12px] font-medium cursor-not-allowed">→</button>
                       </div>
                     </div>
                   </div>
+                  <PaginationBar pager={providersPager} noun="Providers" />
                 </div>
 
                   {/* Published Node Preview — fourth published abstraction (ADR-17), below Providers */}

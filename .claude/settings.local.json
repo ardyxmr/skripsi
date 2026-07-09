@@ -111,7 +111,10 @@
       "Bash(rtk gain *)",
       "Bash(rtk ls *)",
       "Bash(rtk read *)",
-      "Bash(rtk find *)"
+      "Bash(rtk find *)",
+      "Bash(grep -c '\\\\.md$')",
+      "Bash(rtk lint *)",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

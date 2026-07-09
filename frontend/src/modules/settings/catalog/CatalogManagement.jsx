@@ -2,7 +2,9 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Grid, Search, Filter, Edit2, Trash2, XCircle, CheckCircle2, RefreshCw, Plus, AlertTriangle, Layers, Server, Shield } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import ResizableTh from '../../../components/ResizableTh';
+import Colgroup from '../../../components/common/Colgroup';
+import PaginationBar from '../../../components/common/PaginationBar';
+import { useClientPagination } from '../../../components/common/useClientPagination';
 import CatalogForm from './CatalogForm';
 import CatalogExplorer from './CatalogExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
@@ -15,6 +17,10 @@ import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { useUI } from '../../../stores/uiStore';
 import { ensureMinDuration } from '../../../lib/minDuration';
 import { LIVE_CACHE_EVENT } from '../../../lib/liveCache';
+
+// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
+// `table-fixed`). 8 columns; sum ≈ 1100 = the table's min width.
+const CATALOG_COL_WIDTHS = [220, 160, 140, 180, 100, 130, 100, 70];
 
 export default function CatalogManagement() {
   const { providers } = useProviderContext();
@@ -235,6 +241,8 @@ export default function CatalogManagement() {
     return String(a[key]).localeCompare(String(b[key])) * direction;
   });
 
+  const catalogsPager = useClientPagination(sortedCatalogs, 10);
+
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
       {/* Stats Row */}
@@ -270,8 +278,8 @@ export default function CatalogManagement() {
         {/* Scrollable Container for Tables Only */}
         <div className="flex-1 w-full overflow-y-auto custom-scrollbar flex flex-col gap-6 pr-1 pb-1">
           {/* Catalog Overview Table */}
-          <div className="block w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0">
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between">
+          <div className="flex flex-col w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card min-h-0">
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between shrink-0">
             <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100">Catalog Overview</h3>
             <div className="flex items-center gap-2 relative">
               <button 
@@ -291,12 +299,12 @@ export default function CatalogManagement() {
             </div>
           </div>
           
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center gap-3">
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center gap-3 shrink-0">
             <div className="relative w-[300px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input 
-                type="text" 
-                placeholder="Search Catalog..." 
+              <input
+                type="text"
+                placeholder="Search Catalog..."
                 value={catalogSearch}
                 onChange={e => setCatalogSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 bg-white dark:bg-surface border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 dark:text-gray-100"
@@ -324,44 +332,48 @@ export default function CatalogManagement() {
             </select>
           </div>
           
-          <div className="w-full overflow-x-auto overflow-y-visible">
-            {catalogs.length === 0 && !loading ? (
-              <div className="w-full py-16 flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
-                <Grid size={48} className="mb-4 opacity-20" />
-                <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Catalogs Found</h4>
-                <p className="text-[13px] mb-4 text-center max-w-sm">Create a catalog mapping to start provisioning virtual machines.</p>
-              </div>
-            ) : (
-              <table className="w-full text-left border-collapse whitespace-nowrap min-w-[1000px]">
-                <thead className="sticky top-0 z-20 shadow-sm">
-                  <tr>
-                    <ResizableTh width={220} storageKey="catalog_management_column_widths" columnKey="name" onClick={() => handleCatalogSort('name')}>
+          <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
+            <div className="min-w-[1100px] w-full h-full flex flex-col">
+              <table className="w-full text-left border-collapse table-fixed shrink-0">
+                <Colgroup widths={CATALOG_COL_WIDTHS} />
+                <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
+                  <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('name')}>
                       Catalog Name {catalogSortConfig.key === 'name' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                    </ResizableTh>
-                    <ResizableTh width={160} storageKey="catalog_management_column_widths" columnKey="provider" onClick={() => handleCatalogSort('provider')}>
+                    </th>
+                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('provider')}>
                       Provider {catalogSortConfig.key === 'provider' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                    </ResizableTh>
-                    <ResizableTh width={140} storageKey="catalog_management_column_widths" columnKey="node" onClick={() => handleCatalogSort('node')}>
+                    </th>
+                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('node')}>
                       Node {catalogSortConfig.key === 'node' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                    </ResizableTh>
-                    <ResizableTh width={180} storageKey="catalog_management_column_widths" columnKey="template" onClick={() => handleCatalogSort('template')}>
+                    </th>
+                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('template')}>
                       Source Template {catalogSortConfig.key === 'template' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                    </ResizableTh>
-                    <ResizableTh width={100} storageKey="catalog_management_column_widths" columnKey="activeVMs">
-                      Usage
-                    </ResizableTh>
-                    <ResizableTh width={130} storageKey="catalog_management_column_widths" columnKey="hardening">
-                      Harden / Patch
-                    </ResizableTh>
-                    <ResizableTh width={100} storageKey="catalog_management_column_widths" columnKey="status">
-                      Status
-                    </ResizableTh>
-                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider table-header-optimized border-b border-slate-100 dark:border-theme w-16">ACTION</th>
+                    </th>
+                    <th className="px-5 py-3">Usage</th>
+                    <th className="px-5 py-3">Harden / Patch</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3 text-center">Action</th>
                   </tr>
                 </thead>
+              </table>
+              <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+              <table className="w-full text-left border-collapse whitespace-nowrap table-fixed">
+                <Colgroup widths={CATALOG_COL_WIDTHS} />
                 <tbody>
-                  {loading && catalogs.length === 0 && <TableSkeleton cols={7} />}
-                  {sortedCatalogs.map((catalog) => (
+                  {loading && catalogs.length === 0 && <TableSkeleton cols={8} />}
+                  {!loading && catalogsPager.total === 0 && (
+                    <tr>
+                      <td colSpan="8" className="py-16">
+                        <div className="w-full flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
+                          <Grid size={48} className="mb-4 opacity-20" />
+                          <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Catalogs Found</h4>
+                          <p className="text-[13px] mb-4 text-center max-w-sm">Create a catalog mapping to start provisioning virtual machines.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {catalogsPager.paged.map((catalog) => (
                     <tr key={catalog.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${isOffline(catalog.status) ? 'opacity-60' : ''}`}>
                       <td className="px-5 py-3">
                         <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px] hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer" onClick={() => setCatalogDrawer({ isOpen: true, catalog })}>
@@ -422,31 +434,10 @@ export default function CatalogManagement() {
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
-          {/* Pagination */}
-          <div className="h-[56px] bg-white dark:bg-transparent border-t border-gray-100 dark:border-theme flex items-center justify-between px-5">
-            <div className="text-[12px] font-medium text-gray-500 dark:text-gray-400">
-              Showing {catalogs.length > 0 ? 1 : 0}–{catalogs.length} of {catalogs.length} Catalogs
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] text-gray-500 dark:text-gray-400">Rows per page:</span>
-                <select className="bg-transparent text-[12px] font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-theme rounded-md px-2 py-1 outline-none cursor-pointer">
-                  <option value="10">10</option>
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                </select>
-              </div>
-              <div className="w-px h-4 bg-gray-200 dark:bg-zinc-700"></div>
-              <div className="flex items-center gap-1.5">
-                <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-400 dark:text-gray-500 rounded-input text-[12px] font-medium cursor-not-allowed">←</button>
-                <button className="w-8 h-8 flex items-center justify-center border-none bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-input shadow-sm text-[12px] font-bold cursor-default">1</button>
-                <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-400 dark:text-gray-500 rounded-input text-[12px] font-medium cursor-not-allowed">→</button>
               </div>
             </div>
           </div>
+          <PaginationBar pager={catalogsPager} noun="Catalogs" />
         </div>
       </div>
 

@@ -9,13 +9,19 @@ import { useDatastoreContext } from '../../../contexts/DatastoreContext';
 import { useNodeContext } from '../../../contexts/NodeContext';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useTierContext } from '../../../contexts/TierContext';
-import ResizableTh from '../../../components/ResizableTh';
+import Colgroup from '../../../components/common/Colgroup';
+import PaginationBar from '../../../components/common/PaginationBar';
+import { useClientPagination } from '../../../components/common/useClientPagination';
 import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { isOffline } from '../../../lib/resourceStatus';
 import EnvironmentForm from './EnvironmentForm';
 import EnvironmentExplorer from './EnvironmentExplorer';
 import { useUI } from '../../../stores/uiStore';
+
+// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
+// `table-fixed`). 6 columns; sum ≈ 910 = the table's min width.
+const ENV_COL_WIDTHS = [260, 130, 180, 140, 130, 70];
 
 export default function EnvironmentManagement() {
   const { environments, loading, create, update, remove } = useEnvironmentContext();
@@ -88,6 +94,8 @@ export default function EnvironmentManagement() {
     const matchesType = typeFilter === 'All Types' || env.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
   });
+
+  const envsPager = useClientPagination(filteredEnvironments, 10);
 
   // Calculate stats
   const totalEnvs = environments.length;
@@ -267,8 +275,8 @@ export default function EnvironmentManagement() {
       <div className="flex-1 w-full overflow-y-auto custom-scrollbar flex flex-col gap-6 pr-1 pb-1">
 
         {/* Table View Container */}
-        <div className="block w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0">
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between">
+        <div className="flex flex-col w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card min-h-0">
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between shrink-0">
             <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100">Environment Overview</h3>
             <div className="flex items-center gap-2 relative">
               <button 
@@ -281,7 +289,7 @@ export default function EnvironmentManagement() {
           </div>
           
           {/* Toolbar */}
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex flex-wrap items-center gap-3">
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex flex-wrap items-center gap-3 shrink-0">
             <div className="relative w-[300px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input 
@@ -314,22 +322,28 @@ export default function EnvironmentManagement() {
             </select>
           </div>
 
-          <div className="w-full overflow-x-auto overflow-y-visible">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-50/50 dark:bg-zinc-800/50 border-b border-gray-200 dark:border-theme sticky top-0 z-10">
-                <tr>
-                  <ResizableTh>Environment</ResizableTh>
-                  <ResizableTh>Type</ResizableTh>
-                  <ResizableTh>Expiry Policy</ResizableTh>
-                  <ResizableTh>Approval</ResizableTh>
-                  <ResizableTh>Status</ResizableTh>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider table-header-optimized border-b border-slate-100 dark:border-theme w-16">ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && environments.length === 0 ? (
-                  <TableSkeleton cols={6} />
-                ) : filteredEnvironments.length === 0 ? (
+          <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
+            <div className="min-w-[910px] w-full h-full flex flex-col">
+              <table className="w-full text-left text-sm table-fixed shrink-0">
+                <Colgroup widths={ENV_COL_WIDTHS} />
+                <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
+                  <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-4 py-3">Environment</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">Expiry Policy</th>
+                    <th className="px-4 py-3">Approval</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-5 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+              </table>
+              <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+              <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
+                <Colgroup widths={ENV_COL_WIDTHS} />
+                <tbody>
+                  {loading && environments.length === 0 ? (
+                    <TableSkeleton cols={6} />
+                  ) : envsPager.total === 0 ? (
                   <tr>
                     <td colSpan="6" className="px-4 py-12 text-center text-slate-500 dark:text-zinc-400">
                       <Box size={32} className="mx-auto mb-3 opacity-20" />
@@ -337,7 +351,7 @@ export default function EnvironmentManagement() {
                     </td>
                   </tr>
                 ) : (
-                  filteredEnvironments.map((env) => (
+                  envsPager.paged.map((env) => (
                     <tr key={env.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -431,9 +445,12 @@ export default function EnvironmentManagement() {
                     </tr>
                   ))
                 )}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+              </div>
+            </div>
           </div>
+          <PaginationBar pager={envsPager} noun="Environments" />
         </div>
       </div>
 

@@ -4,12 +4,18 @@ import { Layers, Search, Plus, Filter, Edit2, Trash2, X, AlertTriangle, Shield, 
 import TableActionMenu from '../../../components/common/TableActionMenu';
 import { useTierContext } from '../../../contexts/TierContext';
 import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
-import ResizableTh from '../../../components/ResizableTh';
+import Colgroup from '../../../components/common/Colgroup';
+import PaginationBar from '../../../components/common/PaginationBar';
+import { useClientPagination } from '../../../components/common/useClientPagination';
 import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { formatDateTime } from '../../../lib/datetime';
 import TierForm from './TierForm';
 import { useUI } from '../../../stores/uiStore';
+
+// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
+// `table-fixed`). 7 columns; sum ≈ 960 = the table's min width.
+const TIER_COL_WIDTHS = [240, 110, 120, 120, 130, 170, 70];
 
 export default function TierManagement() {
   const { tiers, loading, create, update, remove } = useTierContext();
@@ -75,6 +81,8 @@ export default function TierManagement() {
     const matchesType = typeFilter === 'All Types' || tier.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
   });
+
+  const tiersPager = useClientPagination(filteredTiers, 10);
 
   // Calculate stats
   const totalTiers = tiers.length;
@@ -240,8 +248,8 @@ export default function TierManagement() {
       <div className="flex-1 w-full overflow-y-auto custom-scrollbar flex flex-col gap-6 pr-1 pb-1">
 
         {/* Table View Container */}
-        <div className="block w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0">
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between">
+        <div className="flex flex-col w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card min-h-0">
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between shrink-0">
             <h3 className="text-[15px] font-bold text-gray-800 dark:text-gray-100">Resource Blueprints</h3>
             <div className="flex items-center gap-2 relative">
               <button 
@@ -254,7 +262,7 @@ export default function TierManagement() {
           </div>
           
           {/* Toolbar */}
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex flex-wrap items-center gap-3">
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex flex-wrap items-center gap-3 shrink-0">
             <div className="relative w-[300px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input 
@@ -287,23 +295,29 @@ export default function TierManagement() {
             </select>
           </div>
 
-          <div className="w-full overflow-x-auto overflow-y-visible">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-50/50 dark:bg-zinc-800/50 border-b border-gray-200 dark:border-theme sticky top-0 z-10">
-                <tr>
-                  <ResizableTh>Tier Name</ResizableTh>
-                  <ResizableTh>CPU</ResizableTh>
-                  <ResizableTh>RAM (GB)</ResizableTh>
-                  <ResizableTh>Disk (GB)</ResizableTh>
-                  <ResizableTh>Status</ResizableTh>
-                  <ResizableTh>Created Date</ResizableTh>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider table-header-optimized border-b border-slate-100 dark:border-theme w-16">ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && tiers.length === 0 ? (
-                  <TableSkeleton cols={7} />
-                ) : filteredTiers.length === 0 ? (
+          <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
+            <div className="min-w-[960px] w-full h-full flex flex-col">
+              <table className="w-full text-left text-sm table-fixed shrink-0">
+                <Colgroup widths={TIER_COL_WIDTHS} />
+                <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
+                  <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-4 py-3">Tier Name</th>
+                    <th className="px-4 py-3">CPU</th>
+                    <th className="px-4 py-3">RAM (GB)</th>
+                    <th className="px-4 py-3">Disk (GB)</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Created Date</th>
+                    <th className="px-5 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+              </table>
+              <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+              <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
+                <Colgroup widths={TIER_COL_WIDTHS} />
+                <tbody>
+                  {loading && tiers.length === 0 ? (
+                    <TableSkeleton cols={7} />
+                  ) : tiersPager.total === 0 ? (
                   <tr>
                     <td colSpan="7" className="px-4 py-12 text-center text-slate-500 dark:text-zinc-400">
                       <Layers size={32} className="mx-auto mb-3 opacity-20" />
@@ -311,7 +325,7 @@ export default function TierManagement() {
                     </td>
                   </tr>
                 ) : (
-                  filteredTiers.map((tier) => (
+                  tiersPager.paged.map((tier) => (
                     <tr key={tier.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -394,9 +408,12 @@ export default function TierManagement() {
                     </tr>
                   ))
                 )}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+              </div>
+            </div>
           </div>
+          <PaginationBar pager={tiersPager} noun="Tiers" />
         </div>
       </div>
 

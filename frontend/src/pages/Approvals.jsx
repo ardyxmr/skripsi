@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, Check, X, ChevronRight, ChevronDown, CheckSquare, Square, Filter, RotateCcw, FileEdit, AlertCircle } from 'lucide-react';
+import { Search, RefreshCw, Check, X, ChevronRight, ChevronDown, CheckSquare, Square, RotateCcw, FileEdit, AlertCircle } from 'lucide-react';
 import api from '../lib/api';
 import { getCached, setCached, LIVE_CACHE_EVENT } from '../lib/liveCache';
 import { useUI } from '../stores/uiStore';
@@ -138,6 +138,33 @@ function SkeletonRows({ cols, rows = 6 }) {
   ));
 }
 
+// Fixed column widths (px) shared by the pinned header table and the scrolling body table so their
+// columns stay aligned under `table-fixed`. 12 columns; sum ≈ 1346 = the table's min width.
+const APPROVAL_COL_WIDTHS = [36, 40, 140, 130, 130, 130, 150, 120, 100, 110, 110, 150];
+function ApprovalColgroup() {
+  return (
+    <colgroup>
+      {APPROVAL_COL_WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}
+    </colgroup>
+  );
+}
+
+// Compact page-number list for the pager: show every page when there are few, otherwise the first,
+// last, and a small window around the current page, with 'gap' markers rendered as an ellipsis.
+function paginationRange(current, last) {
+  if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1);
+  const wanted = [1, last, current, current - 1, current + 1].filter((p) => p >= 1 && p <= last);
+  const sorted = [...new Set(wanted)].sort((a, b) => a - b);
+  const out = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (p - prev > 1) out.push(`gap-${p}`);
+    out.push(p);
+    prev = p;
+  }
+  return out;
+}
+
 export default function Approvals() {
   const navigate = useNavigate();
   const pushToast = useUI((s) => s.pushToast);
@@ -170,6 +197,10 @@ export default function Approvals() {
   const [searchTerm, setSearchTerm] = useState('');
   const [envFilter, setEnvFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  // Client-side pagination (all rows are already in memory + kept live by the poller, so we slice
+  // locally rather than round-trip the server).
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   // Sort by a date column; click a header to toggle desc/asc (default: newest request first).
   const [sortConfig, setSortConfig] = useState({ field: 'requestDate', dir: 'desc' });
   const requestSort = (field) =>
@@ -248,25 +279,6 @@ export default function Approvals() {
     return () => window.removeEventListener(LIVE_CACHE_EVENT, onLive);
   }, []);
 
-  // Resize State
-  const [colWidths, setColWidths] = useState({});
-  const handleResizeStart = (e, colKey) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const th = e.target.closest('th');
-    const startWidth = th.getBoundingClientRect().width;
-    const handleMouseMove = (moveEvent) => {
-      const newWidth = Math.max(50, startWidth + (moveEvent.clientX - startX));
-      setColWidths(prev => ({ ...prev, [colKey]: newWidth }));
-    };
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
-
   // Computed Data
   const totalRequests = requests.length;
   const pendingRequests = requests.filter(r => r.status === 'Pending').length;
@@ -298,6 +310,17 @@ export default function Approvals() {
       return (ta - tb) * dir;
     });
   }, [requests, searchTerm, envFilter, statusFilter, sortConfig]);
+
+  // Derived pagination over the filtered set.
+  const lastPage = Math.max(1, Math.ceil(filteredRequests.length / perPage));
+  const pageSafe = Math.min(page, lastPage);                 // guards the render before the clamp effect runs
+  const pageStart = filteredRequests.length === 0 ? 0 : (pageSafe - 1) * perPage + 1;
+  const pageEnd = Math.min(pageSafe * perPage, filteredRequests.length);
+  const pagedRequests = filteredRequests.slice((pageSafe - 1) * perPage, pageSafe * perPage);
+
+  // Any filter/size change jumps back to page 1; a shrinking list (filter or live poll) clamps the page.
+  useEffect(() => { setPage(1); }, [searchTerm, envFilter, statusFilter, perPage]);
+  useEffect(() => { if (page > lastPage) setPage(lastPage); }, [page, lastPage]);
 
   // Handlers
   const toggleExpand = (id) => {
@@ -428,7 +451,7 @@ export default function Approvals() {
     : null;
 
   return (
-    <div className="animate-in fade-in duration-300 relative h-auto flex flex-col">
+    <div className="animate-in fade-in duration-300 relative h-full flex flex-col">
       {/* Action Modal */}
       {actionModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm">
@@ -574,8 +597,10 @@ export default function Approvals() {
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col h-auto overflow-hidden">
+      {/* Main Content Area — height follows the content, but is capped at the remaining space (≈ the
+          sidebar height): flex 0 1 auto (no grow) sizes to content when rows are few; flexbox shrink
+          caps it and the table body scrolls when rows overflow. */}
+      <div className="bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card flex flex-col min-h-0 overflow-hidden">
         
         {/* Bulk Action Banner (approvers only) */}
         {canAct && selectedRows.length > 0 && (
@@ -613,7 +638,7 @@ export default function Approvals() {
         )}
 
         {/* Header Section */}
-        <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between gap-4 flex-wrap bg-transparent dark:bg-transparent">
+        <div className="px-5 py-4 border-b border-gray-100 dark:border-theme flex items-center justify-between gap-4 flex-wrap bg-transparent dark:bg-transparent shrink-0">
           <div className="flex items-center gap-3 w-full max-w-[320px]">
             <div className="relative w-full">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -628,20 +653,17 @@ export default function Approvals() {
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Filter size={14} className="text-gray-400" />
-              <select 
-                value={envFilter}
-                onChange={e => setEnvFilter(e.target.value)}
-                className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-input px-3 py-2 outline-none cursor-pointer focus:border-teal-400 min-w-[140px]"
-              >
-                <option value="All">All Environments</option>
-                <option value="Development">Development</option>
-                <option value="Staging">Staging</option>
-                <option value="Production">Production</option>
-              </select>
-            </div>
-            
+            <select
+              value={envFilter}
+              onChange={e => setEnvFilter(e.target.value)}
+              className="bg-white dark:bg-surface border border-gray-200 dark:border-theme text-gray-700 dark:text-gray-200 text-[13px] font-medium rounded-input px-3 py-2 outline-none cursor-pointer focus:border-teal-400 min-w-[140px]"
+            >
+              <option value="All">All Environments</option>
+              <option value="Development">Development</option>
+              <option value="Staging">Staging</option>
+              <option value="Production">Production</option>
+            </select>
+
             <select 
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
@@ -670,68 +692,54 @@ export default function Approvals() {
           </div>
         </div>
 
-        {/* Table Section */}
-        <div className="overflow-auto custom-scrollbar bg-white dark:bg-card pb-4" style={{ maxHeight: '70vh' }}>
-          <table className="w-full text-left border-collapse min-w-[1200px]">
-            <thead className="sticky top-0 z-20 bg-transparent dark:bg-transparent backdrop-blur-sm border-b border-gray-200 dark:border-theme shadow-sm">
-              <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                <th className="px-3 py-3 w-8 text-center relative group" style={{ width: colWidths['col1'] }}>
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col1')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-3 py-3 w-10 text-center relative group" style={{ width: colWidths['col2'] }}>
-                  {canAct && (
-                    <input
-                      type="checkbox"
-                      className="w-3.5 h-3.5 rounded text-teal-600 border-gray-300 focus:ring-teal-500 cursor-pointer"
-                      checked={filteredRequests.length > 0 && selectedRows.length === filteredRequests.length}
-                      onChange={toggleSelectAll}
-                    />
-                  )}
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col2')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-4 py-3 relative group" style={{ width: colWidths['col3'] }}>
-                  VM Name
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col3')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-4 py-3 relative group" style={{ width: colWidths['col4'] }}>
-                  OS / Tier
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col4')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-4 py-3 relative group" style={{ width: colWidths['col5'] }}>
-                  Env / Expiry
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col5')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-4 py-3 relative group" style={{ width: colWidths['col6'] }}>
-                  Resources
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col6')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-4 py-3 relative group" style={{ width: colWidths['col7'] }}>
-                  Provider
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col7')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-4 py-3 relative group" style={{ width: colWidths['col_type'] }}>
-                  Type
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col_type')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-4 py-3 relative group" style={{ width: colWidths['col8'] }}>
-                  Status
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col8')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th onClick={() => requestSort('requestDate')} className="px-4 py-3 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 relative group select-none" style={{ width: colWidths['col9'] }}>
-                  Req Date {sortConfig.field === 'requestDate' ? (sortConfig.dir === 'asc' ? '▲' : '▼') : '⇅'}
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col9')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th onClick={() => requestSort('actionDate')} className="px-4 py-3 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 relative group select-none" style={{ width: colWidths['col10'] }}>
-                  Action Date {sortConfig.field === 'actionDate' ? (sortConfig.dir === 'asc' ? '▲' : '▼') : '⇅'}
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col10')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-                <th className="px-4 py-3 text-right pr-6 relative group" style={{ width: colWidths['col11'] }}>
-                  Action
-                  <div onMouseDown={(e) => handleResizeStart(e, 'col11')} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-teal-500/30 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-theme relative">
+        {/* Table Section — sizes to its rows (flex-auto = basis content) so the card hugs short lists;
+            shrinks + scrolls when the card hits its height cap. */}
+        {/* Pinned header table + a separately-scrolling body table below it, so the vertical scrollbar
+            starts UNDER the column titles instead of overlapping them. Both tables use table-fixed with
+            the SAME <ApprovalColgroup/> widths to stay aligned; one horizontal scroll wraps both. */}
+        <div className="flex-auto min-h-0 overflow-x-auto overflow-y-hidden custom-scrollbar flex flex-col">
+          <div className="min-w-[1346px] w-full h-full flex flex-col">
+            {/* Pinned column-title header (does not scroll vertically) */}
+            <table className="w-full text-left border-collapse table-fixed shrink-0">
+              <ApprovalColgroup />
+              <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
+                <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-center"></th>
+                  <th className="px-3 py-3 text-center">
+                    {canAct && (
+                      <input
+                        type="checkbox"
+                        className="w-3.5 h-3.5 rounded text-teal-600 border-gray-300 focus:ring-teal-500 cursor-pointer"
+                        checked={filteredRequests.length > 0 && selectedRows.length === filteredRequests.length}
+                        onChange={toggleSelectAll}
+                      />
+                    )}
+                  </th>
+                  <th className="px-4 py-3">VM Name</th>
+                  <th className="px-4 py-3">OS / Tier</th>
+                  <th className="px-4 py-3">Env / Expiry</th>
+                  <th className="px-4 py-3">Resources</th>
+                  <th className="px-4 py-3">Provider</th>
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th onClick={() => requestSort('requestDate')} className="px-4 py-3 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 select-none">
+                    Req Date {sortConfig.field === 'requestDate' ? (sortConfig.dir === 'asc' ? '▲' : '▼') : '⇅'}
+                  </th>
+                  <th onClick={() => requestSort('actionDate')} className="px-4 py-3 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 select-none">
+                    Action Date {sortConfig.field === 'actionDate' ? (sortConfig.dir === 'asc' ? '▲' : '▼') : '⇅'}
+                  </th>
+                  <th className="px-4 py-3 text-right pr-6">Action</th>
+                </tr>
+              </thead>
+            </table>
+
+            {/* Scrolling body — the vertical scrollbar lives on THIS element, below the header.
+                overflow-x-hidden stops the CSS "one axis auto ⇒ the other computes to auto" quirk from
+                spawning a 2nd horizontal scrollbar here; horizontal scroll is owned by the outer wrapper. */}
+            <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
+              <table className="w-full text-left border-collapse table-fixed">
+                <ApprovalColgroup />
+                <tbody className="divide-y divide-gray-100 dark:divide-theme relative">
               {loading && requests.length === 0 ? (
                 <SkeletonRows cols={12} />
               ) : filteredRequests.length === 0 ? (
@@ -747,7 +755,7 @@ export default function Approvals() {
                   </td>
                 </tr>
               ) : (
-                filteredRequests.map(req => {
+                pagedRequests.map(req => {
                   const isExpanded = !!expandedRows[req.id];
                   const isSelected = selectedRows.includes(req.id);
                   const isPending = req.status === 'Pending';
@@ -953,36 +961,70 @@ export default function Approvals() {
                   );
                 })
               )}
-            </tbody>
-          </table>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-        </div>
-        
-        {/* Pagination Bar */}
+
+        {/* Pagination Bar — inside the card, flush at the table's bottom (matches Inventory) */}
         <div className="h-[56px] bg-white dark:bg-transparent border-t border-gray-100 dark:border-theme flex items-center justify-between px-5 shrink-0 z-10">
           <div className="text-[12px] font-medium text-gray-500 dark:text-gray-400">
-            Showing {filteredRequests.length > 0 ? 1 : 0}–{filteredRequests.length} of {filteredRequests.length} Requests
+            Showing {pageStart}–{pageEnd} of {filteredRequests.length} Requests
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-gray-500 dark:text-gray-400">Rows per page:</span>
-              <select className="bg-transparent text-[12px] font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-theme rounded-md px-2 py-1 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-500/20 cursor-pointer">
+              <select
+                value={perPage}
+                onChange={(e) => setPerPage(Number(e.target.value))}
+                className="bg-white dark:bg-surface text-[12px] font-medium text-slate-700 dark:text-zinc-300 border border-gray-200 dark:border-theme rounded-md px-2 py-1 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-500/20 cursor-pointer"
+              >
                 <option value="10">10</option>
                 <option value="50">50</option>
                 <option value="100">100</option>
               </select>
             </div>
-            
+
             <div className="w-px h-4 bg-gray-200 dark:bg-zinc-700/50"></div>
-            
+
             <div className="flex items-center gap-1.5">
-              <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-400 dark:text-gray-500 rounded-input transition-opacity text-[12px] font-medium cursor-not-allowed">←</button>
-              <button className="w-8 h-8 flex items-center justify-center border-none bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-input shadow-sm text-[12px] font-bold cursor-default">1</button>
-              <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input transition-[border-color,opacity] text-[12px] font-medium">2</button>
-              <button className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input transition-[border-color,opacity] text-[12px] font-medium">→</button>
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pageSafe <= 1}
+                aria-label="Previous page"
+                className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input transition-[border-color,opacity] text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white dark:disabled:hover:bg-card"
+              >
+                ←
+              </button>
+              {paginationRange(pageSafe, lastPage).map((p) =>
+                typeof p === 'number' ? (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    aria-current={p === pageSafe ? 'page' : undefined}
+                    className={p === pageSafe
+                      ? 'w-8 h-8 flex items-center justify-center border-none bg-gradient-to-br from-teal-500 to-emerald-500 text-white rounded-input shadow-sm text-[12px] font-bold'
+                      : 'w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input transition-[border-color,opacity] text-[12px] font-medium'}
+                  >
+                    {p}
+                  </button>
+                ) : (
+                  <span key={p} className="w-8 h-8 flex items-center justify-center text-gray-400 dark:text-gray-500 text-[12px] select-none">…</span>
+                )
+              )}
+              <button
+                onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
+                disabled={pageSafe >= lastPage}
+                aria-label="Next page"
+                className="w-8 h-8 flex items-center justify-center border border-gray-200 dark:border-theme bg-white dark:bg-card text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700/50 rounded-input transition-[border-color,opacity] text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white dark:disabled:hover:bg-card"
+              >
+                →
+              </button>
             </div>
           </div>
         </div>
+      </div>
 
       </div>
   );

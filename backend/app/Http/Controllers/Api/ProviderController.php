@@ -119,6 +119,20 @@ class ProviderController extends Controller
     // Read-only Discovery Explorer: discovered resources + health (from the DB).
     public function explorer(Provider $provider): JsonResponse
     {
+        // Overlay each row's effectiveStatus() (live provider/node health) onto the raw discovered
+        // data, then drop the eager-loaded relations from the payload (kept only for the derivation).
+        $withEff = fn ($items) => $items->map(function ($m) {
+            $arr = $m->toArray();
+            $arr['effective_status'] = $m->effectiveStatus();
+            unset($arr['provider'], $arr['provider_node']);
+
+            return $arr;
+        });
+
+        $scoped = fn (string $model, array $with) => $withEff(
+            $model::with($with)->where('provider_id', $provider->id)->get()
+        );
+
         return response()->json([
             'connection_status' => $provider->status,
             'discovery_status' => $provider->discovery_status,
@@ -126,11 +140,11 @@ class ProviderController extends Controller
             'discovery_interval' => $provider->discovery_interval,
             'last_discovery_at' => $provider->last_discovery_at,
             'next_discovery_at' => $provider->next_discovery_at, // computed accessor (null if auto off)
-            'nodes' => ProviderNode::where('provider_id', $provider->id)->get(),
-            'templates' => ProviderTemplate::where('provider_id', $provider->id)->get(),
-            'networks' => ProviderNetwork::where('provider_id', $provider->id)->get(),
-            'datastores' => ProviderDatastore::where('provider_id', $provider->id)->get(),
-            'vms' => ProviderVm::with('providerNode')->where('provider_id', $provider->id)->get(),
+            'nodes' => $scoped(ProviderNode::class, ['provider']),
+            'templates' => $scoped(ProviderTemplate::class, ['provider', 'providerNode']),
+            'networks' => $scoped(ProviderNetwork::class, ['provider', 'providerNode']),
+            'datastores' => $scoped(ProviderDatastore::class, ['provider', 'providerNode']),
+            'vms' => $scoped(ProviderVm::class, ['provider', 'providerNode']),
         ]);
     }
 

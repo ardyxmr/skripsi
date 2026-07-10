@@ -127,8 +127,19 @@ class NodeController extends Controller
     public function explorer(Node $node): JsonResponse
     {
         $providerNodeId = $node->provider_node_id;
+
+        // Same effectiveStatus() overlay as the provider Discovery Explorer: derive live provider/node
+        // health per row, then drop the relations from the payload (kept only for the derivation +
+        // ProviderVm's node_name accessor).
+        $withEff = fn ($items) => $items->map(function ($m) {
+            $arr = $m->toArray();
+            $arr['effective_status'] = $m->effectiveStatus();
+            unset($arr['provider'], $arr['provider_node']);
+
+            return $arr;
+        });
         $scoped = fn (string $model) => $providerNodeId
-            ? $model::where('provider_node_id', $providerNodeId)->get()
+            ? $withEff($model::with(['provider', 'providerNode'])->where('provider_node_id', $providerNodeId)->get())
             : collect();
 
         return response()->json([
@@ -136,8 +147,7 @@ class NodeController extends Controller
             'templates' => $scoped(ProviderTemplate::class),
             'networks' => $scoped(ProviderNetwork::class),
             'datastores' => $scoped(ProviderDatastore::class),
-            // eager-load providerNode: ProviderVm appends node_name, so avoid an N+1 per row
-            'vms' => $providerNodeId ? ProviderVm::with('providerNode')->where('provider_node_id', $providerNodeId)->get() : collect(),
+            'vms' => $scoped(ProviderVm::class),
         ]);
     }
 

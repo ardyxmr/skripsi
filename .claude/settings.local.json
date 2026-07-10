@@ -119,7 +119,9 @@
       "Bash(awk '/function syncVm/{f=1} f{print; n++} n>45{exit}' app/Services/Discovery/DiscoveryService.php)",
       "Bash(rtk npx *)",
       "Bash(echo \"EXIT=$?\")",
-      "Bash(rtk npm *)"
+      "Bash(rtk npm *)",
+      "Bash(sed -n '1,90p' components/common/LiveDataPoller.jsx)",
+      "Bash(rtk git *)"
     ]
   }
 }

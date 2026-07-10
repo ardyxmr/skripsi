@@ -22,4 +22,25 @@ class ProviderNode extends Model
     {
         return $this->hasMany(ProviderDatastore::class, 'provider_node_id');
     }
+
+    /**
+     * Effective display status for the node itself (Discovery Explorer "Nodes" tab). A disconnected
+     * provider leaves this row's raw `status` stale ('online'), so the provider check runs BEFORE the
+     * node's own status. Mirrors the child-resource derivation in DerivesEffectiveStatus.
+     * Returns: Missing | Provider Offline | Node Offline | Active.
+     */
+    public function effectiveStatus(): string
+    {
+        if (($this->discovered_status ?? null) === 'Missing') {
+            return 'Missing';
+        }
+        if ($this->provider && $this->provider->status !== 'Connected') {
+            return 'Provider Offline';
+        }
+        if ($this->status === 'offline') {
+            return 'Node Offline';
+        }
+
+        return 'Active';
+    }
 }

@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\DerivesEffectiveStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProviderVm extends Model
 {
+    use DerivesEffectiveStatus;
+
     protected $guarded = [];
 
     // Resolve the parent node so the Discovery Explorer VMs tab can show the Node column
@@ -18,6 +21,11 @@ class ProviderVm extends Model
         'cpu_utilization' => 'float',
         'last_sync_at' => 'datetime',
     ];
+
+    public function provider(): BelongsTo
+    {
+        return $this->belongsTo(Provider::class);
+    }
 
     public function providerNode(): BelongsTo
     {

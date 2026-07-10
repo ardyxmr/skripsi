@@ -204,6 +204,16 @@ class DiscoveryService
                     null, ['provider_id' => $provider->id, 'status' => 'Disconnected']);
             }
 
+            // Record the failed RUN itself (symmetric with the SYNC_PROVIDER success audit below) so a
+            // failed discovery is never silent nor mislabeled as success — including a repeat failure
+            // while already Disconnected, which the transition guard above skips. Human-initiated only:
+            // the scheduled cadence would flood the trail (its state transition is already audited).
+            if (auth()->user()) {
+                $this->audit->log(auth()->user(), 'DISCOVERY_FAILED',
+                    "Discovery of {$provider->provider_name} failed — host unreachable: {$e->getMessage()}",
+                    null, ['provider_id' => $provider->id, 'status' => 'Disconnected']);
+            }
+
             $this->guard->recordProviderFailure($provider->id); // feed the circuit breaker
             throw $e;
         }

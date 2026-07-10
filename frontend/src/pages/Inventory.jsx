@@ -853,21 +853,29 @@ export default function Inventory() {
               <div className="bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-theme rounded-md p-3 flex justify-center">
                 <span className="font-mono font-bold text-[15px] text-gray-800 dark:text-gray-100">{deleteModalVm.name}</span>
               </div>
-              <p className="text-[13px] text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-900/20 p-3 rounded-md border border-rose-100 dark:border-rose-900/30">
-                This action cannot be undone. All data and Terraform state will be destroyed.
-              </p>
-              <div className="bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
-                <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-2">
-                  To confirm deletion, please type <strong className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1.5 py-0.5 rounded text-rose-700 dark:text-rose-400 select-all">{deleteModalVm.name}</strong> below:
-                </label>
-                <input 
-                  type="text" 
-                  value={deleteConfirmName}
-                  onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  placeholder={deleteModalVm.name}
-                  className={`${inputCls} focus:border-rose-500 focus:ring-rose-500/20`}
-                />
-              </div>
+              {deleteModalVm.status === 'Missing' ? (
+                <p className="text-[13px] text-amber-700 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-900/20 p-3 rounded-md border border-amber-100 dark:border-amber-900/30">
+                  This VM is <strong>Missing</strong> — it no longer exists on the hypervisor. Purging just removes its record from the inventory (no Terraform is run).
+                </p>
+              ) : (
+                <>
+                  <p className="text-[13px] text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-900/20 p-3 rounded-md border border-rose-100 dark:border-rose-900/30">
+                    This action cannot be undone. All data and Terraform state will be destroyed.
+                  </p>
+                  <div className="bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-theme rounded-md p-4">
+                    <label className="block text-[12px] font-semibold text-slate-700 dark:text-zinc-300 mb-2">
+                      To confirm deletion, please type <strong className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1.5 py-0.5 rounded text-rose-700 dark:text-rose-400 select-all">{deleteModalVm.name}</strong> below:
+                    </label>
+                    <input
+                      type="text"
+                      value={deleteConfirmName}
+                      onChange={(e) => setDeleteConfirmName(e.target.value)}
+                      placeholder={deleteModalVm.name}
+                      className={`${inputCls} focus:border-rose-500 focus:ring-rose-500/20`}
+                    />
+                  </div>
+                </>
+              )}
             </div>
             <div className="shrink-0 px-5 py-4 border-t border-gray-100 dark:border-theme flex items-center justify-end gap-3 bg-white dark:bg-card">
               <button 
@@ -876,12 +884,12 @@ export default function Inventory() {
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={executeDelete}
-                disabled={deleteConfirmName !== deleteModalVm.name}
+                disabled={deleteModalVm.status !== 'Missing' && deleteConfirmName !== deleteModalVm.name}
                 className="px-4 py-2 text-[13px] font-medium bg-rose-600 hover:bg-rose-700 text-white rounded-input transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Delete
+                {deleteModalVm.status === 'Missing' ? 'Purge' : 'Delete'}
               </button>
             </div>
           </div>

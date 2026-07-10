@@ -128,3 +128,14 @@
 .dark ::-webkit-scrollbar-thumb:hover {
   background-color: rgba(255, 255, 255, 0.32);
 }
+
+/* Data tables use `table-fixed` with fixed column widths (two-table split). Clip any cell content
+   that exceeds its column so long values (provider endpoint, email, …) never overlap the next
+   column on small screens — resize the column to reveal more. Nested single-line blocks (name +
+   subtitle cells) inherit the ellipsis too. Action menus are portaled, so they are unaffected. */
+table.table-fixed td,
+table.table-fixed th,
+table.table-fixed td > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

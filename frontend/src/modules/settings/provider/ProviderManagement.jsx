@@ -5,6 +5,8 @@ import TableActionMenu from '../../../components/common/TableActionMenu';
 import Colgroup from '../../../components/common/Colgroup';
 import PaginationBar from '../../../components/common/PaginationBar';
 import { useClientPagination } from '../../../components/common/useClientPagination';
+import { useResizableColumns } from '../../../components/common/useResizableColumns';
+import ColResizeHandle from '../../../components/common/ColResizeHandle';
 import ProviderForm from './ProviderForm';
 import ProviderDiscovery from './ProviderDiscovery';
 import ProviderActionModal from './ProviderActionModal';
@@ -225,6 +227,7 @@ export default function ProviderManagement() {
     });
   }, [providers, providerTypeFilter, providerStatusFilter, debouncedSearch, providerSortConfig]);
   const providersPager = useClientPagination(filteredProviders, 10);
+  const providerCols = useResizableColumns('provider_management_col_widths', PROVIDER_COL_WIDTHS);
 
   return (
     <>
@@ -323,37 +326,41 @@ export default function ProviderManagement() {
                   </div>
                   
                   <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-                    <div className="min-w-[1480px] w-full h-full flex flex-col">
+                    <div style={{ minWidth: providerCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
                       <table className="w-full text-left border-collapse text-[13px] table-fixed shrink-0">
-                        <Colgroup widths={PROVIDER_COL_WIDTHS} />
+                        <Colgroup widths={providerCols.widths} />
                         <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
                           <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('name')}>
+                            <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('name')}>
                               Provider Name {providerSortConfig.key === 'name' ? (providerSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                              <ColResizeHandle onMouseDown={(e) => providerCols.startResize(0, e)} />
                             </th>
-                            <th className="px-4 py-3">Type</th>
-                            <th className="px-4 py-3">Endpoint</th>
-                            <th className="px-4 py-3">Nodes</th>
-                            <th className="px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('templates')}>
+                            <th className="relative px-4 py-3">Type<ColResizeHandle onMouseDown={(e) => providerCols.startResize(1, e)} /></th>
+                            <th className="relative px-4 py-3">Endpoint<ColResizeHandle onMouseDown={(e) => providerCols.startResize(2, e)} /></th>
+                            <th className="relative px-4 py-3">Nodes<ColResizeHandle onMouseDown={(e) => providerCols.startResize(3, e)} /></th>
+                            <th className="relative px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('templates')}>
                               Templates {providerSortConfig.key === 'templates' ? (providerSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                              <ColResizeHandle onMouseDown={(e) => providerCols.startResize(4, e)} />
                             </th>
-                            <th className="px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('networks')}>
+                            <th className="relative px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('networks')}>
                               Networks {providerSortConfig.key === 'networks' ? (providerSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                              <ColResizeHandle onMouseDown={(e) => providerCols.startResize(5, e)} />
                             </th>
-                            <th className="px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('datastores')}>
+                            <th className="relative px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleProviderSort('datastores')}>
                               Datastores {providerSortConfig.key === 'datastores' ? (providerSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                              <ColResizeHandle onMouseDown={(e) => providerCols.startResize(6, e)} />
                             </th>
-                            <th className="px-4 py-3">Connection</th>
-                            <th className="px-4 py-3">Discovery</th>
-                            <th className="px-4 py-3">Last Discovery</th>
-                            <th className="px-4 py-3">Sync Mode</th>
+                            <th className="relative px-4 py-3">Connection<ColResizeHandle onMouseDown={(e) => providerCols.startResize(7, e)} /></th>
+                            <th className="relative px-4 py-3">Discovery<ColResizeHandle onMouseDown={(e) => providerCols.startResize(8, e)} /></th>
+                            <th className="relative px-4 py-3">Last Discovery<ColResizeHandle onMouseDown={(e) => providerCols.startResize(9, e)} /></th>
+                            <th className="relative px-4 py-3">Sync Mode<ColResizeHandle onMouseDown={(e) => providerCols.startResize(10, e)} /></th>
                             <th className="px-5 py-3 text-center">Action</th>
                           </tr>
                         </thead>
                       </table>
                       <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
                       <table className="w-full text-left border-collapse text-[13px] table-fixed">
-                        <Colgroup widths={PROVIDER_COL_WIDTHS} />
+                        <Colgroup widths={providerCols.widths} />
                         <tbody>
                           {loading && providers.length === 0 && <TableSkeleton cols={12} />}
                           {!loading && providersPager.total === 0 && (

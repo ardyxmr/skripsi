@@ -6,12 +6,19 @@ import { createPortal } from 'react-dom';
 import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
 import { useNodeContext } from '../../../contexts/NodeContext';
 import { environmentsForNode } from '../../../lib/nodeAssignments';
+import { isOffline } from '../../../lib/resourceStatus';
+import StatusPill from '../../../components/common/StatusPill';
 
 export default function DatastoreDiscovery({ datastoreDrawer, setDatastoreDrawer }) {
   const { environments } = useEnvironmentContext();
   const { nodes } = useNodeContext();
   // Derived: a datastore belongs to an environment iff its node is in that env's allow-list (etc.txt item 4).
   const assignedEnvs = environmentsForNode(datastoreDrawer.datastore?.providerNodeId, environments, nodes);
+
+  // Health from the datastore's effectiveStatus so the drawer's connectivity/node chips reflect reality.
+  const ds = datastoreDrawer.datastore || {};
+  const offline = isOffline(ds.status);
+  const nodeDown = ds.status === 'Node Offline' || ds.status === 'Missing';
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -41,10 +48,8 @@ export default function DatastoreDiscovery({ datastoreDrawer, setDatastoreDrawer
                 </div>
               </div>
               <div className="flex items-center gap-3 mt-2">
-                <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${datastoreDrawer.datastore.status === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : datastoreDrawer.datastore.status === 'Offline / Missing' ? 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400' : datastoreDrawer.datastore.status === 'Low Capacity' ? 'bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-zinc-400'}`}>
-                  {datastoreDrawer.datastore.status}
-                </span>
-                {datastoreDrawer.datastore.status === 'Offline / Missing' && datastoreDrawer.datastore.missingReason && (
+                <StatusPill status={ds.status} label={ds.status} variant="soft" shape="full" uppercase size="sm" />
+                {offline && datastoreDrawer.datastore.missingReason && (
                   <>
                     <span className="text-slate-300 dark:text-zinc-600">|</span>
                     <span className="text-[12px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1.5"><AlertCircle size={14} /> {datastoreDrawer.datastore.missingReason}</span>
@@ -96,7 +101,9 @@ export default function DatastoreDiscovery({ datastoreDrawer, setDatastoreDrawer
                           <span className="text-[12px] text-slate-500 font-mono mt-0.5">Type: Proxmox</span>
                         </div>
                         <div className="flex flex-col items-end gap-1">
-                          <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded">Connected</span>
+                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${offline ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'}`}>
+                            {offline ? 'Disconnected' : 'Connected'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -114,7 +121,9 @@ export default function DatastoreDiscovery({ datastoreDrawer, setDatastoreDrawer
                           <span className="text-[14px] font-bold text-slate-800 dark:text-zinc-200">{datastoreDrawer.datastore.node || 'pve01'}</span>
                         </div>
                         <div className="flex flex-col items-end gap-1">
-                          <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded">Online</span>
+                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${nodeDown ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : offline ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'}`}>
+                            {nodeDown ? 'Offline' : offline ? 'Unknown' : 'Online'}
+                          </span>
                         </div>
                       </div>
                     </div>

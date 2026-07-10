@@ -5,6 +5,8 @@ import TableActionMenu from '../../../components/common/TableActionMenu';
 import Colgroup from '../../../components/common/Colgroup';
 import PaginationBar from '../../../components/common/PaginationBar';
 import { useClientPagination } from '../../../components/common/useClientPagination';
+import { useResizableColumns } from '../../../components/common/useResizableColumns';
+import ColResizeHandle from '../../../components/common/ColResizeHandle';
 import NetworkForm from './NetworkForm';
 import NetworkExplorer from './NetworkExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
@@ -221,6 +223,7 @@ export default function NetworkManagement() {
   }, [networks, debouncedSearch, networkProviderFilter, networkStatusFilter, networkSortConfig]);
 
   const networksPager = useClientPagination(sortedNetworks, 10);
+  const networkCols = useResizableColumns('network_management_col_widths', NETWORK_COL_WIDTHS);
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -310,28 +313,33 @@ export default function NetworkManagement() {
           </div>
           
           <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div className="min-w-[1330px] w-full h-full flex flex-col">
+            <div style={{ minWidth: networkCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
               <table className="w-full text-left border-collapse table-fixed shrink-0">
-                <Colgroup widths={NETWORK_COL_WIDTHS} />
+                <Colgroup widths={networkCols.widths} />
                 <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
                   <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('name')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('name')}>
                       Network Name {networkSortConfig.key === 'name' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(0, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('provider')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('provider')}>
                       Provider {networkSortConfig.key === 'provider' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(1, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('node')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('node')}>
                       Node {networkSortConfig.key === 'node' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(2, e)} />
                     </th>
-                    <th className="px-5 py-3">Provider Network</th>
-                    <th className="px-5 py-3">CIDR</th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('activeVMs')}>
+                    <th className="relative px-5 py-3">Provider Network<ColResizeHandle onMouseDown={(e) => networkCols.startResize(3, e)} /></th>
+                    <th className="relative px-5 py-3">CIDR<ColResizeHandle onMouseDown={(e) => networkCols.startResize(4, e)} /></th>
+                    <th className="relative px-5 py-3">Status<ColResizeHandle onMouseDown={(e) => networkCols.startResize(5, e)} /></th>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('activeVMs')}>
                       Usage {networkSortConfig.key === 'activeVMs' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(6, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('lastUpdated')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('lastUpdated')}>
                       Last Updated {networkSortConfig.key === 'lastUpdated' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(7, e)} />
                     </th>
                     <th className="px-5 py-3 text-center">Action</th>
                   </tr>
@@ -339,7 +347,7 @@ export default function NetworkManagement() {
               </table>
               <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
               <table className="w-full text-left border-collapse whitespace-nowrap table-fixed">
-                <Colgroup widths={NETWORK_COL_WIDTHS} />
+                <Colgroup widths={networkCols.widths} />
                 <tbody>
                   {loading && networks.length === 0 && <TableSkeleton cols={9} />}
                   {!loading && networksPager.total === 0 && (

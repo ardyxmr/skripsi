@@ -5,6 +5,8 @@ import TableActionMenu from '../../../components/common/TableActionMenu';
 import Colgroup from '../../../components/common/Colgroup';
 import PaginationBar from '../../../components/common/PaginationBar';
 import { useClientPagination } from '../../../components/common/useClientPagination';
+import { useResizableColumns } from '../../../components/common/useResizableColumns';
+import ColResizeHandle from '../../../components/common/ColResizeHandle';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { useUserContext } from '../../../contexts/UserContext';
 import UserForm from './UserForm';
@@ -210,6 +212,9 @@ export default function UserManagement() {
   const rolesPager = useClientPagination(sortedRoles, 10);
   const groupsPager = useClientPagination(sortedGroups, 10);
   const usersPager = useClientPagination(sortedUsers, 10);
+  const rolesCols = useResizableColumns('um_roles_col_widths', ROLE_COL_WIDTHS);
+  const groupsCols = useResizableColumns('um_groups_col_widths', GROUP_COL_WIDTHS);
+  const usersCols = useResizableColumns('um_users_col_widths', USER_COL_WIDTHS);
 
   const totalRoles = roles.filter(r => !r.deletedAt).length;
   const totalGroups = groups.filter(g => !g.deletedAt).length;
@@ -302,25 +307,26 @@ export default function UserManagement() {
 
                     {/* Desktop Table — pinned header table + separately-scrolling body (scrollbar starts UNDER the titles) */}
                     <div className="hidden md:flex flex-auto min-h-0 overflow-x-auto overflow-y-hidden custom-scrollbar flex-col">
-                      <div className="min-w-[720px] w-full h-full flex flex-col">
+                      <div style={{ minWidth: rolesCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
                       <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
-                        <Colgroup widths={ROLE_COL_WIDTHS} />
+                        <Colgroup widths={rolesCols.widths} />
                         <thead className="bg-gray-50 dark:bg-surface shadow-sm">
                           <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-theme">
-                            <th className="px-3 py-3">Role Name</th>
-                            <th className="px-3 py-3">Role / Permission</th>
-                            <th className="px-3 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setRoleSortDesc(!roleSortDesc)}>
+                            <th className="relative px-3 py-3">Role Name<ColResizeHandle onMouseDown={(e) => rolesCols.startResize(0, e)} /></th>
+                            <th className="relative px-3 py-3">Role / Permission<ColResizeHandle onMouseDown={(e) => rolesCols.startResize(1, e)} /></th>
+                            <th className="relative px-3 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setRoleSortDesc(!roleSortDesc)}>
                               Created {roleSortDesc ? '↓' : '↑'}
+                              <ColResizeHandle onMouseDown={(e) => rolesCols.startResize(2, e)} />
                             </th>
-                            <th className="px-3 py-3">User Count</th>
-                            <th className="px-3 py-3">Status</th>
+                            <th className="relative px-3 py-3">User Count<ColResizeHandle onMouseDown={(e) => rolesCols.startResize(3, e)} /></th>
+                            <th className="relative px-3 py-3">Status<ColResizeHandle onMouseDown={(e) => rolesCols.startResize(4, e)} /></th>
                             <th className="px-3 py-3 text-center">Action</th>
                           </tr>
                         </thead>
                       </table>
                       <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
                       <table className="w-full border-collapse text-[13px] text-left table-fixed">
-                        <Colgroup widths={ROLE_COL_WIDTHS} />
+                        <Colgroup widths={rolesCols.widths} />
                         <tbody>
                           {rolesPager.paged.map((role) => (
                             <tr key={role.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
@@ -401,25 +407,26 @@ export default function UserManagement() {
                     </div>
 
                     <div className="hidden md:flex flex-auto min-h-0 overflow-x-auto overflow-y-hidden custom-scrollbar flex-col">
-                      <div className="min-w-[740px] w-full h-full flex flex-col">
+                      <div style={{ minWidth: groupsCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
                       <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
-                        <Colgroup widths={GROUP_COL_WIDTHS} />
+                        <Colgroup widths={groupsCols.widths} />
                         <thead className="bg-gray-50 dark:bg-surface shadow-sm">
                           <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-theme">
-                            <th className="px-3 py-3">Group Name</th>
-                            <th className="px-3 py-3">Manager</th>
-                            <th className="px-3 py-3">Room / Floor</th>
-                            <th className="px-3 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setGroupSortDesc(!groupSortDesc)}>
+                            <th className="relative px-3 py-3">Group Name<ColResizeHandle onMouseDown={(e) => groupsCols.startResize(0, e)} /></th>
+                            <th className="relative px-3 py-3">Manager<ColResizeHandle onMouseDown={(e) => groupsCols.startResize(1, e)} /></th>
+                            <th className="relative px-3 py-3">Room / Floor<ColResizeHandle onMouseDown={(e) => groupsCols.startResize(2, e)} /></th>
+                            <th className="relative px-3 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setGroupSortDesc(!groupSortDesc)}>
                               Created {groupSortDesc ? '↓' : '↑'}
+                              <ColResizeHandle onMouseDown={(e) => groupsCols.startResize(3, e)} />
                             </th>
-                            <th className="px-3 py-3">Members</th>
+                            <th className="relative px-3 py-3">Members<ColResizeHandle onMouseDown={(e) => groupsCols.startResize(4, e)} /></th>
                             <th className="px-3 py-3 text-center">Action</th>
                           </tr>
                         </thead>
                       </table>
                       <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
                       <table className="w-full border-collapse text-[13px] text-left table-fixed whitespace-nowrap">
-                        <Colgroup widths={GROUP_COL_WIDTHS} />
+                        <Colgroup widths={groupsCols.widths} />
                         <tbody>
                           {groupsPager.paged.map((group) => (
                             <tr key={group.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
@@ -545,27 +552,28 @@ export default function UserManagement() {
                   </div>
 
                   <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-                    <div className="min-w-[1120px] w-full h-full flex flex-col">
+                    <div style={{ minWidth: usersCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
                       <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
-                        <Colgroup widths={USER_COL_WIDTHS} />
+                        <Colgroup widths={usersCols.widths} />
                         <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
                           <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            <th className="px-5 py-3">Full Name</th>
-                            <th className="px-5 py-3">Email</th>
-                            <th className="px-5 py-3">Role</th>
-                            <th className="px-5 py-3">Group</th>
-                            <th className="px-5 py-3">Status</th>
-                            <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setUserSortDesc(!userSortDesc)}>
+                            <th className="relative px-5 py-3">Full Name<ColResizeHandle onMouseDown={(e) => usersCols.startResize(0, e)} /></th>
+                            <th className="relative px-5 py-3">Email<ColResizeHandle onMouseDown={(e) => usersCols.startResize(1, e)} /></th>
+                            <th className="relative px-5 py-3">Role<ColResizeHandle onMouseDown={(e) => usersCols.startResize(2, e)} /></th>
+                            <th className="relative px-5 py-3">Group<ColResizeHandle onMouseDown={(e) => usersCols.startResize(3, e)} /></th>
+                            <th className="relative px-5 py-3">Status<ColResizeHandle onMouseDown={(e) => usersCols.startResize(4, e)} /></th>
+                            <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setUserSortDesc(!userSortDesc)}>
                               Created {userSortDesc ? '↓' : '↑'}
+                              <ColResizeHandle onMouseDown={(e) => usersCols.startResize(5, e)} />
                             </th>
-                            <th className="px-5 py-3">Last Login</th>
+                            <th className="relative px-5 py-3">Last Login<ColResizeHandle onMouseDown={(e) => usersCols.startResize(6, e)} /></th>
                             <th className="px-5 py-3 text-center">Action</th>
                           </tr>
                         </thead>
                       </table>
                       <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
                         <table className="w-full border-collapse text-[13px] text-left table-fixed">
-                          <Colgroup widths={USER_COL_WIDTHS} />
+                          <Colgroup widths={usersCols.widths} />
                           <tbody>
                             {usersPager.paged.map((user) => (
                             <tr key={user.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">

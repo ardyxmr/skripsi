@@ -5,6 +5,8 @@ import TableActionMenu from '../../../components/common/TableActionMenu';
 import Colgroup from '../../../components/common/Colgroup';
 import PaginationBar from '../../../components/common/PaginationBar';
 import { useClientPagination } from '../../../components/common/useClientPagination';
+import { useResizableColumns } from '../../../components/common/useResizableColumns';
+import ColResizeHandle from '../../../components/common/ColResizeHandle';
 import NodeForm from './NodeForm';
 import NodeExplorer from './NodeExplorer';
 import { useNodeContext } from '../../../contexts/NodeContext';
@@ -172,6 +174,7 @@ export default function NodePreview() {
     (n.provider || '').toLowerCase().includes(search.toLowerCase())
   ), [nodes, search]);
   const nodesPager = useClientPagination(filtered, 10);
+  const nodeCols = useResizableColumns('node_preview_col_widths', NODE_COL_WIDTHS);
 
   return (
     <div className="flex flex-col w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0 max-h-[600px]">
@@ -205,24 +208,24 @@ export default function NodePreview() {
 
       {/* Table */}
       <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-        <div className="min-w-[1030px] w-full h-full flex flex-col">
+        <div style={{ minWidth: nodeCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
           <table className="w-full text-left border-collapse text-[13px] table-fixed shrink-0">
-            <Colgroup widths={NODE_COL_WIDTHS} />
+            <Colgroup widths={nodeCols.widths} />
             <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
               <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                <th className="px-5 py-3">Node Name</th>
-                <th className="px-4 py-3">Provider</th>
-                <th className="px-4 py-3">CPU Utilization</th>
-                <th className="px-4 py-3">RAM Utilization</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Sync</th>
+                <th className="relative px-5 py-3">Node Name<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(0, e)} /></th>
+                <th className="relative px-4 py-3">Provider<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(1, e)} /></th>
+                <th className="relative px-4 py-3">CPU Utilization<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(2, e)} /></th>
+                <th className="relative px-4 py-3">RAM Utilization<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(3, e)} /></th>
+                <th className="relative px-4 py-3">Status<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(4, e)} /></th>
+                <th className="relative px-4 py-3">Sync<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(5, e)} /></th>
                 <th className="px-5 py-3 text-center">Action</th>
               </tr>
             </thead>
           </table>
           <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
           <table className="w-full text-left border-collapse text-[13px] table-fixed">
-            <Colgroup widths={NODE_COL_WIDTHS} />
+            <Colgroup widths={nodeCols.widths} />
             <tbody>
               {nodesPager.total === 0 && (
                 <tr>

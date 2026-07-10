@@ -12,9 +12,12 @@ import { useTierContext } from '../../../contexts/TierContext';
 import Colgroup from '../../../components/common/Colgroup';
 import PaginationBar from '../../../components/common/PaginationBar';
 import { useClientPagination } from '../../../components/common/useClientPagination';
+import { useResizableColumns } from '../../../components/common/useResizableColumns';
+import ColResizeHandle from '../../../components/common/ColResizeHandle';
 import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
-import { isOffline } from '../../../lib/resourceStatus';
+import { isOffline, isDegraded } from '../../../lib/resourceStatus';
+import StatusPill from '../../../components/common/StatusPill';
 import EnvironmentForm from './EnvironmentForm';
 import EnvironmentExplorer from './EnvironmentExplorer';
 import { useUI } from '../../../stores/uiStore';
@@ -90,18 +93,22 @@ export default function EnvironmentManagement() {
     const q = debouncedSearch.toLowerCase();
     const matchesSearch = env.name.toLowerCase().includes(q) ||
                           env.description.toLowerCase().includes(q);
-    const matchesStatus = statusFilter === 'All Status' || env.status === statusFilter;
+    // "Offline" collapses the several red health states (Provider/Node Offline, Missing); the rest
+    // (Active/Degraded/Inactive) match the pill word exactly.
+    const matchesStatus = statusFilter === 'All Status' ||
+      (statusFilter === 'Offline' ? isOffline(env.status) : env.status === statusFilter);
     const matchesType = typeFilter === 'All Types' || env.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
   });
 
   const envsPager = useClientPagination(filteredEnvironments, 10);
+  const envCols = useResizableColumns('environment_management_col_widths', ENV_COL_WIDTHS);
 
   // Calculate stats
   const totalEnvs = environments.length;
   const activeEnvs = environments.filter(e => e.status === 'Active').length;
-  const defaultEnvs = environments.filter(e => e.type === 'Default').length;
-  const customEnvs = environments.filter(e => e.type === 'Custom').length;
+  const degradedEnvs = environments.filter(e => isDegraded(e.status)).length;
+  const offlineEnvs = environments.filter(e => isOffline(e.status)).length;
 
   // Handle outside click for menus
   useEffect(() => {
@@ -262,12 +269,12 @@ export default function EnvironmentManagement() {
             <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Active</div>
           </div>
           <div className="text-center px-4 border-r border-slate-200 dark:border-theme">
-            <div className="text-2xl font-bold text-amber-600 dark:text-amber-500">{defaultEnvs}</div>
-            <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Default Envs</div>
+            <div className="text-2xl font-bold text-amber-600 dark:text-amber-500">{degradedEnvs}</div>
+            <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Degraded</div>
           </div>
           <div className="text-center px-4">
-            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{customEnvs}</div>
-            <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Custom Envs</div>
+            <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">{offlineEnvs}</div>
+            <div className="text-[11px] text-slate-500 dark:text-zinc-400 uppercase font-medium">Offline</div>
           </div>
         </div>
       </div>
@@ -308,6 +315,8 @@ export default function EnvironmentManagement() {
             >
               <option>All Status</option>
               <option>Active</option>
+              <option>Degraded</option>
+              <option>Offline</option>
               <option>Inactive</option>
             </select>
 
@@ -323,23 +332,23 @@ export default function EnvironmentManagement() {
           </div>
 
           <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div className="min-w-[910px] w-full h-full flex flex-col">
+            <div style={{ minWidth: envCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
               <table className="w-full text-left text-sm table-fixed shrink-0">
-                <Colgroup widths={ENV_COL_WIDTHS} />
+                <Colgroup widths={envCols.widths} />
                 <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
                   <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="px-4 py-3">Environment</th>
-                    <th className="px-4 py-3">Type</th>
-                    <th className="px-4 py-3">Expiry Policy</th>
-                    <th className="px-4 py-3">Approval</th>
-                    <th className="px-4 py-3">Status</th>
+                    <th className="relative px-4 py-3">Environment<ColResizeHandle onMouseDown={(e) => envCols.startResize(0, e)} /></th>
+                    <th className="relative px-4 py-3">Type<ColResizeHandle onMouseDown={(e) => envCols.startResize(1, e)} /></th>
+                    <th className="relative px-4 py-3">Expiry Policy<ColResizeHandle onMouseDown={(e) => envCols.startResize(2, e)} /></th>
+                    <th className="relative px-4 py-3">Approval<ColResizeHandle onMouseDown={(e) => envCols.startResize(3, e)} /></th>
+                    <th className="relative px-4 py-3">Status<ColResizeHandle onMouseDown={(e) => envCols.startResize(4, e)} /></th>
                     <th className="px-5 py-3 text-center">Action</th>
                   </tr>
                 </thead>
               </table>
               <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
               <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
-                <Colgroup widths={ENV_COL_WIDTHS} />
+                <Colgroup widths={envCols.widths} />
                 <tbody>
                   {loading && environments.length === 0 ? (
                     <TableSkeleton cols={6} />
@@ -352,7 +361,7 @@ export default function EnvironmentManagement() {
                   </tr>
                 ) : (
                   envsPager.paged.map((env) => (
-                    <tr key={env.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
+                    <tr key={env.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${isOffline(env.status) ? 'opacity-60' : ''}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-500/20">
@@ -396,14 +405,8 @@ export default function EnvironmentManagement() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${
-                          env.status === 'Active' 
-                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20'
-                            : 'bg-slate-50 dark:bg-zinc-800/50 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
-                        }`}>
-                          {env.status === 'Active' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                          {env.status}
-                        </span>
+                        {/* Health-derived: Active(green) | Degraded(amber) | Provider/Node Offline(red) | Inactive(gray) */}
+                        <StatusPill status={env.status} label={env.status} variant="soft" weight="font-medium" dot />
                       </td>
                       <td className="px-5 py-3 text-center">
                         <TableActionMenu
@@ -423,11 +426,15 @@ export default function EnvironmentManagement() {
                           >
                             <Edit2 size={14} /> Edit Env
                           </button>
-                          <button 
-                            onClick={() => { handleActionClick(env.status === 'Active' ? 'Disable' : 'Enable', env); setActiveMenuId(null); }}
-                            className="w-full px-3 py-2 text-left text-[13px] text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 flex items-center gap-2"
+                          {/* Toggle acts on adminStatus (the raw governance flag), NOT the health-derived
+                              status. Disabled while fully offline — reconnect the provider/node first. */}
+                          <button
+                            disabled={isOffline(env.status)}
+                            title={isOffline(env.status) ? 'Provider/node offline — reconnect first' : undefined}
+                            onClick={() => { handleActionClick(env.adminStatus === 'Active' ? 'Disable' : 'Enable', env); setActiveMenuId(null); }}
+                            className={`w-full px-3 py-2 text-left text-[13px] flex items-center gap-2 ${isOffline(env.status) ? 'text-slate-400 dark:text-zinc-600 cursor-not-allowed' : 'text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700'}`}
                           >
-                            {env.status === 'Active' ? (
+                            {env.adminStatus === 'Active' ? (
                               <><XCircle size={14} className="text-amber-500" /> Disable Env</>
                             ) : (
                               <><CheckCircle2 size={14} className="text-emerald-500" /> Enable Env</>

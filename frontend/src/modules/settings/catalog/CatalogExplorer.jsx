@@ -4,6 +4,8 @@ import api from '../../../lib/api';
 import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
 import { useNodeContext } from '../../../contexts/NodeContext';
 import { environmentsForNode } from '../../../lib/nodeAssignments';
+import { isOffline } from '../../../lib/resourceStatus';
+import StatusPill from '../../../components/common/StatusPill';
 
 export default function CatalogExplorer({ catalogDrawer, setCatalogDrawer }) {
   const { environments } = useEnvironmentContext();
@@ -19,6 +21,12 @@ export default function CatalogExplorer({ catalogDrawer, setCatalogDrawer }) {
   // Environment Assignments are derived: a catalog belongs to an environment iff its
   // node is among that environment's allowed published nodes (etc.txt item 4).
   const assignedEnvs = environmentsForNode(catalogDrawer.catalog?.providerNodeId, environments, nodes);
+
+  // Health derived from the catalog's effectiveStatus (backend), so the drawer's connectivity/node
+  // chips stop hard-coding "Connected"/"Online" when the provider or node is actually down.
+  const cat = catalogDrawer.catalog || {};
+  const offline = isOffline(cat.status);
+  const nodeDown = cat.status === 'Node Offline' || cat.status === 'Missing';
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -47,10 +55,8 @@ export default function CatalogExplorer({ catalogDrawer, setCatalogDrawer }) {
                 </div>
               </div>
               <div className="flex items-center gap-3 mt-2">
-                <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${catalogDrawer.catalog.status === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : catalogDrawer.catalog.status === 'Offline / Missing' ? 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-zinc-400'}`}>
-                  {catalogDrawer.catalog.status}
-                </span>
-                {catalogDrawer.catalog.status === 'Offline / Missing' && catalogDrawer.catalog.missingReason && (
+                <StatusPill status={cat.status} label={cat.status} variant="soft" shape="full" uppercase size="sm" />
+                {offline && catalogDrawer.catalog.missingReason && (
                   <>
                     <span className="text-slate-300 dark:text-zinc-600">|</span>
                     <span className="text-[12px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1.5"><AlertCircle size={14} /> {catalogDrawer.catalog.missingReason}</span>
@@ -127,10 +133,10 @@ export default function CatalogExplorer({ catalogDrawer, setCatalogDrawer }) {
                         <span className="text-[12px] text-slate-500 font-mono mt-0.5">Type: {catalogDrawer.catalog.origin || 'Proxmox'}</span>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${catalogDrawer.catalog.connectivity === 'Disconnected' ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'}`}>
-                          {catalogDrawer.catalog.connectivity === 'Disconnected' ? 'Disconnected' : 'Connected'}
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${offline ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'}`}>
+                          {offline ? 'Disconnected' : 'Connected'}
                         </span>
-                        <span className="text-[10px] text-slate-400">{catalogDrawer.catalog.connectivity === 'Disconnected' ? 'Last Seen:' : 'Last Sync:'} {catalogDrawer.catalog.lastSync || 'Recently'}</span>
+                        <span className="text-[10px] text-slate-400">{offline ? 'Last Seen:' : 'Last Sync:'} {catalogDrawer.catalog.lastSync || 'Recently'}</span>
                       </div>
                     </div>
                   </div>
@@ -148,7 +154,9 @@ export default function CatalogExplorer({ catalogDrawer, setCatalogDrawer }) {
                         <span className="text-[14px] font-bold text-slate-800 dark:text-zinc-200">{catalogDrawer.catalog.node || 'pve01'}</span>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded">Online</span>
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${nodeDown ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : offline ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'}`}>
+                          {nodeDown ? 'Offline' : offline ? 'Unknown' : 'Online'}
+                        </span>
                       </div>
                     </div>
                   </div>

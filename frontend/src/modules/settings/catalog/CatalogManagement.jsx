@@ -5,6 +5,8 @@ import TableActionMenu from '../../../components/common/TableActionMenu';
 import Colgroup from '../../../components/common/Colgroup';
 import PaginationBar from '../../../components/common/PaginationBar';
 import { useClientPagination } from '../../../components/common/useClientPagination';
+import { useResizableColumns } from '../../../components/common/useResizableColumns';
+import ColResizeHandle from '../../../components/common/ColResizeHandle';
 import CatalogForm from './CatalogForm';
 import CatalogExplorer from './CatalogExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
@@ -242,6 +244,7 @@ export default function CatalogManagement() {
   });
 
   const catalogsPager = useClientPagination(sortedCatalogs, 10);
+  const catalogCols = useResizableColumns('catalog_management_col_widths', CATALOG_COL_WIDTHS);
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -333,33 +336,37 @@ export default function CatalogManagement() {
           </div>
           
           <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div className="min-w-[1100px] w-full h-full flex flex-col">
+            <div style={{ minWidth: catalogCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
               <table className="w-full text-left border-collapse table-fixed shrink-0">
-                <Colgroup widths={CATALOG_COL_WIDTHS} />
+                <Colgroup widths={catalogCols.widths} />
                 <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
                   <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('name')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('name')}>
                       Catalog Name {catalogSortConfig.key === 'name' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => catalogCols.startResize(0, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('provider')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('provider')}>
                       Provider {catalogSortConfig.key === 'provider' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => catalogCols.startResize(1, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('node')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('node')}>
                       Node {catalogSortConfig.key === 'node' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => catalogCols.startResize(2, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('template')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('template')}>
                       Source Template {catalogSortConfig.key === 'template' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => catalogCols.startResize(3, e)} />
                     </th>
-                    <th className="px-5 py-3">Usage</th>
-                    <th className="px-5 py-3">Harden / Patch</th>
-                    <th className="px-5 py-3">Status</th>
+                    <th className="relative px-5 py-3">Usage<ColResizeHandle onMouseDown={(e) => catalogCols.startResize(4, e)} /></th>
+                    <th className="relative px-5 py-3">Harden / Patch<ColResizeHandle onMouseDown={(e) => catalogCols.startResize(5, e)} /></th>
+                    <th className="relative px-5 py-3">Status<ColResizeHandle onMouseDown={(e) => catalogCols.startResize(6, e)} /></th>
                     <th className="px-5 py-3 text-center">Action</th>
                   </tr>
                 </thead>
               </table>
               <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
               <table className="w-full text-left border-collapse whitespace-nowrap table-fixed">
-                <Colgroup widths={CATALOG_COL_WIDTHS} />
+                <Colgroup widths={catalogCols.widths} />
                 <tbody>
                   {loading && catalogs.length === 0 && <TableSkeleton cols={8} />}
                   {!loading && catalogsPager.total === 0 && (

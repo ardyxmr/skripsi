@@ -7,6 +7,8 @@ import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
 import Colgroup from '../../../components/common/Colgroup';
 import PaginationBar from '../../../components/common/PaginationBar';
 import { useClientPagination } from '../../../components/common/useClientPagination';
+import { useResizableColumns } from '../../../components/common/useResizableColumns';
+import ColResizeHandle from '../../../components/common/ColResizeHandle';
 import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { formatDateTime } from '../../../lib/datetime';
@@ -83,6 +85,7 @@ export default function TierManagement() {
   });
 
   const tiersPager = useClientPagination(filteredTiers, 10);
+  const tierCols = useResizableColumns('tier_management_col_widths', TIER_COL_WIDTHS);
 
   // Calculate stats
   const totalTiers = tiers.length;
@@ -296,24 +299,24 @@ export default function TierManagement() {
           </div>
 
           <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div className="min-w-[960px] w-full h-full flex flex-col">
+            <div style={{ minWidth: tierCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
               <table className="w-full text-left text-sm table-fixed shrink-0">
-                <Colgroup widths={TIER_COL_WIDTHS} />
+                <Colgroup widths={tierCols.widths} />
                 <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
                   <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="px-4 py-3">Tier Name</th>
-                    <th className="px-4 py-3">CPU</th>
-                    <th className="px-4 py-3">RAM (GB)</th>
-                    <th className="px-4 py-3">Disk (GB)</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Created Date</th>
+                    <th className="relative px-4 py-3">Tier Name<ColResizeHandle onMouseDown={(e) => tierCols.startResize(0, e)} /></th>
+                    <th className="relative px-4 py-3">CPU<ColResizeHandle onMouseDown={(e) => tierCols.startResize(1, e)} /></th>
+                    <th className="relative px-4 py-3">RAM (GB)<ColResizeHandle onMouseDown={(e) => tierCols.startResize(2, e)} /></th>
+                    <th className="relative px-4 py-3">Disk (GB)<ColResizeHandle onMouseDown={(e) => tierCols.startResize(3, e)} /></th>
+                    <th className="relative px-4 py-3">Status<ColResizeHandle onMouseDown={(e) => tierCols.startResize(4, e)} /></th>
+                    <th className="relative px-4 py-3">Created Date<ColResizeHandle onMouseDown={(e) => tierCols.startResize(5, e)} /></th>
                     <th className="px-5 py-3 text-center">Action</th>
                   </tr>
                 </thead>
               </table>
               <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
               <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
-                <Colgroup widths={TIER_COL_WIDTHS} />
+                <Colgroup widths={tierCols.widths} />
                 <tbody>
                   {loading && tiers.length === 0 ? (
                     <TableSkeleton cols={7} />

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useNodeContext } from '../../../contexts/NodeContext';
+import StatusPill from '../../../components/common/StatusPill';
 
 export default function EnvironmentExplorer({ envDrawer, setEnvDrawer }) {
   const { providers } = useProviderContext();
@@ -53,9 +54,9 @@ export default function EnvironmentExplorer({ envDrawer, setEnvDrawer }) {
               </div>
             </div>
             <div className="flex items-center gap-3 mt-2">
-              <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${env.status === 'Active' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400' : 'bg-slate-50 border border-slate-200 text-slate-700 dark:bg-surface dark:border-theme dark:text-zinc-400'}`}>
-                {env.status}
-              </span>
+              {/* Health-derived: Active(green) | Degraded(amber) | Provider/Node Offline(red) | Inactive(gray) */}
+              <StatusPill status={env.status} label={env.status} variant="soft" shape="full" uppercase size="sm" />
+
               <span className="text-slate-300 dark:text-zinc-600">|</span>
               <span className="text-[12px] font-medium text-slate-600 dark:text-zinc-400 flex items-center gap-1.5">
                 {env.type === 'System' ? <Shield size={14} className="text-slate-400" /> : <Server size={14} className="text-slate-400" />}

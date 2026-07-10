@@ -7,6 +7,8 @@ import TableActionMenu from '../../../components/common/TableActionMenu';
 import Colgroup from '../../../components/common/Colgroup';
 import PaginationBar from '../../../components/common/PaginationBar';
 import { useClientPagination } from '../../../components/common/useClientPagination';
+import { useResizableColumns } from '../../../components/common/useResizableColumns';
+import ColResizeHandle from '../../../components/common/ColResizeHandle';
 
 // Extracted Components
 import DatastoreForm from './DatastoreForm';
@@ -226,6 +228,7 @@ export default function DatastoreManagement() {
   }, [datastores, debouncedSearch, datastoreProviderFilter, datastoreStatusFilter, datastoreSortConfig]);
 
   const datastoresPager = useClientPagination(sortedDatastores, 10);
+  const datastoreCols = useResizableColumns('datastore_management_col_widths', DATASTORE_COL_WIDTHS);
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -320,31 +323,37 @@ export default function DatastoreManagement() {
           </div>
           
           <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div className="min-w-[1410px] w-full h-full flex flex-col">
+            <div style={{ minWidth: datastoreCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
               <table className="w-full text-left border-collapse table-fixed shrink-0">
-                <Colgroup widths={DATASTORE_COL_WIDTHS} />
+                <Colgroup widths={datastoreCols.widths} />
                 <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
                   <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('name')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('name')}>
                       Datastore Name {datastoreSortConfig.key === 'name' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(0, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('provider')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('provider')}>
                       Provider {datastoreSortConfig.key === 'provider' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(1, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('node')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('node')}>
                       Node {datastoreSortConfig.key === 'node' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(2, e)} />
                     </th>
-                    <th className="px-5 py-3">Provider Datastore</th>
-                    <th className="px-5 py-3">Datastore Type</th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('capacity')}>
+                    <th className="relative px-5 py-3">Provider Datastore<ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(3, e)} /></th>
+                    <th className="relative px-5 py-3">Datastore Type<ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(4, e)} /></th>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('capacity')}>
                       Capacity {datastoreSortConfig.key === 'capacity' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(5, e)} />
                     </th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('activeVMs')}>
+                    <th className="relative px-5 py-3">Status<ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(6, e)} /></th>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('activeVMs')}>
                       VMs {datastoreSortConfig.key === 'activeVMs' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(7, e)} />
                     </th>
-                    <th className="px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('lastUpdated')}>
+                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('lastUpdated')}>
                       Last Updated {datastoreSortConfig.key === 'lastUpdated' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(8, e)} />
                     </th>
                     <th className="px-5 py-3 text-center">Action</th>
                   </tr>
@@ -352,7 +361,7 @@ export default function DatastoreManagement() {
               </table>
               <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
               <table className="w-full text-left border-collapse whitespace-nowrap table-fixed">
-                <Colgroup widths={DATASTORE_COL_WIDTHS} />
+                <Colgroup widths={datastoreCols.widths} />
                 <tbody>
                   {loading && datastores.length === 0 && <TableSkeleton cols={10} />}
                   {!loading && datastoresPager.total === 0 && (

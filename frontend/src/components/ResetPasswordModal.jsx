@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X, KeyRound, Eye, EyeOff, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import api from '../lib/api';
 import { useUI } from '../stores/uiStore';
@@ -111,7 +112,7 @@ export default function ResetPasswordModal({ open, user, onClose }) {
     'w-full bg-gray-50 dark:bg-zinc-900/40 border border-gray-200 dark:border-theme rounded-input px-3 py-2 text-[13px] text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 transition-colors';
   const labelCls = 'block text-[11px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5';
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/60 dark:bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="absolute inset-0" onClick={attemptClose}></div>
       <div className="relative bg-white dark:bg-card w-full max-w-[440px] rounded-modal shadow-modal overflow-hidden border border-gray-200 dark:border-theme animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
@@ -201,6 +202,7 @@ export default function ResetPasswordModal({ open, user, onClose }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

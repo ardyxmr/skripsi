@@ -22,3 +22,11 @@ export function isOffline(status) {
 export function isActive(status) {
   return status === 'Active';
 }
+
+/**
+ * Partial degradation — used by Environment (a many-to-many allow-list): some allowed provider/node
+ * is down but a usable path remains, so it is NOT offline (still provisionable) — shown amber.
+ */
+export function isDegraded(status) {
+  return status === 'Degraded';
+}

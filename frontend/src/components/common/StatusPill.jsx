@@ -91,7 +91,7 @@ const TONE_BY_STATUS = {
   Failed: 'danger', Expired: 'danger', Missing: 'danger', Rejected: 'danger', Disconnected: 'danger',
   Offline: 'danger', 'Offline / Missing': 'danger', 'Provider Offline': 'danger', 'Node Offline': 'danger', 'Template Missing': 'danger',
   // warning
-  Pending: 'warning', 'Low Capacity': 'warning', Unknown: 'warning',
+  Pending: 'warning', 'Low Capacity': 'warning', Unknown: 'warning', Degraded: 'warning',
   // reverted
   Reverted: 'revert',
   // in-progress

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isAdmin } from '../lib/rbac';
 import { useUserContext } from '../contexts/UserContext';
 import { useProviderContext } from '../contexts/ProviderContext';
 import { useCatalogContext } from '../contexts/CatalogContext';
@@ -25,19 +26,25 @@ export default function DataBootstrap() {
 
   // Keyed on the user id so it fires once per login (and again if a different user logs in).
   const userId = currentUser?.id;
+  const admin = isAdmin(currentUser);
 
   useEffect(() => {
     if (!userId) return; // not authenticated yet → nothing to load
-    refetchProviders();
+    // Readable by any authenticated user (backend allows all roles).
     refetchCatalogs();
     refetchNetworks();
     refetchDatastores();
     refetchNodes();
     refetchTiers();
     refetchEnvironments();
-    fetchAdminLists(); // users/roles/groups (admin-scoped; harmless 403 for non-admins)
+    // Administrator-only endpoints (backend `role:Administrator`): /providers and /users,/roles,/groups.
+    // A non-admin session would just 403 on these and spam the console, so only fetch them for admins.
+    if (admin) {
+      refetchProviders();
+      fetchAdminLists(); // users / roles / groups
+    }
   }, [
-    userId,
+    userId, admin,
     refetchProviders, refetchCatalogs, refetchNetworks, refetchDatastores,
     refetchNodes, refetchTiers, refetchEnvironments, fetchAdminLists,
   ]);

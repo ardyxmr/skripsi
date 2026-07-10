@@ -2,11 +2,18 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import api from '../lib/api';
 import { isAuthed } from '../lib/auth';
 import { LIVE_CACHE_EVENT } from '../lib/liveCache';
+import { useUserContext } from './UserContext';
+import { isAdmin } from '../lib/rbac';
 
 const ProviderContext = createContext();
 const RESOURCE = '/providers';
 
 export function ProviderProvider({ children }) {
+  // GET /providers is Administrator-only (backend routes/api.php `role:Administrator`). ProviderProvider
+  // wraps the whole app but only admins may read it, so we gate every fetch on the role — non-admins
+  // keep an empty list (NotificationCenter + the admin-only Settings pages already treat [] as "none").
+  const { currentUser } = useUserContext();
+  const canReadProviders = isAdmin(currentUser);
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -25,18 +32,20 @@ export function ProviderProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (isAuthed()) refetch(); // wait for auth — DataBootstrap re-fetches on login
+    if (isAuthed()) refetch(); // wait for auth — DataBootstrap re-fetches on login (admin-gated there)
   }, [refetch]);
 
   // Keep the connection status live: piggy-back on the app-wide poll (LiveDataPoller fires
   // LIVE_CACHE_EVENT ~every 10s). This mirrors the freshly auto-synced provider.status into every
   // consumer (Catalog page provider count, wizard) without anyone pressing Test/Refresh. Gated on the
-  // '/inventory' path so the two events per poll cycle collapse into one refetch.
+  // '/inventory' path so the two events per poll cycle collapse into one refetch — and on the admin
+  // role, so a non-admin session doesn't 403 on /providers every poll cycle.
   useEffect(() => {
+    if (!canReadProviders) return undefined;
     const onLive = (e) => { if (e?.detail?.path === '/inventory' && isAuthed()) refetch({ silent: true }); };
     window.addEventListener(LIVE_CACHE_EVENT, onLive);
     return () => window.removeEventListener(LIVE_CACHE_EVENT, onLive);
-  }, [refetch]);
+  }, [refetch, canReadProviders]);
 
   const create = async (data) => {
     const created = await api.post(RESOURCE, data);

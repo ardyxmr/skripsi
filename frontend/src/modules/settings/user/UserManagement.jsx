@@ -2,11 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Shield, Users, User, Search, Plus, Edit2, Trash2, X, AlertTriangle, Loader2, MoreVertical, RefreshCw } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import Colgroup from '../../../components/common/Colgroup';
-import PaginationBar from '../../../components/common/PaginationBar';
-import { useClientPagination } from '../../../components/common/useClientPagination';
-import { useResizableColumns } from '../../../components/common/useResizableColumns';
-import ColResizeHandle from '../../../components/common/ColResizeHandle';
+import DataTable from '../../../components/common/DataTable';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { useUserContext } from '../../../contexts/UserContext';
 import UserForm from './UserForm';
@@ -14,14 +10,6 @@ import RoleForm from './RoleForm';
 import GroupForm from './GroupForm';
 import UserActionModal from './UserActionModal';
 import { useUI } from '../../../stores/uiStore';
-
-// Fixed column widths (px) shared by each table's pinned-header table and its scrolling body table
-// so their columns stay aligned under `table-fixed`. The sum is the table's min width (horizontal
-// scroll kicks in below it). Two-table split (like Approvals) puts the vertical scrollbar UNDER the
-// column titles, not level with them.
-const USER_COL_WIDTHS = [190, 230, 120, 150, 100, 130, 130, 70]; // 8 cols ≈ 1120
-const ROLE_COL_WIDTHS = [140, 200, 110, 100, 100, 70];           // 6 cols ≈ 720
-const GROUP_COL_WIDTHS = [150, 180, 130, 110, 100, 70];          // 6 cols ≈ 740
 
 export default function UserManagement() {
   const [openDropdownId, setOpenDropdownId] = useState(null);
@@ -43,9 +31,6 @@ export default function UserManagement() {
   const [userStatusFilter, setUserStatusFilter] = useState('All Status');
   const [isRefreshingUser, setIsRefreshingUser] = useState(false);
 
-  const [roleSortDesc, setRoleSortDesc] = useState(false);
-  const [groupSortDesc, setGroupSortDesc] = useState(false);
-  const [userSortDesc, setUserSortDesc] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, type: null, mode: 'add', data: null });
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, type: null, data: null, isWarning: false, assignedUsers: [] });
@@ -54,7 +39,8 @@ export default function UserManagement() {
   const getGroupName = (id) => groups.find(g => g.id === id)?.name || 'Unknown';
 
   const debouncedUserSearch = useDebouncedValue(userSearch, 250);
-  const sortedUsers = useMemo(() => {
+  // Filter only — the shared <DataTable> owns sorting + pagination internally.
+  const filteredUsers = useMemo(() => {
     let filtered = users.filter(u => !u.deletedAt);
     if (debouncedUserSearch) {
       const q = debouncedUserSearch.toLowerCase();
@@ -72,12 +58,8 @@ export default function UserManagement() {
     if (userStatusFilter !== 'All Status') {
       filtered = filtered.filter(u => u.status === userStatusFilter);
     }
-    return filtered.sort((a, b) => {
-      return userSortDesc 
-        ? new Date(b.createdAt) - new Date(a.createdAt) 
-        : new Date(a.createdAt) - new Date(b.createdAt);
-    });
-  }, [users, debouncedUserSearch, userRoleFilter, userGroupFilter, userStatusFilter, userSortDesc, roles, groups]);
+    return filtered;
+  }, [users, debouncedUserSearch, userRoleFilter, userGroupFilter, userStatusFilter, roles, groups]);
 
   const openModal = (type, mode, data = null) => {
     setModal({ isOpen: true, type, mode, data });
@@ -196,25 +178,8 @@ export default function UserManagement() {
     }
   };
 
-  const sortedRoles = [...roles].filter(r => !r.deletedAt).sort((a, b) => {
-    return roleSortDesc 
-      ? new Date(b.createdAt) - new Date(a.createdAt) 
-      : new Date(a.createdAt) - new Date(b.createdAt);
-  });
-
-  const sortedGroups = [...groups].filter(g => !g.deletedAt).sort((a, b) => {
-    return groupSortDesc
-      ? new Date(b.createdAt) - new Date(a.createdAt)
-      : new Date(a.createdAt) - new Date(b.createdAt);
-  });
-
-  // Client-side pagination for each table (data is already in memory + live-polled — slice locally).
-  const rolesPager = useClientPagination(sortedRoles, 10);
-  const groupsPager = useClientPagination(sortedGroups, 10);
-  const usersPager = useClientPagination(sortedUsers, 10);
-  const rolesCols = useResizableColumns('um_roles_col_widths', ROLE_COL_WIDTHS);
-  const groupsCols = useResizableColumns('um_groups_col_widths', GROUP_COL_WIDTHS);
-  const usersCols = useResizableColumns('um_users_col_widths', USER_COL_WIDTHS);
+  const filteredRoles = [...roles].filter(r => !r.deletedAt);
+  const filteredGroups = [...groups].filter(g => !g.deletedAt);
 
   const totalRoles = roles.filter(r => !r.deletedAt).length;
   const totalGroups = groups.filter(g => !g.deletedAt).length;
@@ -245,6 +210,140 @@ export default function UserManagement() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Column defs for the shared <DataTable>: `weight` = fit-mode share of the width, `render` = cell.
+  const roleColumns = [
+    { key: 'name', header: 'Role Name', weight: 1.4, sortable: true, sortAccessor: (r) => (r.name || '').toLowerCase(),
+      headerClassName: 'px-3 py-3', cellClassName: 'p-3 font-medium text-slate-800 dark:text-zinc-200',
+      render: (role) => role.name },
+    { key: 'perms', header: 'Role / Permission', weight: 2.0, headerClassName: 'px-3 py-3', cellClassName: 'p-3',
+      render: (role) => role.permissions && role.permissions.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {role.permissions.map(p => (
+            <span key={p} className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium border border-blue-100 dark:border-blue-500/20">
+              {p}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <span className="text-[11px] text-slate-400 italic">None</span>
+      ) },
+    { key: 'created', header: 'Created', weight: 1.1, sortable: true, sortAccessor: (r) => new Date(r.createdAt).getTime() || 0,
+      headerClassName: 'px-3 py-3', cellClassName: 'p-3 text-slate-500 dark:text-zinc-400 text-[12px]',
+      render: (role) => role.createdAt },
+    { key: 'userCount', header: 'User Count', weight: 1.0, headerClassName: 'px-3 py-3', cellClassName: 'p-3',
+      render: (role) => (
+        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-slate-100 dark:bg-surface text-slate-600 dark:text-zinc-300 text-[11px] font-medium min-w-[24px]">
+          {role.userCount}
+        </span>
+      ) },
+    { key: 'status', header: 'Status', weight: 1.0, headerClassName: 'px-3 py-3', cellClassName: 'p-3',
+      render: (role) => (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium border border-emerald-200 dark:border-emerald-500/20">
+          {role.status}
+        </span>
+      ) },
+    { key: 'action', header: 'Action', weight: 0.7, align: 'center', resizable: false, headerClassName: 'px-3 py-3', cellClassName: 'p-3',
+      render: (role) => (
+        <TableActionMenu isOpen={openDropdownId === `role-${role.id}`} onToggle={(e) => handleDropdownClick(e, `role-${role.id}`)} dropdownPos={dropdownPos}>
+          <button onClick={() => { openModal('role', 'edit', role); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
+            <Edit2 size={14} /> Edit Role
+          </button>
+          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
+          <button onClick={() => { handleDeleteClick('role', role); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <Trash2 size={14} /> Delete Role
+          </button>
+        </TableActionMenu>
+      ) },
+  ];
+
+  const groupColumns = [
+    { key: 'name', header: 'Group Name', weight: 1.5, sortable: true, sortAccessor: (g) => (g.name || '').toLowerCase(),
+      headerClassName: 'px-3 py-3', cellClassName: 'p-3 font-medium text-slate-800 dark:text-zinc-200',
+      render: (group) => group.name },
+    { key: 'manager', header: 'Manager', weight: 1.8, headerClassName: 'px-3 py-3', cellClassName: 'p-3 text-[12px] text-slate-600 dark:text-zinc-300',
+      render: (group) => group.managerId ? (
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-[10px] font-medium text-slate-600 dark:text-zinc-300">
+            {(users.find(u => u.id === group.managerId)?.name || '?').charAt(0).toUpperCase()}
+          </div>
+          {users.find(u => u.id === group.managerId)?.name || 'Unknown'}
+        </div>
+      ) : (
+        <span className="text-slate-400 italic">Not Assigned</span>
+      ) },
+    { key: 'room', header: 'Room / Floor', weight: 1.3, headerClassName: 'px-3 py-3', cellClassName: 'p-3 text-slate-500 dark:text-zinc-400 text-[12px]',
+      render: (group) => group.room },
+    { key: 'created', header: 'Created', weight: 1.1, sortable: true, sortAccessor: (g) => new Date(g.createdAt).getTime() || 0,
+      headerClassName: 'px-3 py-3', cellClassName: 'p-3 text-slate-500 dark:text-zinc-400 text-[12px]',
+      render: (group) => group.createdAt },
+    { key: 'members', header: 'Members', weight: 1.0, headerClassName: 'px-3 py-3', cellClassName: 'p-3',
+      render: (group) => (
+        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-slate-100 dark:bg-surface text-slate-600 dark:text-zinc-300 text-[11px] font-medium min-w-[24px]">
+          {group.memberCount}
+        </span>
+      ) },
+    { key: 'action', header: 'Action', weight: 0.7, align: 'center', resizable: false, headerClassName: 'px-3 py-3', cellClassName: 'p-3',
+      render: (group) => (
+        <TableActionMenu isOpen={openDropdownId === `group-${group.id}`} onToggle={(e) => handleDropdownClick(e, `group-${group.id}`)} dropdownPos={dropdownPos}>
+          <button onClick={() => { openModal('group', 'edit', group); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
+            <Edit2 size={14} /> Edit Group
+          </button>
+          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
+          <button onClick={() => { handleDeleteClick('group', group); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <Trash2 size={14} /> Delete Group
+          </button>
+        </TableActionMenu>
+      ) },
+  ];
+
+  const userColumns = [
+    { key: 'name', header: 'Full Name', weight: 1.9, sortable: true, sortAccessor: (u) => (u.name || '').toLowerCase(),
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 font-medium text-slate-800 dark:text-zinc-200',
+      render: (user) => user.name },
+    { key: 'email', header: 'Email', weight: 2.3, sortable: true, sortAccessor: (u) => (u.email || '').toLowerCase(),
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-500 dark:text-zinc-400 text-[12px]',
+      render: (user) => user.email },
+    { key: 'role', header: 'Role', weight: 1.2, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (user) => (
+        <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
+          user.roleId === 1 ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20' :
+          user.roleId === 2 ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20' :
+          'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
+        }`}>
+          {getRoleName(user.roleId)}
+        </span>
+      ) },
+    { key: 'group', header: 'Group', weight: 1.5, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-600 dark:text-zinc-400 text-[12px]',
+      render: (user) => getGroupName(user.groupId) },
+    { key: 'status', header: 'Status', weight: 1.0, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (user) => (
+        <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
+          user.status === 'Active'
+            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
+            : 'bg-slate-100 dark:bg-surface text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-theme'
+        }`}>
+          {user.status}
+        </span>
+      ) },
+    { key: 'created', header: 'Created', weight: 1.3, sortable: true, sortAccessor: (u) => new Date(u.createdAt).getTime() || 0,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-400 dark:text-zinc-500 text-[12px]',
+      render: (user) => user.createdAt },
+    { key: 'lastLogin', header: 'Last Login', weight: 1.3, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-400 dark:text-zinc-500 text-[12px]',
+      render: (user) => user.lastLogin },
+    { key: 'action', header: 'Action', weight: 0.7, align: 'center', resizable: false, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (user) => (
+        <TableActionMenu isOpen={openDropdownId === `user-${user.id}`} onToggle={(e) => handleDropdownClick(e, `user-${user.id}`)} dropdownPos={dropdownPos}>
+          <button onClick={() => { openModal('user', 'edit', user); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
+            <Edit2 size={14} /> Edit User
+          </button>
+          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
+          <button onClick={() => { handleDeleteClick('user', user); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <Trash2 size={14} /> Delete User
+          </button>
+        </TableActionMenu>
+      ) },
+  ];
 
   return (
     <>
@@ -305,93 +404,26 @@ export default function UserManagement() {
                       </button>
                     </div>
 
-                    {/* Desktop Table — pinned header table + separately-scrolling body (scrollbar starts UNDER the titles) */}
-                    <div className="hidden md:flex flex-auto min-h-0 overflow-x-auto overflow-y-hidden custom-scrollbar flex-col">
-                      <div style={{ minWidth: rolesCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
-                      <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
-                        <Colgroup widths={rolesCols.widths} />
-                        <thead className="bg-gray-50 dark:bg-surface shadow-sm">
-                          <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-theme">
-                            <th className="relative px-3 py-3">Role Name<ColResizeHandle onMouseDown={(e) => rolesCols.startResize(0, e)} /></th>
-                            <th className="relative px-3 py-3">Role / Permission<ColResizeHandle onMouseDown={(e) => rolesCols.startResize(1, e)} /></th>
-                            <th className="relative px-3 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setRoleSortDesc(!roleSortDesc)}>
-                              Created {roleSortDesc ? '↓' : '↑'}
-                              <ColResizeHandle onMouseDown={(e) => rolesCols.startResize(2, e)} />
-                            </th>
-                            <th className="relative px-3 py-3">User Count<ColResizeHandle onMouseDown={(e) => rolesCols.startResize(3, e)} /></th>
-                            <th className="relative px-3 py-3">Status<ColResizeHandle onMouseDown={(e) => rolesCols.startResize(4, e)} /></th>
-                            <th className="px-3 py-3 text-center">Action</th>
-                          </tr>
-                        </thead>
-                      </table>
-                      <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
-                      <table className="w-full border-collapse text-[13px] text-left table-fixed">
-                        <Colgroup widths={rolesCols.widths} />
-                        <tbody>
-                          {rolesPager.paged.map((role) => (
-                            <tr key={role.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                              <td className="p-3 font-medium text-slate-800 dark:text-zinc-200">{role.name}</td>
-                              <td className="p-3">
-                                {role.permissions && role.permissions.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {role.permissions.map(p => (
-                                      <span key={p} className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium border border-blue-100 dark:border-blue-500/20">
-                                        {p}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="text-[11px] text-slate-400 italic">None</span>
-                                )}
-                              </td>
-                              <td className="p-3 text-slate-500 dark:text-zinc-400 text-[12px]">{role.createdAt}</td>
-                              <td className="p-3">
-                                <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-slate-100 dark:bg-surface text-slate-600 dark:text-zinc-300 text-[11px] font-medium min-w-[24px]">
-                                  {role.userCount}
-                                </span>
-                              </td>
-                              <td className="p-3">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium border border-emerald-200 dark:border-emerald-500/20">
-                                  {role.status}
-                                </span>
-                              </td>
-                              <td className="p-3 text-center">
-                                <TableActionMenu
-                                  isOpen={openDropdownId === `role-${role.id}`}
-                                  onToggle={(e) => handleDropdownClick(e, `role-${role.id}`)}
-                                  dropdownPos={dropdownPos}
-                                >
-                                  <button onClick={() => { openModal('role', 'edit', role); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                                    <Edit2 size={14} /> Edit Role
-                                  </button>
-                                  <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
-                                  <button onClick={() => { handleDeleteClick('role', role); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                                    <Trash2 size={14} /> Delete Role
-                                  </button>
-                                </TableActionMenu>
-                              </td>
-                            </tr>
-                          ))}
-                          {rolesPager.total === 0 && (
-                            <tr>
-                              <td colSpan="6" className="p-8 text-center text-slate-500 dark:text-zinc-400">
-                                <div className="flex flex-col items-center justify-center">
-                                  <Shield size={32} className="text-slate-300 dark:text-zinc-600 mb-3" />
-                                  <div className="font-bold text-slate-800 dark:text-zinc-200 mb-1">No Roles Found</div>
-                                  <div className="text-[12px] mb-4">Create your first role to get started.</div>
-                                  <button onClick={() => openModal('role', 'add')} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[12px]">
-                                    + Add Role
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                      </div>
-                      </div>
+                    {/* Desktop-only table (phone out of scope): shared <DataTable> owns resize/sort/pagination */}
+                    <div className="hidden md:flex flex-auto min-h-0 flex-col">
+                      <DataTable
+                        columns={roleColumns}
+                        rows={filteredRoles}
+                        rowKey={(r) => r.id}
+                        noun="Roles"
+                        defaultSort={{ key: 'created', dir: 'asc' }}
+                        emptyState={{
+                          icon: Shield,
+                          title: 'No Roles Found',
+                          message: 'Create your first role to get started.',
+                          action: (
+                            <button onClick={() => openModal('role', 'add')} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[12px]">
+                              + Add Role
+                            </button>
+                          ),
+                        }}
+                      />
                     </div>
-                    <PaginationBar pager={rolesPager} noun="Roles" />
                   </div>
 
                   {/* Group / Division Management Panel */}
@@ -406,87 +438,25 @@ export default function UserManagement() {
                       </button>
                     </div>
 
-                    <div className="hidden md:flex flex-auto min-h-0 overflow-x-auto overflow-y-hidden custom-scrollbar flex-col">
-                      <div style={{ minWidth: groupsCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
-                      <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
-                        <Colgroup widths={groupsCols.widths} />
-                        <thead className="bg-gray-50 dark:bg-surface shadow-sm">
-                          <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-theme">
-                            <th className="relative px-3 py-3">Group Name<ColResizeHandle onMouseDown={(e) => groupsCols.startResize(0, e)} /></th>
-                            <th className="relative px-3 py-3">Manager<ColResizeHandle onMouseDown={(e) => groupsCols.startResize(1, e)} /></th>
-                            <th className="relative px-3 py-3">Room / Floor<ColResizeHandle onMouseDown={(e) => groupsCols.startResize(2, e)} /></th>
-                            <th className="relative px-3 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setGroupSortDesc(!groupSortDesc)}>
-                              Created {groupSortDesc ? '↓' : '↑'}
-                              <ColResizeHandle onMouseDown={(e) => groupsCols.startResize(3, e)} />
-                            </th>
-                            <th className="relative px-3 py-3">Members<ColResizeHandle onMouseDown={(e) => groupsCols.startResize(4, e)} /></th>
-                            <th className="px-3 py-3 text-center">Action</th>
-                          </tr>
-                        </thead>
-                      </table>
-                      <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
-                      <table className="w-full border-collapse text-[13px] text-left table-fixed whitespace-nowrap">
-                        <Colgroup widths={groupsCols.widths} />
-                        <tbody>
-                          {groupsPager.paged.map((group) => (
-                            <tr key={group.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                              <td className="p-3 font-medium text-slate-800 dark:text-zinc-200">{group.name}</td>
-                              <td className="p-3 text-[12px] text-slate-600 dark:text-zinc-300">
-                                {group.managerId ? (
-                                  <div className="flex items-center gap-1.5">
-                                    <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-[10px] font-medium text-slate-600 dark:text-zinc-300">
-                                      {(users.find(u => u.id === group.managerId)?.name || '?').charAt(0).toUpperCase()}
-                                    </div>
-                                    {users.find(u => u.id === group.managerId)?.name || 'Unknown'}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-400 italic">Not Assigned</span>
-                                )}
-                              </td>
-                              <td className="p-3 text-slate-500 dark:text-zinc-400 text-[12px]">{group.room}</td>
-                              <td className="p-3 text-slate-500 dark:text-zinc-400 text-[12px]">{group.createdAt}</td>
-                              <td className="p-3">
-                                <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-slate-100 dark:bg-surface text-slate-600 dark:text-zinc-300 text-[11px] font-medium min-w-[24px]">
-                                  {group.memberCount}
-                                </span>
-                              </td>
-                              <td className="p-3 text-center">
-                                <TableActionMenu
-                                  isOpen={openDropdownId === `group-${group.id}`}
-                                  onToggle={(e) => handleDropdownClick(e, `group-${group.id}`)}
-                                  dropdownPos={dropdownPos}
-                                >
-                                  <button onClick={() => { openModal('group', 'edit', group); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                                    <Edit2 size={14} /> Edit Group
-                                  </button>
-                                  <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
-                                  <button onClick={() => { handleDeleteClick('group', group); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                                    <Trash2 size={14} /> Delete Group
-                                  </button>
-                                </TableActionMenu>
-                              </td>
-                            </tr>
-                          ))}
-                          {groupsPager.total === 0 && (
-                            <tr>
-                              <td colSpan="6" className="p-8 text-center text-slate-500 dark:text-zinc-400">
-                                <div className="flex flex-col items-center justify-center">
-                                  <Users size={32} className="text-slate-300 dark:text-zinc-600 mb-3" />
-                                  <div className="font-bold text-slate-800 dark:text-zinc-200 mb-1">No Groups Found</div>
-                                  <div className="text-[12px] mb-4">Create your first group to organize users.</div>
-                                  <button onClick={() => openModal('group', 'add')} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[12px]">
-                                    + Add Group
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                      </div>
-                      </div>
+                    <div className="hidden md:flex flex-auto min-h-0 flex-col">
+                      <DataTable
+                        columns={groupColumns}
+                        rows={filteredGroups}
+                        rowKey={(g) => g.id}
+                        noun="Groups"
+                        defaultSort={{ key: 'created', dir: 'asc' }}
+                        emptyState={{
+                          icon: Users,
+                          title: 'No Groups Found',
+                          message: 'Create your first group to organize users.',
+                          action: (
+                            <button onClick={() => openModal('group', 'add')} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[12px]">
+                              + Add Group
+                            </button>
+                          ),
+                        }}
+                      />
                     </div>
-                    <PaginationBar pager={groupsPager} noun="Groups" />
                   </div>
                 </div>
 
@@ -551,92 +521,23 @@ export default function UserManagement() {
                     </select>
                   </div>
 
-                  <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-                    <div style={{ minWidth: usersCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
-                      <table className="w-full border-collapse text-[13px] text-left table-fixed shrink-0">
-                        <Colgroup widths={usersCols.widths} />
-                        <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
-                          <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            <th className="relative px-5 py-3">Full Name<ColResizeHandle onMouseDown={(e) => usersCols.startResize(0, e)} /></th>
-                            <th className="relative px-5 py-3">Email<ColResizeHandle onMouseDown={(e) => usersCols.startResize(1, e)} /></th>
-                            <th className="relative px-5 py-3">Role<ColResizeHandle onMouseDown={(e) => usersCols.startResize(2, e)} /></th>
-                            <th className="relative px-5 py-3">Group<ColResizeHandle onMouseDown={(e) => usersCols.startResize(3, e)} /></th>
-                            <th className="relative px-5 py-3">Status<ColResizeHandle onMouseDown={(e) => usersCols.startResize(4, e)} /></th>
-                            <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => setUserSortDesc(!userSortDesc)}>
-                              Created {userSortDesc ? '↓' : '↑'}
-                              <ColResizeHandle onMouseDown={(e) => usersCols.startResize(5, e)} />
-                            </th>
-                            <th className="relative px-5 py-3">Last Login<ColResizeHandle onMouseDown={(e) => usersCols.startResize(6, e)} /></th>
-                            <th className="px-5 py-3 text-center">Action</th>
-                          </tr>
-                        </thead>
-                      </table>
-                      <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
-                        <table className="w-full border-collapse text-[13px] text-left table-fixed">
-                          <Colgroup widths={usersCols.widths} />
-                          <tbody>
-                            {usersPager.paged.map((user) => (
-                            <tr key={user.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                              <td className="px-5 py-3 font-medium text-slate-800 dark:text-zinc-200">{user.name}</td>
-                              <td className="px-5 py-3 text-slate-500 dark:text-zinc-400 text-[12px]">{user.email}</td>
-                              <td className="px-5 py-3">
-                                <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                                  user.roleId === 1 ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20' :
-                                  user.roleId === 2 ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20' :
-                                  'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'
-                                }`}>
-                                  {getRoleName(user.roleId)}
-                                </span>
-                              </td>
-                              <td className="px-5 py-3 text-slate-600 dark:text-zinc-400 text-[12px]">{getGroupName(user.groupId)}</td>
-                              <td className="px-5 py-3">
-                                <span className={`inline-flex px-2 py-0.5 text-[11px] font-medium rounded-full border ${
-                                  user.status === 'Active' 
-                                    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' 
-                                    : 'bg-slate-100 dark:bg-surface text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-theme'
-                                }`}>
-                                  {user.status}
-                                </span>
-                              </td>
-                              <td className="px-5 py-3 text-slate-400 dark:text-zinc-500 text-[12px]">{user.createdAt}</td>
-                              <td className="px-5 py-3 text-slate-400 dark:text-zinc-500 text-[12px]">{user.lastLogin}</td>
-                              <td className="px-5 py-3 text-center">
-                                <TableActionMenu
-                                  isOpen={openDropdownId === `user-${user.id}`}
-                                  onToggle={(e) => handleDropdownClick(e, `user-${user.id}`)}
-                                  dropdownPos={dropdownPos}
-                                >
-                                  <button onClick={() => { openModal('user', 'edit', user); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                                    <Edit2 size={14} /> Edit User
-                                  </button>
-                                  <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
-                                  <button onClick={() => { handleDeleteClick('user', user); setOpenDropdownId(null); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                                    <Trash2 size={14} /> Delete User
-                                  </button>
-                                </TableActionMenu>
-                              </td>
-                            </tr>
-                          ))}
-                            {usersPager.total === 0 && (
-                              <tr>
-                                <td colSpan="8" className="p-10 text-center text-slate-500 dark:text-zinc-400">
-                                  <div className="flex flex-col items-center justify-center">
-                                    <User size={32} className="text-slate-300 dark:text-zinc-600 mb-3" />
-                                    <div className="font-bold text-slate-800 dark:text-zinc-200 mb-1">No Users Found</div>
-                                    <div className="text-[12px] mb-4">Add your first user or adjust the filters.</div>
-                                    <button onClick={() => openModal('user', 'add')} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[12px]">
-                                      + Add User
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                  <PaginationBar pager={usersPager} noun="Users" />
+                  <DataTable
+                    columns={userColumns}
+                    rows={filteredUsers}
+                    rowKey={(u) => u.id}
+                    noun="Users"
+                    defaultSort={{ key: 'created', dir: 'asc' }}
+                    emptyState={{
+                      icon: User,
+                      title: 'No Users Found',
+                      message: 'Add your first user or adjust the filters.',
+                      action: (
+                        <button onClick={() => openModal('user', 'add')} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[12px]">
+                          + Add User
+                        </button>
+                      ),
+                    }}
+                  />
                 </div>
               </div>
             </div>

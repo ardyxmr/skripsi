@@ -2,27 +2,18 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Grid, Search, Filter, Edit2, Trash2, XCircle, CheckCircle2, RefreshCw, Plus, AlertTriangle, Layers } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import Colgroup from '../../../components/common/Colgroup';
-import PaginationBar from '../../../components/common/PaginationBar';
-import { useClientPagination } from '../../../components/common/useClientPagination';
-import { useResizableColumns } from '../../../components/common/useResizableColumns';
-import ColResizeHandle from '../../../components/common/ColResizeHandle';
+import DataTable from '../../../components/common/DataTable';
 import NetworkForm from './NetworkForm';
 import NetworkExplorer from './NetworkExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useNetworkContext } from '../../../contexts/NetworkContext';
 import StatusPill from '../../../components/common/StatusPill';
 import { isOffline } from '../../../lib/resourceStatus';
-import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { formatDateTime } from '../../../lib/datetime';
 import { useUI } from '../../../stores/uiStore';
 import { ensureMinDuration } from '../../../lib/minDuration';
 import { LIVE_CACHE_EVENT } from '../../../lib/liveCache';
-
-// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
-// `table-fixed`). 9 columns; sum ≈ 1330 = the table's min width.
-const NETWORK_COL_WIDTHS = [220, 180, 140, 180, 160, 100, 120, 160, 70];
 
 export default function NetworkManagement() {
   const { providers } = useProviderContext();
@@ -35,7 +26,6 @@ export default function NetworkManagement() {
   const [networkSearch, setNetworkSearch] = useState('');
   const [networkProviderFilter, setNetworkProviderFilter] = useState('All Providers');
   const [networkStatusFilter, setNetworkStatusFilter] = useState('All Status');
-  const [networkSortConfig, setNetworkSortConfig] = useState({ key: 'name', direction: 'asc' });
   const [isRefreshingNetwork, setIsRefreshingNetwork] = useState(false);
 
   // Actions & Modals
@@ -121,14 +111,6 @@ export default function NetworkManagement() {
     }
   };
 
-  const handleNetworkSort = (key) => {
-    let direction = 'asc';
-    if (networkSortConfig.key === key && networkSortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setNetworkSortConfig({ key, direction });
-  };
-
   const handleDropdownClick = (e, id) => {
     if (openDropdownId === id) {
       setOpenDropdownId(null);
@@ -200,30 +182,74 @@ export default function NetworkManagement() {
   };
 
   const debouncedSearch = useDebouncedValue(networkSearch, 250);
-  const sortedNetworks = useMemo(() => {
+  // Filter only — the shared <DataTable> owns sorting + pagination internally.
+  const filteredNetworks = useMemo(() => {
     const q = debouncedSearch.toLowerCase();
     return networks.filter(n => {
       const matchesSearch = n.name.toLowerCase().includes(q) ||
                             (n.description && n.description.toLowerCase().includes(q)) ||
                             n.provider.toLowerCase().includes(q);
-      
       const matchesProvider = networkProviderFilter === 'All Providers' || n.provider === networkProviderFilter;
       const matchesStatus = networkStatusFilter === 'All Status'
         || (networkStatusFilter === 'Offline / Missing' ? isOffline(n.status) : n.status === networkStatusFilter);
-
       return matchesSearch && matchesProvider && matchesStatus;
-    }).sort((a, b) => {
-      if (networkSortConfig.key === 'activeVMs') {
-        return networkSortConfig.direction === 'asc' ? a.activeVMs - b.activeVMs : b.activeVMs - a.activeVMs;
-      }
-      if (a[networkSortConfig.key] < b[networkSortConfig.key]) return networkSortConfig.direction === 'asc' ? -1 : 1;
-      if (a[networkSortConfig.key] > b[networkSortConfig.key]) return networkSortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
     });
-  }, [networks, debouncedSearch, networkProviderFilter, networkStatusFilter, networkSortConfig]);
+  }, [networks, debouncedSearch, networkProviderFilter, networkStatusFilter]);
 
-  const networksPager = useClientPagination(sortedNetworks, 10);
-  const networkCols = useResizableColumns('network_management_col_widths', NETWORK_COL_WIDTHS);
+  // Column defs for the shared <DataTable>: `weight` = fit-mode share of the width, `render` = cell.
+  const networkColumns = [
+    { key: 'name', header: 'Network Name', weight: 2.2, sortable: true, sortAccessor: (n) => (n.name || '').toLowerCase(),
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (n) => (
+        <>
+          <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px]">{n.name}</div>
+          {n.description && <div className="text-[12px] text-slate-500 dark:text-zinc-400 mt-0.5">{n.description}</div>}
+        </>
+      ) },
+    { key: 'provider', header: 'Provider', weight: 1.8, sortable: true, sortAccessor: (n) => n.provider,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px]',
+      render: (n) => n.provider },
+    { key: 'node', header: 'Node', weight: 1.4, sortable: true, sortAccessor: (n) => n.node,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px]',
+      render: (n) => n.node },
+    { key: 'providerNetwork', header: 'Provider Network', weight: 1.8,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px] font-mono',
+      render: (n) => n.providerNetwork },
+    { key: 'cidr', header: 'CIDR', weight: 1.6,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px] font-mono',
+      render: (n) => n.cidr || '192.168.1.0/24' },
+    { key: 'status', header: 'Status', weight: 1.0, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (n) => <StatusPill status={n.status} label={n.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" /> },
+    { key: 'activeVMs', header: 'Usage', weight: 1.2, sortable: true, sortAccessor: (n) => n.activeVMs || 0,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px] font-medium',
+      render: (n) => `${n.activeVMs || 0} VMs` },
+    { key: 'lastUpdated', header: 'Last Updated', weight: 1.6, sortable: true, sortAccessor: (n) => n.lastUpdated || '',
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-400 dark:text-zinc-500 text-[12px]',
+      render: (n) => formatDateTime(n.lastUpdated) },
+    { key: 'action', header: 'Action', weight: 0.7, align: 'center', resizable: false, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (network) => (
+        <TableActionMenu
+          isOpen={openDropdownId === `network-${network.id}`}
+          onToggle={(e) => handleDropdownClick(e, `network-${network.id}`)}
+          dropdownPos={dropdownPos}
+        >
+          <button onClick={() => { setOpenDropdownId(null); openModal('network', 'edit', network); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
+            <Edit2 size={14}/> Edit Network
+          </button>
+          <button onClick={() => { setOpenDropdownId(null); setNetworkDrawer({ isOpen: true, network }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
+            <Layers size={14}/> Network Explorer
+          </button>
+          <button disabled={isOffline(network.status)} title={isOffline(network.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(network.status)) return; setOpenDropdownId(null); handleNetworkActionClick(network.status === 'Active' ? 'Disable' : 'Enable', network); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+            {network.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
+            {network.status === 'Active' ? 'Disable Network' : 'Enable Network'}
+          </button>
+          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
+          <button onClick={() => { setOpenDropdownId(null); handleNetworkActionClick('Delete', network); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <Trash2 size={14}/> Delete Network
+          </button>
+        </TableActionMenu>
+      ) },
+  ];
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -312,102 +338,20 @@ export default function NetworkManagement() {
             </select>
           </div>
           
-          <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div style={{ minWidth: networkCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
-              <table className="w-full text-left border-collapse table-fixed shrink-0">
-                <Colgroup widths={networkCols.widths} />
-                <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
-                  <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('name')}>
-                      Network Name {networkSortConfig.key === 'name' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(0, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('provider')}>
-                      Provider {networkSortConfig.key === 'provider' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(1, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('node')}>
-                      Node {networkSortConfig.key === 'node' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(2, e)} />
-                    </th>
-                    <th className="relative px-5 py-3">Provider Network<ColResizeHandle onMouseDown={(e) => networkCols.startResize(3, e)} /></th>
-                    <th className="relative px-5 py-3">CIDR<ColResizeHandle onMouseDown={(e) => networkCols.startResize(4, e)} /></th>
-                    <th className="relative px-5 py-3">Status<ColResizeHandle onMouseDown={(e) => networkCols.startResize(5, e)} /></th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('activeVMs')}>
-                      Usage {networkSortConfig.key === 'activeVMs' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(6, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleNetworkSort('lastUpdated')}>
-                      Last Updated {networkSortConfig.key === 'lastUpdated' ? (networkSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => networkCols.startResize(7, e)} />
-                    </th>
-                    <th className="px-5 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-              </table>
-              <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
-              <table className="w-full text-left border-collapse whitespace-nowrap table-fixed">
-                <Colgroup widths={networkCols.widths} />
-                <tbody>
-                  {loading && networks.length === 0 && <TableSkeleton cols={9} />}
-                  {!loading && networksPager.total === 0 && (
-                    <tr>
-                      <td colSpan="9" className="py-16">
-                        <div className="w-full flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
-                          <Grid size={48} className="mb-4 opacity-20" />
-                          <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Networks Found</h4>
-                          <p className="text-[13px] mb-4 text-center max-w-sm">Create a network mapping to manage discovered infrastructure networks.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {networksPager.paged.map((network) => (
-                    <tr key={network.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${isOffline(network.status) ? 'opacity-60' : ''}`}>
-                      <td className="px-5 py-3">
-                        <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px]">{network.name}</div>
-                        {network.description && <div className="text-[12px] text-slate-500 dark:text-zinc-400 mt-0.5">{network.description}</div>}
-                      </td>
-                      <td className="px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px]">{network.provider}</td>
-                      <td className="px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px]">{network.node}</td>
-                      <td className="px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px] font-mono">{network.providerNetwork}</td>
-                      <td className="px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px] font-mono">{network.cidr || '192.168.1.0/24'}</td>
-                      <td className="px-5 py-3">
-                        <StatusPill status={network.status} label={network.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" />
-                      </td>
-                      <td className="px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px] font-medium">
-                        {network.activeVMs || 0} VMs
-                      </td>
-                      <td className="px-5 py-3 text-slate-400 dark:text-zinc-500 text-[12px]">{formatDateTime(network.lastUpdated)}</td>
-                      <td className="px-5 py-3 text-center">
-                        <TableActionMenu
-                          isOpen={openDropdownId === `network-${network.id}`}
-                          onToggle={(e) => handleDropdownClick(e, `network-${network.id}`)}
-                          dropdownPos={dropdownPos}
-                        >
-                          <button onClick={() => { setOpenDropdownId(null); openModal('network', 'edit', network); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                            <Edit2 size={14}/> Edit Network
-                          </button>
-                          <button onClick={() => { setOpenDropdownId(null); setNetworkDrawer({ isOpen: true, network }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
-                            <Layers size={14}/> Network Explorer
-                          </button>
-                          <button disabled={isOffline(network.status)} title={isOffline(network.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(network.status)) return; setOpenDropdownId(null); handleNetworkActionClick(network.status === 'Active' ? 'Disable' : 'Enable', network); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
-                            {network.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
-                            {network.status === 'Active' ? 'Disable Network' : 'Enable Network'}
-                          </button>
-                          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
-                          <button onClick={() => { setOpenDropdownId(null); handleNetworkActionClick('Delete', network); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                            <Trash2 size={14}/> Delete Network
-                          </button>
-                        </TableActionMenu>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            </div>
-          </div>
-          <PaginationBar pager={networksPager} noun="Networks" />
+          <DataTable
+            columns={networkColumns}
+            rows={filteredNetworks}
+            rowKey={(n) => n.id}
+            rowClassName={(n) => (isOffline(n.status) ? 'opacity-60' : '')}
+            noun="Networks"
+            loading={loading}
+            defaultSort={{ key: 'name', dir: 'asc' }}
+            emptyState={{
+              icon: Grid,
+              title: 'No Networks Found',
+              message: 'Create a network mapping to manage discovered infrastructure networks.',
+            }}
+          />
         </div>
       </div>
 

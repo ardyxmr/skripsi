@@ -4,11 +4,7 @@ import {
   Search, Filter, Plus, FileText, CheckCircle2, XCircle, AlertCircle, Eye, Settings2, Shield, Server, Box, Globe, Info, Play, Loader2, ArrowRight, Save, Trash2, Key, Database, RefreshCw, AlertTriangle, Grid, Edit2, Layers, Check 
 } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import Colgroup from '../../../components/common/Colgroup';
-import PaginationBar from '../../../components/common/PaginationBar';
-import { useClientPagination } from '../../../components/common/useClientPagination';
-import { useResizableColumns } from '../../../components/common/useResizableColumns';
-import ColResizeHandle from '../../../components/common/ColResizeHandle';
+import DataTable from '../../../components/common/DataTable';
 
 // Extracted Components
 import DatastoreForm from './DatastoreForm';
@@ -17,16 +13,11 @@ import { useProviderContext } from '../../../contexts/ProviderContext';
 import { useDatastoreContext } from '../../../contexts/DatastoreContext';
 import StatusPill from '../../../components/common/StatusPill';
 import { isOffline } from '../../../lib/resourceStatus';
-import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { formatDateTime } from '../../../lib/datetime';
 import { useUI } from '../../../stores/uiStore';
 import { ensureMinDuration } from '../../../lib/minDuration';
 import { LIVE_CACHE_EVENT } from '../../../lib/liveCache';
-
-// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
-// `table-fixed`). 10 columns; sum ≈ 1410 = the table's min width.
-const DATASTORE_COL_WIDTHS = [220, 140, 140, 140, 120, 200, 120, 100, 160, 70];
 
 export default function DatastoreManagement() {
   const { providers } = useProviderContext();
@@ -37,7 +28,6 @@ export default function DatastoreManagement() {
   const [datastoreSearchQuery, setDatastoreSearchQuery] = useState('');
   const [datastoreProviderFilter, setDatastoreProviderFilter] = useState('All Providers');
   const [datastoreStatusFilter, setDatastoreStatusFilter] = useState('All Status');
-  const [datastoreSortConfig, setDatastoreSortConfig] = useState({ key: 'name', direction: 'asc' });
   const [datastoreActionModal, setDatastoreActionModal] = useState({ isOpen: false, action: null, datastore: null, isBlocking: false });
   const [datastoreActionConfirmText, setDatastoreActionConfirmText] = useState('');
   const [datastoreDrawer, setDatastoreDrawer] = useState({ isOpen: false, datastore: null });
@@ -188,47 +178,92 @@ export default function DatastoreManagement() {
     }
   };
 
-  const handleDatastoreSort = (key) => {
-    let direction = 'asc';
-    if (datastoreSortConfig.key === key && datastoreSortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setDatastoreSortConfig({ key, direction });
-  };
-
   const debouncedSearch = useDebouncedValue(datastoreSearchQuery, 250);
-  const sortedDatastores = React.useMemo(() => {
-    let sortableData = [...datastores];
-
-    // Apply Filters
+  // Filter only — the shared <DataTable> owns sorting + pagination internally.
+  const filteredDatastores = React.useMemo(() => {
+    let data = [...datastores];
     if (debouncedSearch) {
       const q = debouncedSearch.toLowerCase();
-      sortableData = sortableData.filter(d =>
-        d.name.toLowerCase().includes(q) ||
-        d.description.toLowerCase().includes(q)
-      );
+      data = data.filter(d => d.name.toLowerCase().includes(q) || d.description.toLowerCase().includes(q));
     }
-    if (datastoreProviderFilter !== 'All Providers') sortableData = sortableData.filter(d => d.provider === datastoreProviderFilter);
-    if (datastoreStatusFilter !== 'All Status') sortableData = sortableData.filter(d => datastoreStatusFilter === 'Offline / Missing' ? isOffline(d.status) : d.status === datastoreStatusFilter);
+    if (datastoreProviderFilter !== 'All Providers') data = data.filter(d => d.provider === datastoreProviderFilter);
+    if (datastoreStatusFilter !== 'All Status') data = data.filter(d => datastoreStatusFilter === 'Offline / Missing' ? isOffline(d.status) : d.status === datastoreStatusFilter);
+    return data;
+  }, [datastores, debouncedSearch, datastoreProviderFilter, datastoreStatusFilter]);
 
-    if (datastoreSortConfig.key !== null) {
-      sortableData.sort((a, b) => {
-        let valA = a[datastoreSortConfig.key];
-        let valB = b[datastoreSortConfig.key];
-        if (datastoreSortConfig.key === 'capacity') {
-            valA = a.capacity.percentage;
-            valB = b.capacity.percentage;
-        }
-        if (valA < valB) return datastoreSortConfig.direction === 'asc' ? -1 : 1;
-        if (valA > valB) return datastoreSortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-    return sortableData;
-  }, [datastores, debouncedSearch, datastoreProviderFilter, datastoreStatusFilter, datastoreSortConfig]);
-
-  const datastoresPager = useClientPagination(sortedDatastores, 10);
-  const datastoreCols = useResizableColumns('datastore_management_col_widths', DATASTORE_COL_WIDTHS);
+  // Column defs for the shared <DataTable>: `weight` = fit-mode share of the width, `render` = cell.
+  const datastoreColumns = [
+    { key: 'name', header: 'Datastore Name', weight: 2.2, sortable: true, sortAccessor: (d) => (d.name || '').toLowerCase(),
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (d) => (
+        <>
+          <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px]">{d.name}</div>
+          {d.description && <div className="text-[12px] text-slate-500 dark:text-zinc-400 mt-0.5">{d.description}</div>}
+        </>
+      ) },
+    { key: 'provider', header: 'Provider', weight: 1.4, sortable: true, sortAccessor: (d) => d.provider,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px]',
+      render: (d) => d.provider },
+    { key: 'node', header: 'Node', weight: 1.4, sortable: true, sortAccessor: (d) => d.node,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px]',
+      render: (d) => d.node },
+    { key: 'providerDatastore', header: 'Provider Datastore', weight: 1.4,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px] font-mono',
+      render: (d) => d.providerDatastore },
+    { key: 'type', header: 'Datastore Type', weight: 1.2,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px]',
+      render: (d) => d.type },
+    { key: 'capacity', header: 'Capacity', weight: 2.0, sortable: true, sortAccessor: (d) => d.capacity?.percentage ?? -1,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (d) => isOffline(d.status) ? (
+        // Provider unreachable → the capacity snapshot is stale, so blank it (mirrors the node CPU/RAM bars).
+        <span className="text-[12px] text-slate-400">— offline</span>
+      ) : (
+        <div className="flex flex-col gap-1 w-full max-w-[160px]">
+          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
+            <span>{d.capacity.used} / {d.capacity.total}</span>
+            <span className="font-medium">{d.capacity.percentage}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+            <div
+              className={`h-full ${d.capacity.percentage > 90 ? 'bg-rose-500' : d.capacity.percentage > 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+              style={{ width: `${d.capacity.percentage}%` }}
+            />
+          </div>
+        </div>
+      ) },
+    { key: 'status', header: 'Status', weight: 1.2, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (d) => <StatusPill status={d.status} label={d.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" /> },
+    { key: 'activeVMs', header: 'VMs', weight: 1.0, sortable: true, sortAccessor: (d) => d.activeVMs || 0,
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px] font-medium',
+      render: (d) => d.activeVMs || 0 },
+    { key: 'lastUpdated', header: 'Last Updated', weight: 1.6, sortable: true, sortAccessor: (d) => d.lastUpdated || '',
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3 text-slate-400 dark:text-zinc-500 text-[12px]',
+      render: (d) => formatDateTime(d.lastUpdated) },
+    { key: 'action', header: 'Action', weight: 0.7, align: 'center', resizable: false, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (datastore) => (
+        <TableActionMenu
+          isOpen={openDropdownId === `datastore-${datastore.id}`}
+          onToggle={(e) => handleDropdownClick(e, `datastore-${datastore.id}`)}
+          dropdownPos={dropdownPos}
+        >
+          <button onClick={() => { setOpenDropdownId(null); openModal('datastore', 'edit', datastore); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
+            <Edit2 size={14}/> Edit Datastore
+          </button>
+          <button onClick={() => { setOpenDropdownId(null); setDatastoreDrawer({ isOpen: true, datastore }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
+            <Database size={14}/> Datastore Explorer
+          </button>
+          <button disabled={isOffline(datastore.status)} title={isOffline(datastore.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(datastore.status)) return; setOpenDropdownId(null); handleDatastoreActionClick(datastore.status === 'Active' ? 'Disable' : 'Enable', datastore); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+            {datastore.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
+            {datastore.status === 'Active' ? 'Disable Datastore' : 'Enable Datastore'}
+          </button>
+          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
+          <button onClick={() => { setOpenDropdownId(null); handleDatastoreActionClick('Delete', datastore); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <Trash2 size={14}/> Delete Datastore
+          </button>
+        </TableActionMenu>
+      ) },
+  ];
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -322,125 +357,20 @@ export default function DatastoreManagement() {
             </select>
           </div>
           
-          <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div style={{ minWidth: datastoreCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
-              <table className="w-full text-left border-collapse table-fixed shrink-0">
-                <Colgroup widths={datastoreCols.widths} />
-                <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
-                  <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('name')}>
-                      Datastore Name {datastoreSortConfig.key === 'name' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(0, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('provider')}>
-                      Provider {datastoreSortConfig.key === 'provider' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(1, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('node')}>
-                      Node {datastoreSortConfig.key === 'node' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(2, e)} />
-                    </th>
-                    <th className="relative px-5 py-3">Provider Datastore<ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(3, e)} /></th>
-                    <th className="relative px-5 py-3">Datastore Type<ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(4, e)} /></th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('capacity')}>
-                      Capacity {datastoreSortConfig.key === 'capacity' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(5, e)} />
-                    </th>
-                    <th className="relative px-5 py-3">Status<ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(6, e)} /></th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('activeVMs')}>
-                      VMs {datastoreSortConfig.key === 'activeVMs' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(7, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleDatastoreSort('lastUpdated')}>
-                      Last Updated {datastoreSortConfig.key === 'lastUpdated' ? (datastoreSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => datastoreCols.startResize(8, e)} />
-                    </th>
-                    <th className="px-5 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-              </table>
-              <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
-              <table className="w-full text-left border-collapse whitespace-nowrap table-fixed">
-                <Colgroup widths={datastoreCols.widths} />
-                <tbody>
-                  {loading && datastores.length === 0 && <TableSkeleton cols={10} />}
-                  {!loading && datastoresPager.total === 0 && (
-                    <tr>
-                      <td colSpan="10" className="py-16">
-                        <div className="w-full flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
-                          <Database size={48} className="mb-4 opacity-20" />
-                          <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Datastores Found</h4>
-                          <p className="text-[13px] mb-4 text-center max-w-sm">Create a datastore mapping to manage discovered infrastructure storage.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {datastoresPager.paged.map((datastore) => (
-                    <tr key={datastore.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${isOffline(datastore.status) ? 'opacity-60' : ''}`}>
-                      <td className="px-5 py-3">
-                        <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px]">{datastore.name}</div>
-                        {datastore.description && <div className="text-[12px] text-slate-500 dark:text-zinc-400 mt-0.5">{datastore.description}</div>}
-                      </td>
-                      <td className="px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px]">{datastore.provider}</td>
-                      <td className="px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px]">{datastore.node}</td>
-                      <td className="px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px] font-mono">{datastore.providerDatastore}</td>
-                      <td className="px-5 py-3 text-slate-500 dark:text-zinc-400 text-[13px]">{datastore.type}</td>
-                      <td className="px-5 py-3">
-                        {isOffline(datastore.status) ? (
-                          // Provider unreachable → the capacity snapshot is stale, so blank it (mirrors the node CPU/RAM bars).
-                          <span className="text-[12px] text-slate-400">— offline</span>
-                        ) : (
-                          <div className="flex flex-col gap-1 w-full max-w-[160px]">
-                            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
-                              <span>{datastore.capacity.used} / {datastore.capacity.total}</span>
-                              <span className="font-medium">{datastore.capacity.percentage}%</span>
-                            </div>
-                            <div className="w-full h-1.5 bg-slate-100 dark:bg-zinc-700 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${datastore.capacity.percentage > 90 ? 'bg-rose-500' : datastore.capacity.percentage > 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                                style={{ width: `${datastore.capacity.percentage}%` }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-5 py-3">
-                        <StatusPill status={datastore.status} label={datastore.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" />
-                      </td>
-                      <td className="px-5 py-3 text-slate-600 dark:text-zinc-300 text-[13px] font-medium">
-                        {datastore.activeVMs || 0}
-                      </td>
-                      <td className="px-5 py-3 text-slate-400 dark:text-zinc-500 text-[12px]">{formatDateTime(datastore.lastUpdated)}</td>
-                      <td className="px-5 py-3 text-center">
-                        <TableActionMenu
-                          isOpen={openDropdownId === `datastore-${datastore.id}`}
-                          onToggle={(e) => handleDropdownClick(e, `datastore-${datastore.id}`)}
-                          dropdownPos={dropdownPos}
-                        >
-                          <button onClick={() => { setOpenDropdownId(null); openModal('datastore', 'edit', datastore); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                            <Edit2 size={14}/> Edit Datastore
-                          </button>
-                          <button onClick={() => { setOpenDropdownId(null); setDatastoreDrawer({ isOpen: true, datastore }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
-                            <Database size={14}/> Datastore Explorer
-                          </button>
-                          <button disabled={isOffline(datastore.status)} title={isOffline(datastore.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(datastore.status)) return; setOpenDropdownId(null); handleDatastoreActionClick(datastore.status === 'Active' ? 'Disable' : 'Enable', datastore); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
-                            {datastore.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
-                            {datastore.status === 'Active' ? 'Disable Datastore' : 'Enable Datastore'}
-                          </button>
-                          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
-                          <button onClick={() => { setOpenDropdownId(null); handleDatastoreActionClick('Delete', datastore); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                            <Trash2 size={14}/> Delete Datastore
-                          </button>
-                        </TableActionMenu>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            </div>
-          </div>
-          <PaginationBar pager={datastoresPager} noun="Datastores" />
+          <DataTable
+            columns={datastoreColumns}
+            rows={filteredDatastores}
+            rowKey={(d) => d.id}
+            rowClassName={(d) => (isOffline(d.status) ? 'opacity-60' : '')}
+            noun="Datastores"
+            loading={loading}
+            defaultSort={{ key: 'name', dir: 'asc' }}
+            emptyState={{
+              icon: Database,
+              title: 'No Datastores Found',
+              message: 'Create a datastore mapping to manage discovered infrastructure storage.',
+            }}
+          />
         </div>
       </div>
 

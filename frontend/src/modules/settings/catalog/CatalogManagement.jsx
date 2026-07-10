@@ -2,11 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Grid, Search, Filter, Edit2, Trash2, XCircle, CheckCircle2, RefreshCw, Plus, AlertTriangle, Layers, Server, Shield } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import Colgroup from '../../../components/common/Colgroup';
-import PaginationBar from '../../../components/common/PaginationBar';
-import { useClientPagination } from '../../../components/common/useClientPagination';
-import { useResizableColumns } from '../../../components/common/useResizableColumns';
-import ColResizeHandle from '../../../components/common/ColResizeHandle';
+import DataTable from '../../../components/common/DataTable';
 import CatalogForm from './CatalogForm';
 import CatalogExplorer from './CatalogExplorer';
 import { useProviderContext } from '../../../contexts/ProviderContext';
@@ -14,15 +10,10 @@ import { useCatalogContext } from '../../../contexts/CatalogContext';
 import api from '../../../lib/api';
 import StatusPill from '../../../components/common/StatusPill';
 import { isOffline } from '../../../lib/resourceStatus';
-import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { useUI } from '../../../stores/uiStore';
 import { ensureMinDuration } from '../../../lib/minDuration';
 import { LIVE_CACHE_EVENT } from '../../../lib/liveCache';
-
-// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
-// `table-fixed`). 8 columns; sum ≈ 1100 = the table's min width.
-const CATALOG_COL_WIDTHS = [220, 160, 140, 180, 100, 130, 100, 70];
 
 export default function CatalogManagement() {
   const { providers } = useProviderContext();
@@ -35,7 +26,6 @@ export default function CatalogManagement() {
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogProviderFilter, setCatalogProviderFilter] = useState('All Providers');
   const [catalogStatusFilter, setCatalogStatusFilter] = useState('All Status');
-  const [catalogSortConfig, setCatalogSortConfig] = useState({ key: 'name', direction: 'asc' });
   const [isRefreshingCatalog, setIsRefreshingCatalog] = useState(false);
 
   // Actions & Modals
@@ -119,14 +109,6 @@ export default function CatalogManagement() {
       await ensureMinDuration(start);
       setIsRefreshingCatalog(false);
     }
-  };
-
-  const handleCatalogSort = (key) => {
-    let direction = 'asc';
-    if (catalogSortConfig.key === key && catalogSortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setCatalogSortConfig({ key, direction });
   };
 
   const handleDropdownClick = (e, id) => {
@@ -232,19 +214,68 @@ export default function CatalogManagement() {
     return matchesSearch && matchesProvider && matchesStatus;
   });
 
-  const sortedCatalogs = [...filteredCatalogs].sort((a, b) => {
-    const key = catalogSortConfig.key;
-    const direction = catalogSortConfig.direction === 'asc' ? 1 : -1;
-    
-    if (key === 'lastUpdated') {
-      return (new Date(a[key]) - new Date(b[key])) * direction;
-    }
-    
-    return String(a[key]).localeCompare(String(b[key])) * direction;
-  });
-
-  const catalogsPager = useClientPagination(sortedCatalogs, 10);
-  const catalogCols = useResizableColumns('catalog_management_col_widths', CATALOG_COL_WIDTHS);
+  // Column defs for the shared <DataTable>: `weight` = fit-mode share of the width, `render` = cell.
+  const catalogColumns = [
+    { key: 'name', header: 'Catalog Name', weight: 2.2, sortable: true, sortAccessor: (c) => (c.name || '').toLowerCase(),
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (catalog) => (
+        <>
+          <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px] hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer" onClick={() => setCatalogDrawer({ isOpen: true, catalog })}>
+            {catalog.name}
+          </div>
+          {catalog.description && <div className="text-[12px] text-slate-500 dark:text-zinc-400 mt-0.5">{catalog.description}</div>}
+        </>
+      ) },
+    { key: 'provider', header: 'Provider', weight: 1.6, sortable: true, sortAccessor: (c) => (c.provider || '').toLowerCase(),
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (c) => <div className="text-slate-800 dark:text-zinc-200 font-medium text-[13px]">{c.provider}</div> },
+    { key: 'node', header: 'Node', weight: 1.4, sortable: true, sortAccessor: (c) => (c.node || '').toLowerCase(),
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (c) => <div className="text-slate-600 dark:text-zinc-300 text-[13px]">{c.node || '—'}</div> },
+    { key: 'template', header: 'Source Template', weight: 1.8, sortable: true, sortAccessor: (c) => (c.template || '').toLowerCase(),
+      headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (c) => <div className="text-slate-600 dark:text-zinc-300 text-[13px]">{c.template}</div> },
+    { key: 'usage', header: 'Usage', weight: 1.0, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (c) => (
+        <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 text-[12px]">
+          <Server size={12} className="text-slate-400" />
+          <span className="font-medium">{c.activeVMs || 0}</span> VMs
+        </div>
+      ) },
+    { key: 'harden', header: 'Harden / Patch', weight: 1.3, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (c) => c.hardeningVersionCount > 0 ? (
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-teal-700 dark:text-teal-400">
+          <Shield size={13} /> {c.hardeningVersionCount} version{c.hardeningVersionCount > 1 ? 's' : ''}
+        </span>
+      ) : (
+        <span className="text-[12px] text-slate-400 dark:text-zinc-500">—</span>
+      ) },
+    { key: 'status', header: 'Status', weight: 1.0, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (c) => <StatusPill status={c.status} label={c.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" /> },
+    { key: 'action', header: 'Action', weight: 0.7, align: 'center', resizable: false, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (catalog) => (
+        <TableActionMenu
+          isOpen={openDropdownId === `catalog-${catalog.id}`}
+          onToggle={(e) => handleDropdownClick(e, `catalog-${catalog.id}`)}
+          dropdownPos={dropdownPos}
+        >
+          <button onClick={() => { setOpenDropdownId(null); openModal('catalog', 'edit', catalog); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
+            <Edit2 size={14}/> Edit Catalog
+          </button>
+          <button onClick={() => { setOpenDropdownId(null); setCatalogDrawer({ isOpen: true, catalog }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
+            <Layers size={14}/> Catalog Explorer
+          </button>
+          <button disabled={isOffline(catalog.status)} title={isOffline(catalog.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(catalog.status)) return; setOpenDropdownId(null); handleCatalogActionClick(catalog.status === 'Active' ? 'Disable' : 'Enable', catalog); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+            {catalog.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
+            {catalog.status === 'Active' ? 'Disable Catalog' : 'Enable Catalog'}
+          </button>
+          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
+          <button onClick={() => { setOpenDropdownId(null); handleCatalogActionClick('Delete', catalog); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <Trash2 size={14}/> Delete Catalog
+          </button>
+        </TableActionMenu>
+      ) },
+  ];
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
@@ -335,116 +366,20 @@ export default function CatalogManagement() {
             </select>
           </div>
           
-          <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div style={{ minWidth: catalogCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
-              <table className="w-full text-left border-collapse table-fixed shrink-0">
-                <Colgroup widths={catalogCols.widths} />
-                <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
-                  <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('name')}>
-                      Catalog Name {catalogSortConfig.key === 'name' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => catalogCols.startResize(0, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('provider')}>
-                      Provider {catalogSortConfig.key === 'provider' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => catalogCols.startResize(1, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('node')}>
-                      Node {catalogSortConfig.key === 'node' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => catalogCols.startResize(2, e)} />
-                    </th>
-                    <th className="relative px-5 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300" onClick={() => handleCatalogSort('template')}>
-                      Source Template {catalogSortConfig.key === 'template' ? (catalogSortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      <ColResizeHandle onMouseDown={(e) => catalogCols.startResize(3, e)} />
-                    </th>
-                    <th className="relative px-5 py-3">Usage<ColResizeHandle onMouseDown={(e) => catalogCols.startResize(4, e)} /></th>
-                    <th className="relative px-5 py-3">Harden / Patch<ColResizeHandle onMouseDown={(e) => catalogCols.startResize(5, e)} /></th>
-                    <th className="relative px-5 py-3">Status<ColResizeHandle onMouseDown={(e) => catalogCols.startResize(6, e)} /></th>
-                    <th className="px-5 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-              </table>
-              <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
-              <table className="w-full text-left border-collapse whitespace-nowrap table-fixed">
-                <Colgroup widths={catalogCols.widths} />
-                <tbody>
-                  {loading && catalogs.length === 0 && <TableSkeleton cols={8} />}
-                  {!loading && catalogsPager.total === 0 && (
-                    <tr>
-                      <td colSpan="8" className="py-16">
-                        <div className="w-full flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
-                          <Grid size={48} className="mb-4 opacity-20" />
-                          <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Catalogs Found</h4>
-                          <p className="text-[13px] mb-4 text-center max-w-sm">Create a catalog mapping to start provisioning virtual machines.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {catalogsPager.paged.map((catalog) => (
-                    <tr key={catalog.id} className={`table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group ${isOffline(catalog.status) ? 'opacity-60' : ''}`}>
-                      <td className="px-5 py-3">
-                        <div className="font-medium text-slate-800 dark:text-zinc-200 text-[13px] hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer" onClick={() => setCatalogDrawer({ isOpen: true, catalog })}>
-                          {catalog.name}
-                        </div>
-                        {catalog.description && <div className="text-[12px] text-slate-500 dark:text-zinc-400 mt-0.5">{catalog.description}</div>}
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="text-slate-800 dark:text-zinc-200 font-medium text-[13px]">{catalog.provider}</div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="text-slate-600 dark:text-zinc-300 text-[13px]">{catalog.node || '—'}</div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="text-slate-600 dark:text-zinc-300 text-[13px]">{catalog.template}</div>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 text-[12px]">
-                          <Server size={12} className="text-slate-400" />
-                          <span className="font-medium">{catalog.activeVMs || 0}</span> VMs
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
-                        {catalog.hardeningVersionCount > 0 ? (
-                          <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-teal-700 dark:text-teal-400">
-                            <Shield size={13} /> {catalog.hardeningVersionCount} version{catalog.hardeningVersionCount > 1 ? 's' : ''}
-                          </span>
-                        ) : (
-                          <span className="text-[12px] text-slate-400 dark:text-zinc-500">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3">
-                        <StatusPill status={catalog.status} label={catalog.status} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" />
-                      </td>
-                      <td className="px-5 py-3 text-center">
-                        <TableActionMenu
-                          isOpen={openDropdownId === `catalog-${catalog.id}`}
-                          onToggle={(e) => handleDropdownClick(e, `catalog-${catalog.id}`)}
-                          dropdownPos={dropdownPos}
-                        >
-                          <button onClick={() => { setOpenDropdownId(null); openModal('catalog', 'edit', catalog); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                            <Edit2 size={14}/> Edit Catalog
-                          </button>
-                          <button onClick={() => { setOpenDropdownId(null); setCatalogDrawer({ isOpen: true, catalog }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
-                            <Layers size={14}/> Catalog Explorer
-                          </button>
-                          <button disabled={isOffline(catalog.status)} title={isOffline(catalog.status) ? 'Provider offline — reconnect the provider first' : undefined} onClick={() => { if (isOffline(catalog.status)) return; setOpenDropdownId(null); handleCatalogActionClick(catalog.status === 'Active' ? 'Disable' : 'Enable', catalog); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
-                            {catalog.status === 'Active' ? <XCircle size={14} className="text-amber-500"/> : <CheckCircle2 size={14} className="text-emerald-500"/>}
-                            {catalog.status === 'Active' ? 'Disable Catalog' : 'Enable Catalog'}
-                          </button>
-                          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
-                          <button onClick={() => { setOpenDropdownId(null); handleCatalogActionClick('Delete', catalog); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                            <Trash2 size={14}/> Delete Catalog
-                          </button>
-                        </TableActionMenu>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            </div>
-          </div>
-          <PaginationBar pager={catalogsPager} noun="Catalogs" />
+          <DataTable
+            columns={catalogColumns}
+            rows={filteredCatalogs}
+            rowKey={(c) => c.id}
+            rowClassName={(c) => (isOffline(c.status) ? 'opacity-60' : '')}
+            noun="Catalogs"
+            loading={loading}
+            defaultSort={{ key: 'name', dir: 'asc' }}
+            emptyState={{
+              icon: Grid,
+              title: 'No Catalogs Found',
+              message: 'Create a catalog mapping to start provisioning virtual machines.',
+            }}
+          />
         </div>
       </div>
 

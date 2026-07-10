@@ -2,22 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Layers, Search, Plus, Filter, Edit2, Trash2, X, AlertTriangle, Shield, CheckCircle2, XCircle, Cpu, MemoryStick, HardDrive, MoreVertical } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
+import DataTable from '../../../components/common/DataTable';
 import { useTierContext } from '../../../contexts/TierContext';
 import { useEnvironmentContext } from '../../../contexts/EnvironmentContext';
-import Colgroup from '../../../components/common/Colgroup';
-import PaginationBar from '../../../components/common/PaginationBar';
-import { useClientPagination } from '../../../components/common/useClientPagination';
-import { useResizableColumns } from '../../../components/common/useResizableColumns';
-import ColResizeHandle from '../../../components/common/ColResizeHandle';
-import TableSkeleton from '../../../components/common/TableSkeleton';
 import { useDebouncedValue } from '../../../lib/useDebouncedValue';
 import { formatDateTime } from '../../../lib/datetime';
 import TierForm from './TierForm';
 import { useUI } from '../../../stores/uiStore';
-
-// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
-// `table-fixed`). 7 columns; sum ≈ 960 = the table's min width.
-const TIER_COL_WIDTHS = [240, 110, 120, 120, 130, 170, 70];
 
 export default function TierManagement() {
   const { tiers, loading, create, update, remove } = useTierContext();
@@ -83,9 +74,6 @@ export default function TierManagement() {
     const matchesType = typeFilter === 'All Types' || tier.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
   });
-
-  const tiersPager = useClientPagination(filteredTiers, 10);
-  const tierCols = useResizableColumns('tier_management_col_widths', TIER_COL_WIDTHS);
 
   // Calculate stats
   const totalTiers = tiers.length;
@@ -219,6 +207,85 @@ export default function TierManagement() {
     setTierActionModal({ isOpen: false, action: null, tier: null, isBlocking: false, blockReasons: [] });
   };
 
+  // Column defs for the shared <DataTable>: `weight` = fit-mode share of the width, `render` = cell.
+  const tierColumns = [
+    { key: 'name', header: 'Tier Name', weight: 2.4, sortable: true, sortAccessor: (t) => (t.name || '').toLowerCase(),
+      render: (tier) => (
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-500/20">
+            <Layers size={16} className="text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="font-medium text-slate-800 dark:text-zinc-200">{tier.name}</p>
+              {tier.type === 'Default' && <Shield size={12} className="text-slate-400" title="Default Tier" />}
+            </div>
+            <p className="text-[12px] text-slate-500 dark:text-zinc-500 truncate max-w-[200px]" title={tier.description}>{tier.description}</p>
+          </div>
+        </div>
+      ) },
+    { key: 'cpu', header: 'CPU', weight: 1.1, sortable: true, sortAccessor: (t) => t.cpu,
+      render: (tier) => (
+        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 font-medium">
+          <Cpu size={14} className="text-slate-400" />{tier.cpu} vCPU
+        </span>
+      ) },
+    { key: 'ram', header: 'RAM (GB)', weight: 1.2, sortable: true, sortAccessor: (t) => t.ram,
+      render: (tier) => (
+        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 font-medium">
+          <MemoryStick size={14} className="text-slate-400" />{tier.ram} GB
+        </span>
+      ) },
+    { key: 'disk', header: 'Disk (GB)', weight: 1.2, sortable: true, sortAccessor: (t) => t.disk,
+      render: (tier) => (
+        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 font-medium">
+          <HardDrive size={14} className="text-slate-400" />{tier.disk} GB
+        </span>
+      ) },
+    { key: 'status', header: 'Status', weight: 1.3, sortable: true, sortAccessor: (t) => t.status,
+      render: (tier) => (
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${
+          tier.status === 'Active'
+            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20'
+            : 'bg-slate-50 dark:bg-zinc-800/50 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
+        }`}>
+          {tier.status === 'Active' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+          {tier.status}
+        </span>
+      ) },
+    { key: 'createdDate', header: 'Created Date', weight: 1.7, sortable: true, sortAccessor: (t) => t.createdDate || '',
+      cellClassName: 'px-4 py-3 text-slate-500 dark:text-zinc-400 text-[13px]',
+      render: (tier) => formatDateTime(tier.createdDate) },
+    { key: 'action', header: 'Action', weight: 0.7, align: 'center', resizable: false, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (tier) => (
+        <TableActionMenu isOpen={activeMenuId === tier.id} onToggle={(e) => openMenu(e, tier.id)} dropdownPos={menuPosition}>
+          <button
+            onClick={() => { handleEdit(tier); setActiveMenuId(null); }}
+            className="w-full px-3 py-2 text-left text-[13px] text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 flex items-center gap-2"
+          >
+            <Edit2 size={14} /> Edit Tier
+          </button>
+          <button
+            onClick={() => { handleActionClick(tier.status === 'Active' ? 'Disable' : 'Enable', tier); setActiveMenuId(null); }}
+            className="w-full px-3 py-2 text-left text-[13px] text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 flex items-center gap-2"
+          >
+            {tier.status === 'Active' ? (
+              <><XCircle size={14} className="text-amber-500" /> Disable Tier</>
+            ) : (
+              <><CheckCircle2 size={14} className="text-emerald-500" /> Enable Tier</>
+            )}
+          </button>
+          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
+          <button
+            onClick={() => { handleActionClick('Delete', tier); setActiveMenuId(null); }}
+            className="w-full px-3 py-2 text-left text-[13px] text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 flex items-center gap-2"
+          >
+            <Trash2 size={14} /> Delete Tier
+          </button>
+        </TableActionMenu>
+      ) },
+  ];
+
   return (
     <div className="flex flex-col gap-6 h-full animate-in slide-in-from-right-8 fade-in duration-300 fill-mode-both items-start w-full">
       
@@ -298,125 +365,18 @@ export default function TierManagement() {
             </select>
           </div>
 
-          <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-            <div style={{ minWidth: tierCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
-              <table className="w-full text-left text-sm table-fixed shrink-0">
-                <Colgroup widths={tierCols.widths} />
-                <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
-                  <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="relative px-4 py-3">Tier Name<ColResizeHandle onMouseDown={(e) => tierCols.startResize(0, e)} /></th>
-                    <th className="relative px-4 py-3">CPU<ColResizeHandle onMouseDown={(e) => tierCols.startResize(1, e)} /></th>
-                    <th className="relative px-4 py-3">RAM (GB)<ColResizeHandle onMouseDown={(e) => tierCols.startResize(2, e)} /></th>
-                    <th className="relative px-4 py-3">Disk (GB)<ColResizeHandle onMouseDown={(e) => tierCols.startResize(3, e)} /></th>
-                    <th className="relative px-4 py-3">Status<ColResizeHandle onMouseDown={(e) => tierCols.startResize(4, e)} /></th>
-                    <th className="relative px-4 py-3">Created Date<ColResizeHandle onMouseDown={(e) => tierCols.startResize(5, e)} /></th>
-                    <th className="px-5 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-              </table>
-              <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
-              <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
-                <Colgroup widths={tierCols.widths} />
-                <tbody>
-                  {loading && tiers.length === 0 ? (
-                    <TableSkeleton cols={7} />
-                  ) : tiersPager.total === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="px-4 py-12 text-center text-slate-500 dark:text-zinc-400">
-                      <Layers size={32} className="mx-auto mb-3 opacity-20" />
-                      <p>No tiers found matching your criteria.</p>
-                    </td>
-                  </tr>
-                ) : (
-                  tiersPager.paged.map((tier) => (
-                    <tr key={tier.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-500/20">
-                            <Layers size={16} className="text-indigo-600 dark:text-indigo-400" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-slate-800 dark:text-zinc-200">{tier.name}</p>
-                              {tier.type === 'Default' && (
-                                <Shield size={12} className="text-slate-400" title="Default Tier" />
-                              )}
-                            </div>
-                            <p className="text-[12px] text-slate-500 dark:text-zinc-500 truncate max-w-[200px]" title={tier.description}>{tier.description}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 font-medium">
-                          <Cpu size={14} className="text-slate-400" />
-                          {tier.cpu} vCPU
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 font-medium">
-                          <MemoryStick size={14} className="text-slate-400" />
-                          {tier.ram} GB
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 font-medium">
-                          <HardDrive size={14} className="text-slate-400" />
-                          {tier.disk} GB
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium ${
-                          tier.status === 'Active' 
-                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20'
-                            : 'bg-slate-50 dark:bg-zinc-800/50 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
-                        }`}>
-                          {tier.status === 'Active' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                          {tier.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-zinc-400 text-[13px]">
-                        {formatDateTime(tier.createdDate)}
-                      </td>
-                      <td className="px-5 py-3 text-center">
-                        <TableActionMenu
-                          isOpen={activeMenuId === tier.id}
-                          onToggle={(e) => openMenu(e, tier.id)}
-                          dropdownPos={menuPosition}
-                        >
-                          <button 
-                            onClick={() => { handleEdit(tier); setActiveMenuId(null); }}
-                            className="w-full px-3 py-2 text-left text-[13px] text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 flex items-center gap-2"
-                          >
-                            <Edit2 size={14} /> Edit Tier
-                          </button>
-                          <button 
-                            onClick={() => { handleActionClick(tier.status === 'Active' ? 'Disable' : 'Enable', tier); setActiveMenuId(null); }}
-                            className="w-full px-3 py-2 text-left text-[13px] text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 flex items-center gap-2"
-                          >
-                            {tier.status === 'Active' ? (
-                              <><XCircle size={14} className="text-amber-500" /> Disable Tier</>
-                            ) : (
-                              <><CheckCircle2 size={14} className="text-emerald-500" /> Enable Tier</>
-                            )}
-                          </button>
-                          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
-                          <button 
-                            onClick={() => { handleActionClick('Delete', tier); setActiveMenuId(null); }}
-                            className="w-full px-3 py-2 text-left text-[13px] text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 flex items-center gap-2"
-                          >
-                            <Trash2 size={14} /> Delete Tier
-                          </button>
-                        </TableActionMenu>
-                      </td>
-                    </tr>
-                  ))
-                )}
-                </tbody>
-              </table>
-              </div>
-            </div>
-          </div>
-          <PaginationBar pager={tiersPager} noun="Tiers" />
+          <DataTable
+            columns={tierColumns}
+            rows={filteredTiers}
+            rowKey={(t) => t.id}
+            noun="Tiers"
+            loading={loading}
+            defaultSort={{ key: 'name', dir: 'asc' }}
+            emptyState={{
+              icon: Layers,
+              message: 'No tiers found matching your criteria.',
+            }}
+          />
         </div>
       </div>
 

@@ -150,7 +150,10 @@ export default function NetworkExplorer({ networkDrawer, setNetworkDrawer }) {
                             <span className="text-[12px] text-slate-500 font-mono mt-0.5">Network Type: Bridge</span>
                           </div>
                           <div className="flex flex-col items-end gap-1">
-                            <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded">Discovery: Success</span>
+                            {/* Follows the live effectiveStatus() (like the top chips): an offline provider/node
+                                can't report a "Success/Available" network. */}
+                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${offline ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10'}`}>Discovery: {offline ? 'Failed' : 'Success'}</span>
+                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${offline ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'}`}>{offline ? net.status : 'Available'}</span>
                           </div>
                         </div>
                       </div>

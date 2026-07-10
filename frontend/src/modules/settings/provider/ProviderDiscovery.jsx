@@ -3,17 +3,22 @@ import { createPortal } from 'react-dom';
 import { X, Layers, Box, Play, Database, Network, Grid, Server, Search, CheckCircle2, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 import api from '../../../lib/api';
 import StatusPill from '../../../components/common/StatusPill';
+import { isOffline } from '../../../lib/resourceStatus';
 
 const EMPTY = { nodes: [], templates: [], networks: [], datastores: [], vms: [] };
 
 // Soft-variant pill matching the explorer row style (rounded, uppercase, no dot).
 const Pill = (props) => <StatusPill variant="soft" uppercase shape="sm" {...props} />;
 
-// One consolidated VM status (replaces the confusing Power + Discovered-status pair):
-// a present VM shows its power (Running/Stopped); a VM no longer in Proxmox shows Missing
-// (pruned automatically after 24h).
+// The backend overlays each row's live health as `effectiveStatus` (Provider Offline | Node Offline |
+// Missing | Active). When it's offline/missing, that verdict WINS over the raw scan value — so a
+// disconnected provider (or a downed node) takes its items offline instead of showing stale "Active".
+const effOverride = (item) => (isOffline(item.effectiveStatus) ? <Pill status={item.effectiveStatus} /> : null);
+
+// One consolidated VM status (replaces the confusing Power + Discovered-status pair): an offline
+// provider/node (or pruned row) shows that; else a present VM shows its power (Running/Stopped).
 const vmStatusBadge = (item) => {
-  if (item.discoveredStatus !== 'Active') return <Pill status="Missing" />;
+  if (isOffline(item.effectiveStatus)) return <Pill status={item.effectiveStatus} />;
   if (item.powerState === 'running') return <Pill status="Running" />;
   if (item.powerState === 'stopped') return <Pill status="Stopped" />;
   return <Pill status="Unknown" />;
@@ -307,7 +312,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                       {resourceNavSelection === 'nodes' && nodes.filter(item => (item.nodeName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
                         <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-zinc-200">{item.nodeName}</td>
-                          <td className="px-5 py-3"><Pill tone={item.status === 'online' ? 'success' : 'danger'} label={item.status} /></td>
+                          <td className="px-5 py-3">{effOverride(item) || <Pill tone={item.status === 'online' ? 'success' : 'danger'} label={item.status} />}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-zinc-400">{item.cpuCount != null ? `${item.cpuCount} vCPU` : '—'}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-zinc-400">{item.totalMemory != null ? `${Math.round(item.totalMemory / 1024 / 1024 / 1024)} GB` : '—'}</td>
                         </tr>
@@ -316,7 +321,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                         <tr key={idx} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-zinc-200">{item.templateName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-zinc-400">{item.nodeName}</td>
-                          <td className="px-5 py-3"><Pill tone={item.discoveredStatus === 'Active' ? 'info' : 'neutral'} label={item.discoveredStatus} /></td>
+                          <td className="px-5 py-3">{effOverride(item) || <Pill tone={item.discoveredStatus === 'Active' ? 'info' : 'neutral'} label={item.discoveredStatus} />}</td>
                         </tr>
                       ))}
                       {resourceNavSelection === 'networks' && networks.filter(item => (item.networkName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
@@ -324,7 +329,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-zinc-200">{item.networkName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-zinc-400">{item.networkName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-zinc-400">{item.cidr || '—'}</td>
-                          <td className="px-5 py-3"><Pill tone={item.discoveredStatus === 'Active' ? 'success' : 'neutral'} label={item.discoveredStatus} /></td>
+                          <td className="px-5 py-3">{effOverride(item) || <Pill tone={item.discoveredStatus === 'Active' ? 'success' : 'neutral'} label={item.discoveredStatus} />}</td>
                         </tr>
                       ))}
                       {resourceNavSelection === 'datastores' && datastores.filter(item => (item.datastoreName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (
@@ -332,7 +337,7 @@ export default function ProviderDiscovery({ isOpen, provider, onClose }) {
                           <td className="px-5 py-3 font-medium text-slate-800 dark:text-zinc-200">{item.datastoreName}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-zinc-400">{item.datastoreType || '—'}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-zinc-400">{item.totalSpace != null ? `${Math.round((item.totalSpace - (item.availableSpace || 0)) / 1024 / 1024 / 1024)} GB / ${Math.round(item.totalSpace / 1024 / 1024 / 1024)} GB` : '—'}</td>
-                          <td className="px-5 py-3"><Pill tone={item.discoveredStatus === 'Active' ? 'success' : 'danger'} label={item.discoveredStatus} /></td>
+                          <td className="px-5 py-3">{effOverride(item) || <Pill tone={item.discoveredStatus === 'Active' ? 'success' : 'danger'} label={item.discoveredStatus} />}</td>
                         </tr>
                       ))}
                       {resourceNavSelection === 'vms' && vms.filter(item => (item.vmName || '').toLowerCase().includes(resourceSearch.toLowerCase())).map((item, idx) => (

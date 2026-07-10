@@ -175,11 +175,13 @@ export default function CatalogExplorer({ catalogDrawer, setCatalogDrawer }) {
                         <span className="text-[12px] text-slate-500 font-mono mt-0.5">ID: {catalogDrawer.catalog.discoveryAttributes?.templateId || 'vmid-9000'}</span>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${catalogDrawer.catalog.discoveryStatus === 'Success' ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10' : 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10'}`}>
-                          Discovery: {catalogDrawer.catalog.discoveryStatus || 'Success'}
+                        {/* Follows the same live effectiveStatus() as the top chips: an offline provider/node
+                            can't report a "Success/Available" template. */}
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${offline ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10'}`}>
+                          Discovery: {offline ? 'Failed' : 'Success'}
                         </span>
-                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${catalogDrawer.catalog.status === 'Template Missing' ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'}`}>
-                          {catalogDrawer.catalog.status === 'Template Missing' ? 'Missing' : 'Available'}
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${offline ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'}`}>
+                          {offline ? (cat.status === 'Template Missing' ? 'Missing' : cat.status) : 'Available'}
                         </span>
                       </div>
                     </div>

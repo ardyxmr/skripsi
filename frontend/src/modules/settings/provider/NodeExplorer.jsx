@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Layers, Network, Database, Server, RefreshCw } from 'lucide-react';
 import api from '../../../lib/api';
 import StatusPill from '../../../components/common/StatusPill';
+import { isOffline } from '../../../lib/resourceStatus';
 
 // Read-only, node-scoped Discovery Explorer drawer — the node-scoped twin of
 // ProviderDiscovery. Tabs read GET /nodes/{id}/explorer. No publish/provision.
@@ -14,14 +15,17 @@ const TABS = [
 
 // Colored status pills — shared StatusPill (soft variant) keeps these consistent with the provider Discovery Explorer.
 const Pill = (props) => <StatusPill variant="soft" uppercase shape="sm" {...props} />;
-// Present VM → Running (green) / Stopped; gone → Missing. Mirrors ProviderDiscovery's vmStatusBadge.
+// `effectiveStatus` (backend) overlays live provider/node health onto the raw scan value: when the
+// provider is disconnected or this node is down, that verdict WINS over the stale "Active"/power state.
 const vmStatusBadge = (r) => {
-  if (r.discoveredStatus !== 'Active') return <Pill status="Missing" />;
+  if (isOffline(r.effectiveStatus)) return <Pill status={r.effectiveStatus} />;
   if (r.powerState === 'running') return <Pill status="Running" />;
   if (r.powerState === 'stopped') return <Pill status="Stopped" />;
   return <Pill status="Unknown" />;
 };
-const discBadge = (s) => <Pill tone={s === 'Active' ? 'success' : 'danger'} label={s} />;
+const discBadge = (r) => (isOffline(r.effectiveStatus)
+  ? <Pill status={r.effectiveStatus} />
+  : <Pill tone={r.discoveredStatus === 'Active' ? 'success' : 'danger'} label={r.discoveredStatus} />);
 
 export default function NodeExplorer({ isOpen, node, onClose }) {
   const [tab, setTab] = useState('templates');
@@ -55,9 +59,9 @@ export default function NodeExplorer({ isOpen, node, onClose }) {
   const head = 'px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400 border-b border-slate-100 dark:border-theme';
 
   const columns = {
-    templates: [['Template', (r) => r.templateName], ['Type', (r) => r.templateType], ['Status', (r) => discBadge(r.discoveredStatus)]],
-    networks: [['Bridge', (r) => r.networkName], ['Type', (r) => r.networkType], ['CIDR', (r) => r.cidr ?? '—'], ['Status', (r) => discBadge(r.discoveredStatus)]],
-    datastores: [['Storage', (r) => r.datastoreName], ['Type', (r) => r.datastoreType], ['Status', (r) => discBadge(r.discoveredStatus)]],
+    templates: [['Template', (r) => r.templateName], ['Type', (r) => r.templateType], ['Status', (r) => discBadge(r)]],
+    networks: [['Bridge', (r) => r.networkName], ['Type', (r) => r.networkType], ['CIDR', (r) => r.cidr ?? '—'], ['Status', (r) => discBadge(r)]],
+    datastores: [['Storage', (r) => r.datastoreName], ['Type', (r) => r.datastoreType], ['Status', (r) => discBadge(r)]],
     // Mirror the Discovery Explorer VMs columns, minus Node (we're already scoped to one node here).
     vms: [['VM', (r) => r.vmName ?? `vm-${r.externalVmid}`], ['VMID', (r) => r.externalVmid], ['IP Address', (r) => r.ipAddress ?? '—'], ['Status', (r) => vmStatusBadge(r)]],
   }[tab];

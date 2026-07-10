@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Concerns\EnforcesUniqueness;
+use App\Http\Controllers\Concerns\PurgesMissingVms;
 use App\Http\Controllers\Controller;
 use App\Models\Node;
 use App\Models\Provider;
@@ -21,7 +22,7 @@ use Illuminate\Validation\Rule;
 
 class ProviderController extends Controller
 {
-    use EnforcesUniqueness;
+    use EnforcesUniqueness, PurgesMissingVms;
 
     public function __construct(private AuditService $audit) {}
 
@@ -76,6 +77,8 @@ class ProviderController extends Controller
     public function destroy(Request $request, Provider $provider): JsonResponse
     {
         $name = $provider->provider_name;
+        // Missing VMs (gone from the hypervisor) on this provider must not block its removal.
+        $this->purgeMissingVms('provider_id', $provider->id);
         $provider->delete();
         $this->audit->log($request->user(), 'DELETE_PROVIDER', "Deleted provider {$name}", $request);
 

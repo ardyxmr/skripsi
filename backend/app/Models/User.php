@@ -41,4 +41,24 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Group::class);
     }
+
+    /**
+     * Owner ids this user may SEE (shared by requests/approvals + inventory VMs):
+     *   Administrator → null (all); Manager → members of groups they manage (+ self); User → only self.
+     */
+    public function visibleOwnerIds(): ?array
+    {
+        $role = $this->role?->role_name;
+        if ($role === 'Administrator') {
+            return null;
+        }
+        if ($role === 'Manager') {
+            $managedGroupIds = Group::where('manager_user_id', $this->id)->pluck('id');
+            $memberIds = self::whereIn('group_id', $managedGroupIds)->pluck('id')->all();
+
+            return array_values(array_unique([...$memberIds, $this->id]));
+        }
+
+        return [$this->id];
+    }
 }

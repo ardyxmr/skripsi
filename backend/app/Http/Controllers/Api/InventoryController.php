@@ -226,9 +226,27 @@ class InventoryController extends Controller
         ), 202);
     }
 
-    public function destroyVm(Request $request, Inventory $inventory, LifecycleService $lifecycle): JsonResponse
+    public function destroyVm(Request $request, Inventory $inventory, LifecycleService $lifecycle, AuditService $audit): JsonResponse
     {
         $this->authorizeActionable($request->user(), $inventory);
+
+        // A Missing VM (gone from the hypervisor, flagged by VmFactSyncService) can't be destroyed via
+        // Terraform — purge the inventory row directly, skipping the approval + DestroyVmJob flow.
+        if ($inventory->status === 'Missing') {
+            $vmid = $inventory->external_vmid;
+            $name = $inventory->vm_name;
+            // Remove the stale discovered provider_vms row too, so it also disappears from the
+            // Discovery/Node Explorer — the VM is truly gone.
+            if ($inventory->provider_id && $vmid) {
+                \App\Models\ProviderVm::where('provider_id', $inventory->provider_id)->where('external_vmid', $vmid)->delete();
+            }
+            $inventory->disks()->delete();
+            $inventory->delete();
+            $audit->log($request->user(), 'DELETE_VM', "Purged Missing VM {$name} (vmid {$vmid}) — already gone from the hypervisor", $request, ['vm_name' => $name, 'vmid' => $vmid]);
+
+            return response()->json(['purged' => true], 200);
+        }
+
         $data = $request->validate(['vm_name_confirmation' => ['required', 'string']]);
         $this->assertNameConfirmed($data['vm_name_confirmation'], $inventory);
 
@@ -321,21 +339,10 @@ class InventoryController extends Controller
         return Inventory::query()->when($ownerIds !== null, fn ($q) => $q->whereIn('owner_user_id', $ownerIds));
     }
 
-    /** null = all (Admin); otherwise the owner ids this user may see. */
+    /** null = all (Admin); otherwise the owner ids this user may see. Single source: User::visibleOwnerIds(). */
     private function visibleOwnerIds(User $user): ?array
     {
-        $role = $user->role?->role_name;
-        if ($role === 'Administrator') {
-            return null;
-        }
-        if ($role === 'Manager') {
-            $managedGroupIds = Group::where('manager_user_id', $user->id)->pluck('id');
-            $memberIds = User::whereIn('group_id', $managedGroupIds)->pluck('id')->all();
-
-            return array_values(array_unique([...$memberIds, $user->id]));
-        }
-
-        return [$user->id]; // User → own only
+        return $user->visibleOwnerIds();
     }
 
     private function authorizeView(User $user, Inventory $inventory): void

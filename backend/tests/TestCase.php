@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Models\Group;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -9,10 +10,21 @@ use Illuminate\Support\Str;
 
 abstract class TestCase extends BaseTestCase
 {
+    private ?Group $sharedTestGroup = null;
+
     /** Idempotently ensure a role exists, return it. */
     protected function role(string $name): Role
     {
         return Role::firstOrCreate(['role_name' => $name], ['description' => $name]);
+    }
+
+    /**
+     * A shared "team" group for the default fixtures: regularUser() joins it, manager() manages it.
+     * This models the RBAC scoping (Manager sees/acts on the members of groups they manage).
+     */
+    protected function defaultGroup(): Group
+    {
+        return $this->sharedTestGroup ??= Group::create(['group_name' => 'Team '.Str::random(6)]);
     }
 
     /**
@@ -39,11 +51,17 @@ abstract class TestCase extends BaseTestCase
 
     protected function manager(array $attrs = []): User
     {
-        return $this->makeUser('Manager', $attrs);
+        $manager = $this->makeUser('Manager', $attrs);
+        // By default a manager manages the shared team group, so it can act on that team's requests.
+        if (! array_key_exists('group_id', $attrs)) {
+            $this->defaultGroup()->update(['manager_user_id' => $manager->id]);
+        }
+
+        return $manager;
     }
 
     protected function regularUser(array $attrs = []): User
     {
-        return $this->makeUser('User', $attrs);
+        return $this->makeUser('User', array_merge(['group_id' => $this->defaultGroup()->id], $attrs));
     }
 }

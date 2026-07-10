@@ -18,7 +18,7 @@ class EnvironmentController extends Controller
 
     public function index(): JsonResponse
     {
-        $envs = Environment::with(['providers:id', 'tiers:id', 'nodes:id'])
+        $envs = Environment::with(Environment::HEALTH_RELATIONS)
             ->orderBy('display_order')->orderBy('id')->get();
 
         return response()->json($envs->map(fn (Environment $e) => $this->transform($e)));
@@ -33,7 +33,7 @@ class EnvironmentController extends Controller
         $this->syncRules($env, $request);
         $this->audit->log($request->user(), 'CREATE_ENVIRONMENT', "Created environment {$env->environment_name}", $request);
 
-        return response()->json($this->transform($env->fresh(['providers:id', 'tiers:id', 'nodes:id'])), 201);
+        return response()->json($this->transform($env->fresh(Environment::HEALTH_RELATIONS)), 201);
     }
 
     public function update(Request $request, Environment $environment): JsonResponse
@@ -42,7 +42,7 @@ class EnvironmentController extends Controller
         $this->syncRules($environment, $request);
         $this->audit->log($request->user(), 'UPDATE_ENVIRONMENT', "Updated environment {$environment->environment_name}", $request);
 
-        return response()->json($this->transform($environment->fresh(['providers:id', 'tiers:id', 'nodes:id'])));
+        return response()->json($this->transform($environment->fresh(Environment::HEALTH_RELATIONS)));
     }
 
     public function destroy(Request $request, Environment $environment): JsonResponse
@@ -103,7 +103,10 @@ class EnvironmentController extends Controller
             'approval_required' => $e->approval_required,
             'allow_data_disk' => $e->allow_data_disk,
             'max_data_disks' => $e->max_data_disks,
-            'status' => $e->status,
+            // Health-derived status for the list/pill (Active | Degraded | Provider Offline | Node
+            // Offline | Inactive); admin_status is the raw governance flag the Enable/Disable toggle acts on.
+            'status' => $e->effectiveStatus(),
+            'admin_status' => $e->status,
             'display_order' => $e->display_order,
             'allowed_provider_ids' => $e->providers->pluck('id'),
             'allowed_tier_ids' => $e->tiers->pluck('id'),

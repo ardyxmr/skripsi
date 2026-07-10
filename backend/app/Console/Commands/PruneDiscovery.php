@@ -14,9 +14,10 @@ use App\Models\ProviderVm;
 use Illuminate\Console\Command;
 
 /**
- * Delete discovered resources that have been Missing longer than the stale window (default 24h,
- * config `provisioning.discovery_stale_hours`). `last_sync_at` is the last time the resource was
- * actually seen present, so "Missing AND last_sync_at older than cutoff" = gone for > window.
+ * Delete discovered resources that have been Missing longer than the stale window (default 5 min,
+ * config `provisioning.discovery_stale_minutes`). `last_sync_at` is the last time the resource was
+ * actually seen present, so "Missing AND last_sync_at older than cutoff" = gone for > window. The
+ * scheduler runs this every minute so a Missing item stops lingering in the Explorer indefinitely.
  *
  * VMs are never referenced by a published row → always safe to delete. Templates/networks/
  * datastores/nodes still bound to a PUBLISHED row are KEPT (deleting them would silently null the
@@ -24,14 +25,19 @@ use Illuminate\Console\Command;
  */
 class PruneDiscovery extends Command
 {
-    protected $signature = 'discovery:prune {--hours= : stale window in hours (overrides config)}';
+    protected $signature = 'discovery:prune {--minutes= : stale window in minutes (overrides config)} {--hours= : stale window in hours (overrides --minutes/config)}';
 
-    protected $description = 'Delete discovered resources Missing longer than the stale window (default 24h); keeps published-referenced templates/networks/datastores/nodes.';
+    protected $description = 'Delete discovered resources Missing longer than the stale window (default 5 min); keeps published-referenced templates/networks/datastores/nodes.';
 
     public function handle(): int
     {
-        $hours = (int) ($this->option('hours') ?: config('provisioning.discovery_stale_hours', 24));
-        $cutoff = now()->subHours($hours);
+        // Effective window in minutes: --hours (ad-hoc, wins) → --minutes → config default.
+        $minutes = match (true) {
+            filled($this->option('hours')) => (int) $this->option('hours') * 60,
+            filled($this->option('minutes')) => (int) $this->option('minutes'),
+            default => (int) config('provisioning.discovery_stale_minutes', 5),
+        };
+        $cutoff = now()->subMinutes($minutes);
 
         // Base query: rows flagged Missing whose last-seen time is older than the cutoff.
         $stale = fn (string $model) => $model::where('discovered_status', 'Missing')
@@ -59,7 +65,7 @@ class PruneDiscovery extends Command
             ->unique()->values();
         $nodes = $stale(ProviderNode::class)->whereNotIn('id', $referencedNodes)->delete();
 
-        $this->info("Pruned (Missing > {$hours}h): vms=$vms templates=$tpl networks=$net datastores=$ds nodes=$nodes");
+        $this->info("Pruned (Missing > {$minutes}m): vms=$vms templates=$tpl networks=$net datastores=$ds nodes=$nodes");
 
         return self::SUCCESS;
     }

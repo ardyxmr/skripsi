@@ -37,10 +37,13 @@ return [
     // with VM_DELETED_RETENTION_MINUTES.
     'deleted_retention_minutes' => (int) env('VM_DELETED_RETENTION_MINUTES', 5),
 
-    // How long a discovered resource may stay flagged Missing before discovery:prune deletes it.
-    // VMs are pruned unconditionally; templates/networks/datastores/nodes still bound to a
-    // published row are kept (unpublish them first). Override with DISCOVERY_STALE_HOURS.
-    'discovery_stale_hours' => (int) env('DISCOVERY_STALE_HOURS', 24),
+    // How long (in MINUTES) a discovered resource may stay flagged Missing in the Discovery/Node
+    // Explorer before discovery:prune deletes it — so a VM deleted straight in Proxmox stops
+    // lingering as "Missing" forever. VMs are pruned unconditionally; templates/networks/datastores/
+    // nodes still bound to a published row are kept (unpublish them first). Override with
+    // DISCOVERY_STALE_MINUTES. The scheduler runs prune every minute (routes/console.php), so a
+    // Missing item disappears ~5–6 min after it was last actually seen.
+    'discovery_stale_minutes' => (int) env('DISCOVERY_STALE_MINUTES', 5),
 
     // --- Phase 3 sync hardening (ProviderSyncGuard) ---
 

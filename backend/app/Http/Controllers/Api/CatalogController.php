@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Concerns\EnforcesUniqueness;
+use App\Http\Controllers\Concerns\PurgesMissingVms;
 use App\Http\Controllers\Controller;
 use App\Models\Catalog;
 use App\Models\CatalogHardeningVersion;
@@ -18,7 +19,7 @@ use Illuminate\Validation\Rule;
 
 class CatalogController extends Controller
 {
-    use EnforcesUniqueness;
+    use EnforcesUniqueness, PurgesMissingVms;
 
     public function __construct(private AuditService $audit, private NodeCapacityService $capacity) {}
 
@@ -60,6 +61,9 @@ class CatalogController extends Controller
     {
         // Block (409) only while a LIVE VM uses it (historical requests null out on delete). To swap
         // the image, edit the catalog (→ new template) rather than deleting, so its history stays intact.
+        // Missing VMs (gone from the hypervisor) must not block deletion — purge them first, then
+        // block only if a LIVE VM still references the catalog.
+        $this->purgeMissingVms('catalog_id', $catalog->id);
         foreach (['inventory' => 'catalog_id'] as $table => $column) {
             if (\Illuminate\Support\Facades\Schema::hasTable($table)
                 && \Illuminate\Support\Facades\DB::table($table)->where($column, $catalog->id)->exists()) {

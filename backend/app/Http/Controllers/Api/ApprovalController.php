@@ -27,12 +27,14 @@ class ApprovalController extends Controller
         private AuditService $audit,
     ) {}
 
-    // Role-scoped: Managers/Admins see all requests (to act on); a regular user sees only their own.
+    // Visibility-scoped: Admin → all; Manager → requests from members of the groups they manage;
+    // regular user → only their own. Single source of truth: User::visibleOwnerIds().
     public function index(Request $request): JsonResponse
     {
         $query = ApprovalRequest::with(['requester', 'approver', 'group.manager'])->orderByDesc('id');
-        if (! $request->user()->isPrivileged()) {
-            $query->where('requester_id', $request->user()->id);
+        $ownerIds = $request->user()->visibleOwnerIds();
+        if ($ownerIds !== null) {
+            $query->whereIn('requester_id', $ownerIds);
         }
         $approvals = $query->get();
 
@@ -77,6 +79,11 @@ class ApprovalController extends Controller
 
     private function run(Request $request, ApprovalRequest $approval, string $action): JsonResponse
     {
+        // Scope guard: a Manager may only act on requests from members of the groups they manage
+        // (Administrator → any). Mirrors InventoryController::authorizeView (404, no existence leak).
+        $ownerIds = $request->user()->visibleOwnerIds();
+        abort_if($ownerIds !== null && ! in_array($approval->requester_id, $ownerIds, true), 404, 'Not found.');
+
         $reason = $request->validate(['action_reason' => ['required', 'string']])['action_reason'];
 
         $provision = $approval->request_type === 'PROVISION' ? ProvisionRequest::with(['environment', 'provider', 'catalog', 'tier', 'node.providerNode.datastores'])->find($approval->reference_id) : null;

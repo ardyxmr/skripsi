@@ -122,6 +122,94 @@ class LifecycleTest extends TestCase
         Bus::assertDispatched(DestroyVmJob::class, fn (DestroyVmJob $j) => $j->inventoryId === $vm->id);
     }
 
+    // ---- Missing VM (gone from the hypervisor) — hard-purge + non-blocking (#5) ----
+
+    public function test_deleting_a_missing_vm_purges_row_and_explorer_entry_without_approval(): void
+    {
+        $s = $this->seedScenario(['approval_required' => false]);
+        $vm = $this->inventoryVm($this->regularUser(), $s, ['status' => 'Missing']);
+        // The stale discovered row that the Discovery/Node Explorer shows as "Missing".
+        \App\Models\ProviderVm::create([
+            'provider_id' => $s['provider']->id,
+            'provider_node_id' => $s['providerNode']->id,
+            'external_vmid' => $vm->external_vmid,
+            'discovered_status' => 'Missing',
+        ]);
+
+        Sanctum::actingAs($this->admin());
+        // No name confirmation needed — a Missing VM is hard-removed directly, not routed to Terraform.
+        $this->postJson("/api/inventory/{$vm->id}/delete")->assertOk()->assertJson(['purged' => true]);
+
+        $this->assertDatabaseMissing('inventory', ['id' => $vm->id]);
+        $this->assertDatabaseMissing('provider_vms', ['provider_id' => $s['provider']->id, 'external_vmid' => $vm->external_vmid]);
+        Bus::assertNotDispatched(DestroyVmJob::class);
+        $this->assertSame(0, ApprovalRequest::where('reference_id', $vm->id)->where('request_type', 'DESTROY')->count());
+    }
+
+    public function test_missing_vm_does_not_block_resource_deletion_and_is_auto_purged(): void
+    {
+        $s = $this->seedScenario();
+        $vm = $this->inventoryVm($this->regularUser(), $s, ['status' => 'Missing']);
+        \App\Models\ProviderVm::create([
+            'provider_id' => $s['provider']->id,
+            'provider_node_id' => $s['providerNode']->id,
+            'external_vmid' => $vm->external_vmid,
+            'discovered_status' => 'Missing',
+        ]);
+
+        Sanctum::actingAs($this->admin());
+        $this->deleteJson("/api/catalogs/{$s['catalog']->id}")->assertNoContent();
+
+        $this->assertDatabaseMissing('catalogs', ['id' => $s['catalog']->id]);
+        $this->assertDatabaseMissing('inventory', ['id' => $vm->id]);   // Missing VM auto-purged
+        $this->assertDatabaseMissing('provider_vms', ['provider_id' => $s['provider']->id, 'external_vmid' => $vm->external_vmid]);
+    }
+
+    public function test_active_vm_still_blocks_resource_deletion(): void
+    {
+        $s = $this->seedScenario();
+        $this->inventoryVm($this->regularUser(), $s, ['status' => 'Active']);
+
+        Sanctum::actingAs($this->admin());
+        $this->deleteJson("/api/catalogs/{$s['catalog']->id}")->assertStatus(409);
+    }
+
+    public function test_sync_flags_active_vm_missing_when_discovery_marks_its_provider_vm_missing(): void
+    {
+        $s = $this->seedScenario();   // provider defaults to Connected
+        $vm = $this->inventoryVm($this->regularUser(), $s, ['status' => 'Active']);
+
+        // Discovery KEEPS the provider_vms row but flags it Missing when the VM is gone from Proxmox
+        // (e.g. deleted directly in the hypervisor). The sync must treat that like an absent row.
+        \App\Models\ProviderVm::create([
+            'provider_id' => $s['provider']->id,
+            'provider_node_id' => $s['providerNode']->id,
+            'external_vmid' => $vm->external_vmid,
+            'discovered_status' => 'Missing',
+        ]);
+
+        app(\App\Services\VmFactSyncService::class)->sync($vm->fresh());
+
+        $this->assertSame('Missing', $vm->fresh()->status);
+    }
+
+    public function test_sync_restores_a_missing_vm_when_its_provider_vm_reappears(): void
+    {
+        $s = $this->seedScenario();
+        $vm = $this->inventoryVm($this->regularUser(), $s, ['status' => 'Missing']);
+        \App\Models\ProviderVm::create([
+            'provider_id' => $s['provider']->id,
+            'provider_node_id' => $s['providerNode']->id,
+            'external_vmid' => $vm->external_vmid,
+            'discovered_status' => 'Active',
+            'power_state' => 'running',
+        ]);
+
+        app(\App\Services\VmFactSyncService::class)->sync($vm->fresh());
+
+        $this->assertSame('Active', $vm->fresh()->status);
+    }
+
     // ---- retry -----------------------------------------------------------
 
     public function test_retry_redispatches_provision_job_reusing_the_row(): void
@@ -269,7 +357,9 @@ class LifecycleTest extends TestCase
         $group = Group::create(['group_name' => $this->rand('grp'), 'manager_user_id' => $manager->id]);
         $member = $this->regularUser(['group_id' => $group->id]);
         $memberVm = $this->inventoryVm($member, $s);
-        $outsiderVm = $this->inventoryVm($this->regularUser(), $s);
+        // Outsider lives in a different, unmanaged group so the manager genuinely cannot see it.
+        $outsider = $this->regularUser(['group_id' => Group::create(['group_name' => $this->rand('grp')])->id]);
+        $outsiderVm = $this->inventoryVm($outsider, $s);
 
         Sanctum::actingAs($manager);
         $this->getJson("/api/inventory/{$memberVm->id}")->assertOk();

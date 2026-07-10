@@ -17,5 +17,7 @@ Schedule::command('vms:lifecycle')->everyMinute()->withoutOverlapping();
 // self-throttles per provider, so Proxmox is still only hit at each provider's own interval, not 10s.
 Schedule::command('discovery:refresh')->everyTenSeconds()->withoutOverlapping();
 
-// Stale cleanup: delete discovered resources Missing > 24h (keeps published-referenced ones).
-Schedule::command('discovery:prune')->hourly();
+// Stale cleanup: every minute, delete discovered resources Missing longer than the stale window
+// (default 5 min, config discovery_stale_minutes) so a VM deleted in Proxmox stops lingering as
+// "Missing" in the Discovery/Node Explorer. Published-referenced templates/nodes/etc are kept.
+Schedule::command('discovery:prune')->everyMinute()->withoutOverlapping();

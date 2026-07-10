@@ -24,8 +24,29 @@ class VmFactSyncService
         $vm = ProviderVm::where('provider_id', $inv->provider_id)
             ->where('external_vmid', $inv->external_vmid)
             ->first();
-        if (! $vm) {
+
+        // The VM is gone from the hypervisor when discovery either has NO row for its vmid, OR keeps
+        // the row but flagged it Missing. DiscoveryService never deletes — it sets provider_vms
+        // discovered_status='Missing' for anything absent in a run (this is exactly what the
+        // Discovery/Node Explorer shows). Both mean the underlying Proxmox VM no longer exists — e.g.
+        // a portal-created VM deleted directly in Proxmox.
+        if (! $vm || $vm->discovered_status === 'Missing') {
+            // Trust this only when the provider is Connected (so provider_vms is authoritative for
+            // this run): an Active VM that's gone was destroyed out-of-band → flag it Missing so it
+            // stops blocking resource deletion and can be purged. Transient states
+            // (Provisioning/Updating/Deleting) are left alone.
+            if ($inv->status === 'Active' && $inv->provider?->status === 'Connected') {
+                $this->audit->log(null, 'VM_MISSING', "VM {$inv->vm_name} (vmid {$inv->external_vmid}) not found on the hypervisor — flagged Missing (destroyed out-of-band).");
+                $inv->update(['status' => 'Missing']);
+            }
+
             return;
+        }
+
+        // The VM is present + Active on the hypervisor. A VM previously flagged Missing has
+        // reappeared → restore it to Active.
+        if ($inv->status === 'Missing') {
+            $inv->update(['status' => 'Active']);
         }
 
         $previousPower = $inv->observed_power_state;   // snapshot before we overwrite it

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Concerns\EnforcesUniqueness;
+use App\Http\Controllers\Concerns\PurgesMissingVms;
 use App\Http\Controllers\Controller;
 use App\Models\Network;
 use App\Models\ProviderNetwork;
@@ -13,7 +14,7 @@ use Illuminate\Validation\Rule;
 
 class NetworkController extends Controller
 {
-    use EnforcesUniqueness;
+    use EnforcesUniqueness, PurgesMissingVms;
 
     public function __construct(private AuditService $audit) {}
 
@@ -55,6 +56,7 @@ class NetworkController extends Controller
     {
         // Block (409) only while a LIVE VM uses it. Historical requests null out on delete; the env
         // network allow-list is node-derived + cascades on delete, so it is not a delete blocker.
+        $this->purgeMissingVms('network_id', $network->id);
         foreach (['inventory' => 'network_id'] as $table => $column) {
             if (\Illuminate\Support\Facades\Schema::hasTable($table)
                 && \Illuminate\Support\Facades\DB::table($table)->where($column, $network->id)->exists()) {

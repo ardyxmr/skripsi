@@ -4,10 +4,12 @@ namespace Tests\Feature\Provision;
 
 use App\Jobs\ProvisionVmJob;
 use App\Models\ApprovalRequest;
+use App\Models\Group;
 use App\Models\ProvisionRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\BuildsInfra;
 use Tests\TestCase;
@@ -149,19 +151,45 @@ class ApprovalWorkflowTest extends TestCase
 
     // ---- Index scoping ---------------------------------------------------
 
-    public function test_index_is_scoped_for_regular_users_but_full_for_managers(): void
+    public function test_index_scopes_user_to_own_and_manager_to_their_group(): void
     {
         $s = $this->seedScenario();
         $mine = $this->regularUser();
-        $other = $this->regularUser();
+        $other = $this->regularUser();          // same (default) group
         $this->pendingApproval($s, $mine);
         $this->pendingApproval($s, $other);
 
+        // A regular user sees only their own request.
         Sanctum::actingAs($mine);
         $this->getJson('/api/approvals')->assertOk()->assertJsonCount(1);
 
+        // Their manager (manages the default group) sees both group members' requests.
         Sanctum::actingAs($this->manager());
         $this->getJson('/api/approvals')->assertOk()->assertJsonCount(2);
+    }
+
+    public function test_manager_cannot_see_or_act_on_another_groups_requests(): void
+    {
+        $s = $this->seedScenario();
+
+        // Group A: managerA manages the default group; userA belongs to it (its request).
+        $managerA = $this->manager();
+        $this->pendingApproval($s, $this->regularUser());
+
+        // Group B: a separate group with its own manager + member (its request).
+        $groupB = Group::create(['group_name' => 'Team B '.Str::random(6)]);
+        $managerB = $this->makeUser('Manager');
+        $groupB->update(['manager_user_id' => $managerB->id]);
+        $approvalB = $this->pendingApproval($s, $this->regularUser(['group_id' => $groupB->id]));
+
+        // managerA sees only group A; cannot act on group B (404, no existence leak).
+        Sanctum::actingAs($managerA);
+        $this->getJson('/api/approvals')->assertOk()->assertJsonCount(1);
+        $this->postJson("/api/approvals/{$approvalB->id}/approve", ['action_reason' => 'x'])->assertNotFound();
+
+        // managerB sees only group B.
+        Sanctum::actingAs($managerB);
+        $this->getJson('/api/approvals')->assertOk()->assertJsonCount(1);
     }
 
     // ---- Revert → edit → resubmit-in-place ------------------------------

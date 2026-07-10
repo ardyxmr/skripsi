@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Concerns\EnforcesUniqueness;
+use App\Http\Controllers\Concerns\PurgesMissingVms;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Node;
@@ -23,7 +24,7 @@ use Illuminate\Validation\Rule;
 // DatastoreController, plus a scoped re-sync and a node-scoped Explorer read.
 class NodeController extends Controller
 {
-    use EnforcesUniqueness;
+    use EnforcesUniqueness, PurgesMissingVms;
 
     public function __construct(private AuditService $audit, private NodeCapacityService $capacity) {}
 
@@ -92,6 +93,8 @@ class NodeController extends Controller
     {
         // Delete blocked (409) only by LIVE usage — an active VM or an env rule (historical requests
         // null out on delete). Remove it from environments first if it's in an allow-list.
+        // Missing VMs (gone from the hypervisor) must not block deletion — purge them first.
+        $this->purgeMissingVms('node_id', $node->id);
         $refs = [
             'inventory' => 'node_id',
             'environment_node_rules' => 'node_id',

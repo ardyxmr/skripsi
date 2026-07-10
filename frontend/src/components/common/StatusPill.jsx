@@ -124,8 +124,15 @@ export default function StatusPill({
   className = '',
 }) {
   const p = PALETTE[tone || statusTone(status)] || PALETTE.neutral;
+  // The pill caps at its cell's width (`max-w-full`) and truncates its OWN text, so it never spills
+  // into the next column and never lets a `table-fixed` cell clip a stray "…" through it. Full value
+  // stays reachable via the hover title + resizing the column.
+  const content = children ?? label ?? status;
+  const titleText = typeof content === 'string'
+    ? content
+    : (typeof label === 'string' ? label : (typeof status === 'string' ? status : undefined));
   const classes = [
-    'inline-flex items-center gap-1.5',
+    'inline-flex items-center gap-1.5 max-w-full align-middle',
     weight,
     SHAPES[shape] || SHAPES.md,
     SIZES[size] || SIZES.xs,
@@ -136,9 +143,9 @@ export default function StatusPill({
   ].filter(Boolean).join(' ');
 
   return (
-    <span className={classes}>
-      {dot && <span className={`w-1.5 h-1.5 rounded-full ${p.dot}`} />}
-      {children ?? label ?? status}
+    <span className={classes} title={titleText}>
+      {dot && <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${p.dot}`} />}
+      <span className="min-w-0 truncate">{content}</span>
     </span>
   );
 }

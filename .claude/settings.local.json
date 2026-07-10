@@ -116,7 +116,9 @@
       "Bash(rtk lint *)",
       "Bash(echo \"exit=$?\")",
       "Bash(awk '/const effectiveVmStatus|function effectiveVmStatus/{f=1} f{print} f&&/^}/{c++} c==1{exit}' frontend/src/pages/Inventory.jsx)",
-      "Bash(awk '/function syncVm/{f=1} f{print; n++} n>45{exit}' app/Services/Discovery/DiscoveryService.php)"
+      "Bash(awk '/function syncVm/{f=1} f{print; n++} n>45{exit}' app/Services/Discovery/DiscoveryService.php)",
+      "Bash(rtk npx *)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

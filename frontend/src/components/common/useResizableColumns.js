@@ -4,12 +4,16 @@ import { useState, useEffect, useCallback } from 'react';
 // (or the persisted localStorage[storageKey] if it matches the column count); returns the live
 // `widths` array — feed it to BOTH <Colgroup>s (header + body) so their columns stay aligned —
 // plus `startResize(index, e)` to wire onto each header's drag handle. Widths persist on drag end.
-export function useResizableColumns(storageKey, initialWidths, { minWidth = 60 } = {}) {
+// Every width is clamped to [minWidth, maxWidth] so a column can't be dragged to 0 or grow forever.
+export function useResizableColumns(storageKey, initialWidths, { minWidth = 60, maxWidth = 600 } = {}) {
   const [widths, setWidths] = useState(() => {
     if (storageKey) {
       try {
         const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-        if (Array.isArray(saved) && saved.length === initialWidths.length) return saved;
+        // Clamp persisted widths too — an old value saved before the max clamp could be huge.
+        if (Array.isArray(saved) && saved.length === initialWidths.length) {
+          return saved.map((w) => Math.min(maxWidth, Math.max(minWidth, w)));
+        }
       } catch { /* ignore malformed storage */ }
     }
     return initialWidths;
@@ -27,7 +31,9 @@ export function useResizableColumns(storageKey, initialWidths, { minWidth = 60 }
     const startWidth = widths[index];
 
     const onMove = (ev) => {
-      const next = Math.max(minWidth, startWidth + ev.pageX - startX);
+      // Clamp both ways: minWidth stops the drag-left (already worked), maxWidth stops the
+      // drag-right which was previously unbounded (a column could grow without limit).
+      const next = Math.min(maxWidth, Math.max(minWidth, startWidth + ev.pageX - startX));
       setWidths((w) => {
         const copy = [...w];
         copy[index] = next;
@@ -46,7 +52,7 @@ export function useResizableColumns(storageKey, initialWidths, { minWidth = 60 }
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  }, [widths, minWidth, storageKey]);
+  }, [widths, minWidth, maxWidth, storageKey]);
 
   return { widths, startResize };
 }

@@ -2,11 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Server, Search, Plus, Edit2, RefreshCw, Layers, Trash2, AlertTriangle, Ban } from 'lucide-react';
 import TableActionMenu from '../../../components/common/TableActionMenu';
-import Colgroup from '../../../components/common/Colgroup';
-import PaginationBar from '../../../components/common/PaginationBar';
-import { useClientPagination } from '../../../components/common/useClientPagination';
-import { useResizableColumns } from '../../../components/common/useResizableColumns';
-import ColResizeHandle from '../../../components/common/ColResizeHandle';
+import DataTable from '../../../components/common/DataTable';
 import NodeForm from './NodeForm';
 import NodeExplorer from './NodeExplorer';
 import { useNodeContext } from '../../../contexts/NodeContext';
@@ -14,10 +10,6 @@ import { useProviderContext } from '../../../contexts/ProviderContext';
 import StatusPill from '../../../components/common/StatusPill';
 import { useUI } from '../../../stores/uiStore';
 import { capacityBadge } from '../../../lib/nodeCapacity';
-
-// Fixed column widths (px) shared by the pinned-header table + scrolling body table (aligned under
-// `table-fixed`). 7 columns; sum ≈ 1030 = the table's min width.
-const NODE_COL_WIDTHS = [220, 160, 150, 150, 120, 160, 70];
 
 // Relative freshness label for the Sync column, e.g. "synced 2m ago".
 const ago = (ts) => {
@@ -43,6 +35,12 @@ function UtilBar({ pct, offline }) {
     </div>
   );
 }
+
+// Two distinct failure modes: the Proxmox CLUSTER API is unreachable (provider Disconnected →
+// governance 'Provider Offline' → we can't know the node → Unknown) vs the cluster IS reachable but
+// Proxmox reports THIS node offline (a valid per-node fact → trust n.operational).
+const nodeOperational = (n) => (n.status === 'Provider Offline' ? 'Unknown' : n.operational);
+const nodeOffline = (n) => { const op = nodeOperational(n); return op === 'Offline' || op === 'Unknown'; };
 
 export default function NodePreview() {
   const { nodes, create, update, remove, sync } = useNodeContext();
@@ -173,8 +171,84 @@ export default function NodePreview() {
     (n.rawNode || '').toLowerCase().includes(search.toLowerCase()) ||
     (n.provider || '').toLowerCase().includes(search.toLowerCase())
   ), [nodes, search]);
-  const nodesPager = useClientPagination(filtered, 10);
-  const nodeCols = useResizableColumns('node_preview_col_widths', NODE_COL_WIDTHS);
+
+  // Column defs for the shared <DataTable>: `weight` = fit-mode share of the width, `render` = cell.
+  const nodeColumns = [
+    { key: 'name', header: 'Node Name', weight: 2.4, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (n) => {
+        const offline = nodeOffline(n);
+        return (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200">{n.name}</span>
+              {n.status !== 'Active' && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-surface text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-theme">
+                  {n.status === 'Inactive' ? 'Inactive' : n.status}
+                </span>
+              )}
+              {!offline && (() => {
+                const cb = capacityBadge(n.capacity);
+                return cb ? (
+                  <span
+                    title={`Capacity: ${cb.detail}${cb.blocked ? ' — provisioning blocked' : ''}`}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1 ${cb.level === 'critical'
+                      ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30'
+                      : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30'}`}
+                  >
+                    <AlertTriangle size={10} /> {cb.label}
+                  </span>
+                ) : null;
+              })()}
+              {n.blockOnCritical && (
+                <span
+                  title="Hard-block enabled: provisioning is refused while this node is Critical"
+                  className="px-1.5 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1 bg-slate-100 text-slate-600 border-slate-300 dark:bg-zinc-700 dark:text-zinc-300 dark:border-zinc-600"
+                >
+                  <Ban size={10} /> Block
+                </span>
+              )}
+            </div>
+            {n.rawNode && <div className="text-[12px] text-slate-400 dark:text-zinc-500 mt-0.5 font-mono">{n.rawNode}</div>}
+          </>
+        );
+      } },
+    { key: 'provider', header: 'Provider', weight: 1.6,
+      render: (n) => <span className="text-[13px] text-gray-600 dark:text-gray-400">{n.provider}</span> },
+    { key: 'cpu', header: 'CPU Utilization', weight: 1.4,
+      render: (n) => <UtilBar pct={n.cpuPct} offline={nodeOffline(n)} /> },
+    { key: 'ram', header: 'RAM Utilization', weight: 1.4,
+      render: (n) => <UtilBar pct={n.ramPct} offline={nodeOffline(n)} /> },
+    { key: 'status', header: 'Status', weight: 1.1,
+      render: (n) => {
+        const op = nodeOperational(n);
+        return <StatusPill tone={op === 'Online' ? 'success' : op === 'Offline' ? 'danger' : 'warning'} label={op} variant="soft" shape="full" size="sm" weight="font-medium" pad="px-2 py-0.5" />;
+      } },
+    { key: 'sync', header: 'Sync', weight: 1.5, cellClassName: 'px-4 py-3 text-[12px] text-slate-500 dark:text-zinc-400',
+      render: (n) => (
+        <span className="inline-flex items-center gap-1.5">
+          {syncingId === n.id && <RefreshCw size={12} className="animate-spin text-blue-500" />}
+          {ago(n.lastSyncAt)}
+        </span>
+      ) },
+    { key: 'action', header: 'Action', weight: 0.7, align: 'center', resizable: false, headerClassName: 'px-5 py-3', cellClassName: 'px-5 py-3',
+      render: (n) => (
+        <TableActionMenu isOpen={openDropdownId === n.id} onToggle={(e) => handleDropdownClick(e, n.id)} dropdownPos={dropdownPos}>
+          <button type="button" onClick={() => { setOpenDropdownId(null); setModal({ isOpen: true, mode: 'edit', data: n }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
+            <Edit2 size={14} /> Edit node
+          </button>
+          <button type="button" onClick={() => handleSync(n)} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-emerald-600 dark:text-emerald-400">
+            <RefreshCw size={14} /> Sync now
+          </button>
+          <button type="button" onClick={() => { setOpenDropdownId(null); setDrawer({ isOpen: true, node: n }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
+            <Layers size={14} /> Node Explorer
+          </button>
+          <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
+          <button type="button" onClick={() => { setOpenDropdownId(null); setDel({ isOpen: true, node: n, blocked: false }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <Trash2 size={14} /> Delete node
+          </button>
+        </TableActionMenu>
+      ) },
+  ];
 
   return (
     <div className="flex flex-col w-full bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-card shadow-card shrink-0 max-h-[600px]">
@@ -207,121 +281,22 @@ export default function NodePreview() {
       </div>
 
       {/* Table */}
-      <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar flex-auto min-h-0 flex flex-col">
-        <div style={{ minWidth: nodeCols.widths.reduce((a, b) => a + b, 0) }} className="w-full h-full flex flex-col">
-          <table className="w-full text-left border-collapse text-[13px] table-fixed shrink-0">
-            <Colgroup widths={nodeCols.widths} />
-            <thead className="bg-gray-50 dark:bg-surface border-b border-gray-200 dark:border-theme shadow-sm">
-              <tr className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                <th className="relative px-5 py-3">Node Name<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(0, e)} /></th>
-                <th className="relative px-4 py-3">Provider<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(1, e)} /></th>
-                <th className="relative px-4 py-3">CPU Utilization<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(2, e)} /></th>
-                <th className="relative px-4 py-3">RAM Utilization<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(3, e)} /></th>
-                <th className="relative px-4 py-3">Status<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(4, e)} /></th>
-                <th className="relative px-4 py-3">Sync<ColResizeHandle onMouseDown={(e) => nodeCols.startResize(5, e)} /></th>
-                <th className="px-5 py-3 text-center">Action</th>
-              </tr>
-            </thead>
-          </table>
-          <div className="flex-auto min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white dark:bg-card">
-          <table className="w-full text-left border-collapse text-[13px] table-fixed">
-            <Colgroup widths={nodeCols.widths} />
-            <tbody>
-              {nodesPager.total === 0 && (
-                <tr>
-                  <td colSpan="7" className="py-16">
-                    <div className="w-full flex flex-col items-center justify-center text-slate-400 dark:text-zinc-500">
-                      <Server size={48} className="mb-4 opacity-20" />
-                      <h4 className="text-[15px] font-bold text-gray-800 dark:text-gray-200 mb-1">No Published Nodes</h4>
-                      <p className="text-[13px] mb-4 text-center max-w-sm">Publish a node to give users a friendly name instead of the raw hypervisor node.</p>
-                      <button type="button" onClick={() => setModal({ isOpen: true, mode: 'add', data: null })} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-500/20">
-                        <Plus size={14} /> Add Node
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {nodesPager.paged.map((n) => {
-                // Two distinct failure modes for a node:
-                //  - The Proxmox CLUSTER API is unreachable (provider Disconnected → governance
-                //    'Provider Offline'): we can't know the node's real state → show Unknown.
-                //  - The cluster IS reachable but Proxmox reports THIS node offline: that's a valid
-                //    per-node fact (other nodes can still be Online) → trust n.operational (Offline).
-                const operational = n.status === 'Provider Offline' ? 'Unknown' : n.operational;
-                // Hide the live CPU/RAM bars when the numbers can't be trusted (offline or unreachable).
-                const offline = operational === 'Offline' || operational === 'Unknown';
-                return (
-                  <tr key={n.id} className="table-row-optimized border-b border-slate-100 dark:border-theme last:border-0 group">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200">{n.name}</span>
-                        {n.status !== 'Active' && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-surface text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-theme">
-                            {n.status === 'Inactive' ? 'Inactive' : n.status}
-                          </span>
-                        )}
-                        {!offline && (() => {
-                          const cb = capacityBadge(n.capacity);
-                          return cb ? (
-                            <span
-                              title={`Capacity: ${cb.detail}${cb.blocked ? ' — provisioning blocked' : ''}`}
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1 ${cb.level === 'critical'
-                                ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30'
-                                : 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30'}`}
-                            >
-                              <AlertTriangle size={10} /> {cb.label}
-                            </span>
-                          ) : null;
-                        })()}
-                        {n.blockOnCritical && (
-                          <span
-                            title="Hard-block enabled: provisioning is refused while this node is Critical"
-                            className="px-1.5 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1 bg-slate-100 text-slate-600 border-slate-300 dark:bg-zinc-700 dark:text-zinc-300 dark:border-zinc-600"
-                          >
-                            <Ban size={10} /> Block
-                          </span>
-                        )}
-                      </div>
-                      {n.rawNode && <div className="text-[12px] text-slate-400 dark:text-zinc-500 mt-0.5 font-mono">{n.rawNode}</div>}
-                    </td>
-                    <td className="px-4 py-3 text-[13px] text-gray-600 dark:text-gray-400">{n.provider}</td>
-                    <td className="px-4 py-3"><UtilBar pct={n.cpuPct} offline={offline} /></td>
-                    <td className="px-4 py-3"><UtilBar pct={n.ramPct} offline={offline} /></td>
-                    <td className="px-4 py-3">
-                      <StatusPill tone={operational === 'Online' ? 'success' : operational === 'Offline' ? 'danger' : 'warning'} label={operational} variant="soft" shape="full" uppercase />
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-slate-500 dark:text-zinc-400">
-                      <span className="inline-flex items-center gap-1.5">
-                        {syncingId === n.id && <RefreshCw size={12} className="animate-spin text-blue-500" />}
-                        {ago(n.lastSyncAt)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      <TableActionMenu isOpen={openDropdownId === n.id} onToggle={(e) => handleDropdownClick(e, n.id)} dropdownPos={dropdownPos}>
-                        <button type="button" onClick={() => { setOpenDropdownId(null); setModal({ isOpen: true, mode: 'edit', data: n }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200">
-                          <Edit2 size={14} /> Edit node
-                        </button>
-                        <button type="button" onClick={() => handleSync(n)} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-emerald-600 dark:text-emerald-400">
-                          <RefreshCw size={14} /> Sync now
-                        </button>
-                        <button type="button" onClick={() => { setOpenDropdownId(null); setDrawer({ isOpen: true, node: n }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400">
-                          <Layers size={14} /> Node Explorer
-                        </button>
-                        <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1"></div>
-                        <button type="button" onClick={() => { setOpenDropdownId(null); setDel({ isOpen: true, node: n, blocked: false }); }} className="w-full text-left px-4 py-2 text-[13px] flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                          <Trash2 size={14} /> Delete node
-                        </button>
-                      </TableActionMenu>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-        </div>
-      </div>
-      <PaginationBar pager={nodesPager} noun="Nodes" />
+      <DataTable
+        columns={nodeColumns}
+        rows={filtered}
+        rowKey={n => n.id}
+        noun="Nodes"
+        emptyState={{
+          icon: Server,
+          title: 'No Published Nodes',
+          message: 'Publish a node to give users a friendly name instead of the raw hypervisor node.',
+          action: (
+            <button type="button" onClick={() => setModal({ isOpen: true, mode: 'add', data: null })} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-500/20">
+              <Plus size={14} /> Add Node
+            </button>
+          ),
+        }}
+      />
 
       <NodeForm
         isOpen={modal.isOpen}

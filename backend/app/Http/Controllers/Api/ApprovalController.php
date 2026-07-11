@@ -99,6 +99,15 @@ class ApprovalController extends Controller
                 $this->audit->log($request->user(), 'PROVISION_BLOCKED', "Approve refused for {$provision->vm_name}: node \"{$node->node_name}\" at critical capacity (hard-block enabled)", $request, ['vm_name' => $provision->vm_name, 'node' => $node->node_name]);
                 abort(422, "Node \"{$node->node_name}\" is at critical capacity and provisioning is blocked. Free up resources or disable the block on the node, then approve.");
             }
+
+            // Name gate: submit only checks against live VMs and other in-flight requests, so two
+            // same-named requests can both sit Pending. Re-check here so only the FIRST of them can be
+            // approved — otherwise both would provision Proxmox VMs sharing a hostname.
+            $nameConflicts = $this->provisioning->conflictingNamesForApproval($provision);
+            if ($nameConflicts->isNotEmpty()) {
+                $this->audit->log($request->user(), 'PROVISION_BLOCKED', "Approve refused for {$provision->vm_name}: name(s) {$nameConflicts->implode(', ')} already in use", $request, ['vm_name' => $provision->vm_name, 'conflicts' => $nameConflicts->all()]);
+                abort(422, "A VM named {$nameConflicts->implode(', ')} already exists. This request duplicates an existing VM — reject it, or have the requester resubmit with a different name.");
+            }
         }
 
         $this->workflow->act($approval, $request->user(), $action, $reason);

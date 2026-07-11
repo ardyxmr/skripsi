@@ -33,7 +33,9 @@ class ApprovalWorkflowTest extends TestCase
     {
         $requester ??= $this->regularUser();
         Sanctum::actingAs($requester);
-        $id = $this->postJson('/api/provision-requests', $this->provisionPayload($s))
+        // Unique name per call so tests that open several pending requests don't trip the
+        // duplicate-name guard (which now reserves names of in-flight requests too).
+        $id = $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'vm-'.Str::random(8)]))
             ->assertCreated()->json('id');
 
         return ApprovalRequest::where('request_type', 'PROVISION')->where('reference_id', $id)->sole();
@@ -80,6 +82,44 @@ class ApprovalWorkflowTest extends TestCase
 
         $this->assertSame('Approved', $approval->fresh()->status);
         Bus::assertDispatched(ProvisionVmJob::class, 1);
+    }
+
+    /** Two same-named PROVISION requests both sitting Pending (as if they slipped past submit). */
+    private function pendingProvisionNamed(array $s, User $requester, string $vmName): ApprovalRequest
+    {
+        $pr = ProvisionRequest::create($this->provisionPayload($s, [
+            'vm_name' => $vmName, 'requester_id' => $requester->id,
+        ]));
+
+        return ApprovalRequest::create([
+            'request_type' => 'PROVISION',
+            'reference_id' => $pr->id,
+            'requester_id' => $requester->id,
+            'group_id' => $requester->group_id,
+            'status' => 'Pending',
+        ]);
+    }
+
+    public function test_of_two_same_named_pending_requests_only_the_first_can_be_approved(): void
+    {
+        $s = $this->seedScenario();
+        $requester = $this->regularUser();
+        $first = $this->pendingProvisionNamed($s, $requester, 'CORE-A');
+        $second = $this->pendingProvisionNamed($s, $requester, 'CORE-A');
+
+        Sanctum::actingAs($this->manager());
+
+        // First approves and dispatches.
+        $this->postJson("/api/approvals/{$first->id}/approve", ['action_reason' => 'ok'])
+            ->assertOk()->assertJson(['status' => 'Approved']);
+        Bus::assertDispatched(ProvisionVmJob::class, 1);
+
+        // Second is refused — the name is now reserved by the approved sibling; still only one job.
+        $this->postJson("/api/approvals/{$second->id}/approve", ['action_reason' => 'ok'])
+            ->assertStatus(422);
+        $this->assertSame('Pending', $second->fresh()->status);
+        Bus::assertDispatched(ProvisionVmJob::class, 1);
+        $this->assertDatabaseHas('audit_logs', ['action_type' => 'PROVISION_BLOCKED']);
     }
 
     public function test_reject_marks_rejected_and_does_not_dispatch(): void

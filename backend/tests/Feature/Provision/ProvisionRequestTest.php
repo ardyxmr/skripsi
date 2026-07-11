@@ -3,8 +3,8 @@
 namespace Tests\Feature\Provision;
 
 use App\Jobs\ProvisionVmJob;
-use App\Models\ApprovalRequest;
 use App\Models\ProvisionRequest;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\Sanctum;
@@ -275,5 +275,60 @@ class ProvisionRequestTest extends TestCase
         $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'STRESS', 'instance_count' => 1]))
             ->assertCreated();
         Bus::assertDispatched(ProvisionVmJob::class, 1);
+    }
+
+    public function test_duplicate_name_of_a_still_pending_request_is_rejected_at_submit(): void
+    {
+        $s = $this->seedScenario(['approval_required' => true]);
+        Sanctum::actingAs($this->regularUser());
+
+        // First CORE-A sits Pending (nothing provisioned yet).
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'CORE-A']))
+            ->assertCreated();
+
+        // Second CORE-A is refused on the reserved pending name, not just against live VMs.
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'CORE-A']))
+            ->assertStatus(422)
+            ->assertJsonStructure(['error' => ['details' => ['vm_name']]]);
+        Bus::assertNotDispatched(ProvisionVmJob::class);
+    }
+
+    public function test_single_submit_colliding_with_a_pending_batch_slot_is_rejected(): void
+    {
+        $s = $this->seedScenario(['approval_required' => true]);
+        Sanctum::actingAs($this->regularUser());
+
+        // A Pending batch "web" ×3 reserves web-01/02/03.
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'web', 'instance_count' => 3]))
+            ->assertCreated();
+
+        // A single "web-02" collides with the reserved batch slot.
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'web-02', 'instance_count' => 1]))
+            ->assertStatus(422)
+            ->assertJsonStructure(['error' => ['details' => ['vm_name']]]);
+    }
+
+    // ---- DB-level backstop (partial unique index) -----------------------
+
+    public function test_db_rejects_a_second_active_vm_with_the_same_name_case_insensitively(): void
+    {
+        $s = $this->seedScenario();
+        $user = $this->regularUser();
+        $this->inventoryVm($user, $s, ['vm_name' => 'CORE-A']);
+
+        // The partial unique index closes the truly-simultaneous double-approve race the app
+        // guard cannot: a second active row with the same (case-insensitive) name is impossible.
+        $this->expectException(QueryException::class);
+        $this->inventoryVm($user, $s, ['vm_name' => 'core-a']);
+    }
+
+    public function test_db_still_allows_reusing_a_deleted_vms_name(): void
+    {
+        $s = $this->seedScenario();
+        $user = $this->regularUser();
+        $this->inventoryVm($user, $s, ['vm_name' => 'CORE-A', 'status' => 'Deleted']);
+        $this->inventoryVm($user, $s, ['vm_name' => 'CORE-A']); // active reuse is fine
+
+        $this->assertDatabaseCount('inventory', 2);
     }
 }

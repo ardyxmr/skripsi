@@ -14,6 +14,7 @@ use App\Models\Provider;
 use App\Models\ProvisionRequest;
 use App\Models\Tier;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -149,18 +150,75 @@ class ProvisionRequestService
         $names = $this->targetNames($data['vm_name'], (int) ($data['instance_count'] ?? 1));
         $lower = array_map('strtolower', $names);
 
-        $taken = Inventory::query()
+        // Live VMs already carrying the name (provisioned, non-deleted).
+        $live = Inventory::query()
             ->whereNotIn('status', ['Deleted'])
             ->when($ignoreRequestId, fn ($q) => $q->where('provision_request_id', '!=', $ignoreRequestId))
             ->whereIn(DB::raw('LOWER(vm_name)'), $lower)
-            ->orderBy('vm_name')->pluck('vm_name')->unique()->values();
+            ->pluck('vm_name');
+
+        // Names reserved by an in-flight sibling request (Pending or Approved). Closes the window where
+        // two same-named requests could both be submitted before either provisions — a footgun that
+        // would later create two Proxmox VMs sharing a hostname.
+        $reserved = $this->reservedNames($ignoreRequestId, ['Pending', 'Approved']);
+        $reservedHits = collect($lower)->filter(fn ($l) => isset($reserved[$l]))->map(fn ($l) => $reserved[$l]);
+
+        $taken = $live->merge($reservedHits)->unique()->sort()->values();
 
         if ($taken->isNotEmpty()) {
-            $this->audit->log($actor, 'PROVISION_BLOCKED', "Submit refused: VM name(s) {$taken->implode(', ')} already in use", null, ['vm_name' => $data['vm_name'] ?? null, 'conflicts' => $taken->all()]);
+            $this->audit->log($actor, 'PROVISION_BLOCKED', "Submit refused: VM name(s) {$taken->implode(', ')} already in use or pending", null, ['vm_name' => $data['vm_name'] ?? null, 'conflicts' => $taken->all()]);
             throw ValidationException::withMessages([
-                'vm_name' => 'A VM named '.$taken->implode(', ').' already exists. Pick a different name.',
+                'vm_name' => 'A VM named '.$taken->implode(', ').' already exists or has a pending request. Pick a different name.',
             ]);
         }
+    }
+
+    /**
+     * Names reserved by in-flight sibling PROVISION requests, keyed lower => display. A request is
+     * "in-flight" when its approval sits in one of $statuses (Pending reserves at submit; Approved
+     * covers the brief window between approve and the inventory row landing). Batch names expand to
+     * -01..-0N so a single submit can't slip into a reserved batch slot. Excludes $ignoreRequestId.
+     */
+    private function reservedNames(?int $ignoreRequestId, array $statuses): array
+    {
+        $rows = ProvisionRequest::query()
+            ->join('approval_requests', function ($j) {
+                $j->on('approval_requests.reference_id', '=', 'provision_requests.id')
+                    ->where('approval_requests.request_type', '=', 'PROVISION');
+            })
+            ->whereIn('approval_requests.status', $statuses)
+            ->when($ignoreRequestId, fn ($q) => $q->where('provision_requests.id', '!=', $ignoreRequestId))
+            ->get(['provision_requests.vm_name', 'provision_requests.instance_count']);
+
+        $names = [];
+        foreach ($rows as $row) {
+            foreach ($this->targetNames($row->vm_name, (int) $row->instance_count) as $n) {
+                $names[strtolower($n)] = $n;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * Approve-time gate: the names this request would create that ALREADY collide with a live VM or a
+     * sibling request that is itself already Approved. Pending siblings are intentionally NOT counted —
+     * of two same-named Pending requests the first must stay approvable; the second collides here once
+     * the first is Approved/live. Returns display names (empty = clear to approve).
+     */
+    public function conflictingNamesForApproval(ProvisionRequest $pr): Collection
+    {
+        $lower = array_map('strtolower', $this->targetNames($pr->vm_name, (int) $pr->instance_count));
+
+        $live = Inventory::query()
+            ->whereNotIn('status', ['Deleted'])
+            ->whereIn(DB::raw('LOWER(vm_name)'), $lower)
+            ->pluck('vm_name');
+
+        $reserved = $this->reservedNames($pr->id, ['Approved']);
+        $reservedHits = collect($lower)->filter(fn ($l) => isset($reserved[$l]))->map(fn ($l) => $reserved[$l]);
+
+        return $live->merge($reservedHits)->unique()->sort()->values();
     }
 
     /** Node-centric policy check: provider/node/tier ∈ env; catalog/network/datastore Active & on the node. */

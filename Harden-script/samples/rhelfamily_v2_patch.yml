@@ -1,0 +1,65 @@
+---
+# ============================================================================
+# ExoVirt sample hardening — RHEL FAMILY (Rocky / AlmaLinux / RHEL / Fedora) — VERSION 2 (baseline + patching)
+# ============================================================================
+# Everything in v1, PLUS package patching and automatic security updates.
+# NEEDS INTERNET (dnf reaches the repos). Runs via the portal "Hardening" button
+# as `sysuser` + sudo. Upload as the catalog's Hardening Playbook, VERSION 2.
+# ============================================================================
+- name: ExoVirt hardening v2 — RHEL family (Rocky/AlmaLinux/RHEL/Fedora) baseline + patching
+  hosts: all
+  become: true
+  gather_facts: false
+
+  handlers:
+    - name: reload sshd
+      ansible.builtin.shell: "systemctl reload sshd 2>/dev/null || systemctl reload ssh"
+      changed_when: false
+
+  tasks:
+    # ---- v1 baseline (repeated so v2 is a complete superset) ----
+    - name: "1. Harden SSH — disable root login + sane limits"
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/60-exovirt-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by ExoVirt hardening (v2)
+          PermitRootLogin no
+          PermitEmptyPasswords no
+          X11Forwarding no
+          MaxAuthTries 4
+          LoginGraceTime 30
+          ClientAliveInterval 300
+          ClientAliveCountMax 2
+      notify: reload sshd
+
+    - name: "2. Lock the root account password"
+      ansible.builtin.user:
+        name: root
+        password_lock: true
+
+    # ---- v2: patching + automatic security updates ----
+    - name: "3. Apply available package updates (upgrade installed packages)"
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_only: true          # only upgrade what's installed; drop this line for a full upgrade
+
+    - name: "4. Install dnf-automatic (automatic security updates)"
+      ansible.builtin.dnf:
+        name: dnf-automatic
+        state: present
+
+    - name: "4b. Configure dnf-automatic to APPLY (not just download) updates"
+      ansible.builtin.lineinfile:
+        path: /etc/dnf/automatic.conf
+        regexp: "^apply_updates ="
+        line: "apply_updates = yes"
+
+    - name: "4c. Enable the dnf-automatic timer"
+      ansible.builtin.systemd:
+        name: dnf-automatic.timer
+        enabled: true
+        state: started

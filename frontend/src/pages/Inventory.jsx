@@ -164,7 +164,6 @@ export default function Inventory() {
   // boxes: no explicit light-mode text color or caret override, so the caret follows the
   // theme-correct text color (dark on light, light on dark) and never goes invisible.
   const inputCls = 'w-full p-2.5 border border-gray-200 dark:border-theme rounded-lg text-[13px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 bg-gray-50 dark:bg-surface dark:text-gray-100';
-  const selectCls = `${inputCls} appearance-none cursor-pointer`;
 
   // Seed from the app-startup cache so the table paints instantly on open; the
   // mount fetch + polling below still refresh it. Skeleton only shows on a cold start.
@@ -240,6 +239,8 @@ export default function Inventory() {
   const [renewExtension, setRenewExtension] = useState('7 Days');
   const [isPermanentRequest, setIsPermanentRequest] = useState(false);
   const [renewError, setRenewError] = useState('');
+  const [renewPeriodOpen, setRenewPeriodOpen] = useState(false);   // custom Extension Period dropdown
+  const renewPeriodRef = useRef(null);
 
   // Edit Resources State
   const [editModalVm, setEditModalVm] = useState(null);
@@ -308,6 +309,7 @@ export default function Inventory() {
     setRenewExtension(rb.options[rb.options.length - 1] ?? 'N/A');
     setIsPermanentRequest(false);
     setRenewError('');
+    setRenewPeriodOpen(false);
   };
   
   // Action Dropdown State
@@ -350,6 +352,16 @@ export default function Inventory() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Close the custom Extension Period dropdown on any click outside it.
+  useEffect(() => {
+    if (!renewPeriodOpen) return;
+    const onDown = (e) => {
+      if (renewPeriodRef.current && !renewPeriodRef.current.contains(e.target)) setRenewPeriodOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [renewPeriodOpen]);
 
   // Pause background polling while the user is mid-interaction so a silent
   // refresh can't disrupt an open modal, drawer, or action menu.
@@ -950,16 +962,37 @@ export default function Inventory() {
                       Already at the maximum expiry for this environment ({renewBounds.windowLabel}). You can only request <strong>Permanent</strong> below.
                     </div>
                   ) : (
-                    <select
-                      value={renewExtension}
-                      onChange={(e) => setRenewExtension(e.target.value)}
-                      disabled={isPermanentRequest}
-                      className={`${selectCls} disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {renewBounds?.options.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
+                    <div className="relative" ref={renewPeriodRef}>
+                      <button
+                        type="button"
+                        disabled={isPermanentRequest}
+                        onClick={() => setRenewPeriodOpen((o) => !o)}
+                        className={`${inputCls} flex items-center justify-between text-left cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        <span className="truncate">{renewExtension}</span>
+                        <ChevronDown size={16} className={`shrink-0 text-gray-400 transition-transform ${renewPeriodOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {renewPeriodOpen && !isPermanentRequest && (
+                        // Opens upward so the panel is never clipped by the modal body's overflow-y-auto;
+                        // width tracks the trigger (w-full) so the list can't spill outside the field.
+                        <ul
+                          role="listbox"
+                          className="absolute bottom-full mb-1 z-20 w-full max-h-44 overflow-y-auto custom-scrollbar bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-lg shadow-modal py-1 animate-in fade-in slide-in-from-bottom-1 duration-150"
+                        >
+                          {renewBounds?.options.map((opt) => (
+                            <li
+                              key={opt}
+                              role="option"
+                              aria-selected={opt === renewExtension}
+                              onClick={() => { setRenewExtension(opt); setRenewPeriodOpen(false); }}
+                              className={`px-3 py-2 text-[13px] cursor-pointer hover:bg-teal-50 dark:hover:bg-teal-900/20 ${opt === renewExtension ? 'font-semibold text-teal-600 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-900/10' : 'text-gray-700 dark:text-gray-200'}`}
+                            >
+                              {opt}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -969,7 +1002,7 @@ export default function Inventory() {
                     type="checkbox" 
                     id="req-perm" 
                     checked={isPermanentRequest}
-                    onChange={(e) => setIsPermanentRequest(e.target.checked)}
+                    onChange={(e) => { setIsPermanentRequest(e.target.checked); if (e.target.checked) setRenewPeriodOpen(false); }}
                     className="w-4 h-4 text-blue-600 border-slate-300 dark:border-theme bg-transparent rounded focus:ring-blue-500 cursor-pointer"
                   />
                   <label htmlFor="req-perm" className="text-[13px] font-medium text-slate-700 dark:text-zinc-200 cursor-pointer select-none">

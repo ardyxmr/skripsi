@@ -156,6 +156,8 @@ php artisan config:cache && php artisan route:cache && php artisan event:cache
 mkdir -p storage/app/ansible
 ssh-keygen -t ed25519 -f storage/app/ansible/automation_key -N '' -C exovirt-ansible
 chmod 600 storage/app/ansible/automation_key
+# NB: `chmod -R g+rwX storage` di bawah nanti MELONGGARKAN kunci ini lagi (→ 660) → SSH menolaknya.
+# Wajib kunci ulang ke 600 SETELAH langkah itu (lihat catatan ⚠️ di akhir Fase 6).
 
 # ⚠️ Stub Terraform TIDAK ikut git (ada di storage/, ter-gitignore) → clone TIDAK membawanya.
 # WAJIB salin manual dari mesin dev ke VM baru (default variant = 'structured'; bawa dua-duanya):
@@ -176,6 +178,21 @@ Set kepemilikan agar PHP-FPM (`www-data`) bisa tulis storage:
 sudo chown -R appd:www-data storage bootstrap/cache
 sudo chmod -R g+rwX storage bootstrap/cache
 ```
+
+> ⚠️ **Kunci Ansible WAJIB tetap `600` + dimiliki user worker — kunci ulang SETELAH chmod rekursif di atas.**
+> `chmod -R g+rwX storage` barusan **melonggarkan** `automation_key` jadi group-readable (`660`). SSH
+> **menolak** private key yang bisa dibaca group/other (`Permissions 0660 ... are too open`) → hardening
+> gagal connect. `HardenVmJob` jalan di **queue worker** (Fase 9, `User=appd`/`sysadmin`), jadi kunci harus
+> dimiliki user itu, bukan `www-data`. Perbaiki:
+>
+> ```bash
+> # ganti 'appd' dengan nilai User= di unit worker Fase 9 (mis. sysadmin)
+> sudo chown appd:appd storage/app/ansible/automation_key
+> sudo chmod 600 storage/app/ansible/automation_key
+> ```
+>
+> Cek: `stat -c '%U %a' storage/app/ansible/automation_key` → harus `appd 600` (atau user worker-mu).
+> Ini juga alasan urutannya penting: **selalu** kunci ulang kunci Ansible setelah menyentuh izin `storage` secara rekursif.
 
 ---
 

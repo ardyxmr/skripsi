@@ -1,0 +1,68 @@
+---
+# ============================================================================
+# ExoVirt sample hardening — UBUNTU — VERSION 1 (simple baseline)
+# ============================================================================
+# Config-only, idempotent, NO internet needed. Runs via the portal "Hardening"
+# button: connects over SSH as `sysuser` and escalates with sudo (become).
+#
+# SAFE BY DESIGN: never disables sysuser/sysadmin, sudo, or key-based SSH.
+# Only the ROOT account's direct login is disabled.
+# Upload this file as the catalog's Hardening Playbook, VERSION 1.
+# ============================================================================
+- name: ExoVirt hardening v1 — Ubuntu baseline
+  hosts: all
+  become: true
+  gather_facts: false
+
+  handlers:
+    - name: reload sshd
+      # Ubuntu's unit is `ssh`; fall back to `sshd` on other distros. reload (not
+      # restart) so the live session is never dropped.
+      ansible.builtin.shell: "systemctl reload ssh 2>/dev/null || systemctl reload sshd"
+      changed_when: false
+
+  tasks:
+    - name: "1. Harden SSH — disable root login + sane limits"
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/60-exovirt-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by ExoVirt hardening (v1)
+          PermitRootLogin no
+          PermitEmptyPasswords no
+          X11Forwarding no
+          MaxAuthTries 4
+          LoginGraceTime 30
+          ClientAliveInterval 300
+          ClientAliveCountMax 2
+          # Enable ONLY if every user logs in with an SSH key (not a password),
+          # otherwise it can lock out sysuser:
+          # PasswordAuthentication no
+      notify: reload sshd
+
+    - name: "2. Lock the root account password"
+      ansible.builtin.user:
+        name: root
+        password_lock: true
+
+    - name: "3. Set a login warning banner"
+      ansible.builtin.copy:
+        dest: /etc/issue.net
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          ****************************************************************
+          *  Authorized access only. Activity is logged and monitored.  *
+          *  Disconnect now if you are not an authorized user.           *
+          ****************************************************************
+    - name: "3b. Wire the banner into SSH"
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/61-exovirt-banner.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: "Banner /etc/issue.net\n"
+      notify: reload sshd

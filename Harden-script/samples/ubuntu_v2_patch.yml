@@ -1,0 +1,67 @@
+---
+# ============================================================================
+# ExoVirt sample hardening — UBUNTU — VERSION 2 (baseline + patching)
+# ============================================================================
+# Everything in v1, PLUS package patching, automatic security updates, and
+# fail2ban. NEEDS INTERNET (apt reaches the archives). Runs via the portal
+# "Hardening" button as `sysuser` + sudo. Upload as VERSION 2.
+# ============================================================================
+- name: ExoVirt hardening v2 — Ubuntu baseline + patching
+  hosts: all
+  become: true
+  gather_facts: false
+
+  handlers:
+    - name: reload sshd
+      ansible.builtin.shell: "systemctl reload ssh 2>/dev/null || systemctl reload sshd"
+      changed_when: false
+
+  tasks:
+    # ---- v1 baseline (repeated so v2 is a complete superset) ----
+    - name: "1. Harden SSH — disable root login + sane limits"
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/60-exovirt-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by ExoVirt hardening (v2)
+          PermitRootLogin no
+          PermitEmptyPasswords no
+          X11Forwarding no
+          MaxAuthTries 4
+          LoginGraceTime 30
+          ClientAliveInterval 300
+          ClientAliveCountMax 2
+      notify: reload sshd
+
+    - name: "2. Lock the root account password"
+      ansible.builtin.user:
+        name: root
+        password_lock: true
+
+    # ---- v2: patching + automatic security updates + fail2ban ----
+    - name: "3. Update apt cache and upgrade installed packages"
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+        upgrade: dist
+
+    - name: "4. Install unattended-upgrades + fail2ban"
+      ansible.builtin.apt:
+        name:
+          - unattended-upgrades
+          - fail2ban
+        state: present
+
+    - name: "4b. Enable automatic security updates"
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        enabled: true
+        state: started
+
+    - name: "4c. Enable fail2ban (brute-force protection for SSH)"
+      ansible.builtin.systemd:
+        name: fail2ban
+        enabled: true
+        state: started

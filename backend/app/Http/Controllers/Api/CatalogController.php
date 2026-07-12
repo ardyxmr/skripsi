@@ -12,7 +12,9 @@ use App\Services\AuditService;
 use App\Services\NodeCapacityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -65,8 +67,8 @@ class CatalogController extends Controller
         // block only if a LIVE VM still references the catalog.
         $this->purgeMissingVms('catalog_id', $catalog->id);
         foreach (['inventory' => 'catalog_id'] as $table => $column) {
-            if (\Illuminate\Support\Facades\Schema::hasTable($table)
-                && \Illuminate\Support\Facades\DB::table($table)->where($column, $catalog->id)->exists()) {
+            if (Schema::hasTable($table)
+                && DB::table($table)->where($column, $catalog->id)->exists()) {
                 abort(409, 'Catalog has active VMs. To change its image, edit the catalog and select the new template, or set it inactive. Delete it only once no VMs reference it.');
             }
         }
@@ -172,7 +174,9 @@ class CatalogController extends Controller
         ]);
 
         $dir = "catalog-hardening/{$catalog->id}/{$ver->id}";
-        $storedName = match ($ext) { 'gz' => 'bundle.tar.gz', 'zip' => 'bundle.zip', default => 'playbook.yml' };
+        $storedName = match ($ext) {
+            'gz' => 'bundle.tar.gz', 'zip' => 'bundle.zip', default => 'playbook.yml'
+        };
         $path = $file->storeAs($dir, $storedName, 'local');
         $abs = Storage::disk('local')->path($path);
 
@@ -203,25 +207,55 @@ class CatalogController extends Controller
     private function validateHardeningArtifact(string $abs, string $ext): ?string
     {
         if (in_array($ext, ['yml', 'yaml'], true)) {
-            $res = Process::timeout(30)->run(['ansible-playbook', '--syntax-check', $abs]);
+            // The syntax-check runs SYNCHRONOUSLY as the web user (www-data), whose HOME (/var/www) is
+            // not writable — so ansible can't create ~/.ansible/tmp and the check errors out with a
+            // permission-denied that looks like a bad playbook. Point HOME and ansible's local temp at a
+            // writable storage dir instead. (The real hardening run happens on the queue worker, whose
+            // HOME is writable, so it's unaffected — this only bites the sync upload validation.)
+            $ansibleHome = storage_path('app/ansible-tmp');
+            if (! is_dir($ansibleHome)) {
+                @mkdir($ansibleHome, 0775, true);
+            }
+
+            $res = Process::timeout(30)
+                ->env([
+                    'HOME' => $ansibleHome,
+                    'ANSIBLE_LOCAL_TEMP' => $ansibleHome.'/tmp',
+                    'ANSIBLE_NOCOLOR' => '1',
+                ])
+                ->run(['ansible-playbook', '--syntax-check', $abs]);
 
             return $res->successful() ? null : 'Playbook failed ansible syntax-check: '.Str::limit($res->errorOutput() ?: $res->output(), 300);
         }
         if ($ext === 'gz') {
             $list = (string) shell_exec('tar -tzf '.escapeshellarg($abs).' 2>/dev/null');
-            if ($list === '') return 'Could not read the .tar.gz archive.';
-            if (preg_match('#(^|\n)(/|.*\.\./)#', $list)) return 'Archive contains unsafe (absolute or ../) paths.';
+            if ($list === '') {
+                return 'Could not read the .tar.gz archive.';
+            }
+            if (preg_match('#(^|\n)(/|.*\.\./)#', $list)) {
+                return 'Archive contains unsafe (absolute or ../) paths.';
+            }
 
             return preg_match('#(^|\n)[^\n]*(site|playbook|main)\.ya?ml#', $list) ? null : 'No entrypoint (site.yml / playbook.yml / main.yml) in the bundle.';
         }
-        if (! class_exists(\ZipArchive::class)) return 'ZIP support unavailable on the server.';
+        if (! class_exists(\ZipArchive::class)) {
+            return 'ZIP support unavailable on the server.';
+        }
         $z = new \ZipArchive;
-        if ($z->open($abs) !== true) return 'Could not read the .zip archive.';
+        if ($z->open($abs) !== true) {
+            return 'Could not read the .zip archive.';
+        }
         $hasEntry = false;
         for ($i = 0; $i < $z->numFiles; $i++) {
             $n = (string) $z->getNameIndex($i);
-            if (str_starts_with($n, '/') || str_contains($n, '..')) { $z->close(); return 'Archive contains unsafe (absolute or ../) paths.'; }
-            if (preg_match('#(^|/)(site|playbook|main)\.ya?ml$#', $n)) $hasEntry = true;
+            if (str_starts_with($n, '/') || str_contains($n, '..')) {
+                $z->close();
+
+                return 'Archive contains unsafe (absolute or ../) paths.';
+            }
+            if (preg_match('#(^|/)(site|playbook|main)\.ya?ml$#', $n)) {
+                $hasEntry = true;
+            }
         }
         $z->close();
 

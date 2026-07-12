@@ -28,8 +28,25 @@ The portal runs these as Ansible over SSH (as `sysuser`, with sudo). In the port
 4. On a VM created from that catalog, click **Hardening** and pick the version.
    The applied version is recorded on the VM (Inventory shows the hardened version).
 
-- **v1** needs no internet (config only).
-- **v2** needs internet (it reaches the distro repos to update packages).
+- **v1** needs no internet (config only) — works on **every** distro, including un-subscribed RHEL.
+- **v2** needs internet **and an enabled package repo** to patch.
+
+### ⚠️ RHEL v2 caveat (repos aren't automatic)
+
+`dnf`/`yum` only work when a repo is enabled:
+
+| Distro | Repos out of the box? | v2 patching |
+|--------|-----------------------|-------------|
+| **Rocky** | ✅ public mirrors | works |
+| **Fedora** | ✅ public repos | works |
+| **Ubuntu** | ✅ apt archives | works |
+| **RHEL** | ❌ needs a **subscription** (`subscription-manager register --auto-attach`) or a **local repo mount** | patching is **skipped** until you attach one |
+
+The RHEL-family v2 playbook **checks for an enabled repo first**. On Rocky/Fedora it
+patches normally; on un-subscribed RHEL it **skips the patch tasks (with a NOTE) and
+still applies the v1 config hardening** — so the run succeeds instead of failing.
+To actually patch RHEL: register the subscription (or mount a local repo) on the VM,
+then re-run v2. (v1 config-only hardening works on RHEL regardless.)
 
 ## How to use (Windows Server 2022)
 

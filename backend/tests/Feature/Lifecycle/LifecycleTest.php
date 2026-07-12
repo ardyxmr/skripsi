@@ -9,7 +9,9 @@ use App\Jobs\ResizeVmJob;
 use App\Models\ApprovalRequest;
 use App\Models\Group;
 use App\Models\Inventory;
+use App\Models\ProviderVm;
 use App\Models\ProvisionRequest;
+use App\Services\VmFactSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\Sanctum;
@@ -129,7 +131,7 @@ class LifecycleTest extends TestCase
         $s = $this->seedScenario(['approval_required' => false]);
         $vm = $this->inventoryVm($this->regularUser(), $s, ['status' => 'Missing']);
         // The stale discovered row that the Discovery/Node Explorer shows as "Missing".
-        \App\Models\ProviderVm::create([
+        ProviderVm::create([
             'provider_id' => $s['provider']->id,
             'provider_node_id' => $s['providerNode']->id,
             'external_vmid' => $vm->external_vmid,
@@ -150,7 +152,7 @@ class LifecycleTest extends TestCase
     {
         $s = $this->seedScenario();
         $vm = $this->inventoryVm($this->regularUser(), $s, ['status' => 'Missing']);
-        \App\Models\ProviderVm::create([
+        ProviderVm::create([
             'provider_id' => $s['provider']->id,
             'provider_node_id' => $s['providerNode']->id,
             'external_vmid' => $vm->external_vmid,
@@ -181,14 +183,14 @@ class LifecycleTest extends TestCase
 
         // Discovery KEEPS the provider_vms row but flags it Missing when the VM is gone from Proxmox
         // (e.g. deleted directly in the hypervisor). The sync must treat that like an absent row.
-        \App\Models\ProviderVm::create([
+        ProviderVm::create([
             'provider_id' => $s['provider']->id,
             'provider_node_id' => $s['providerNode']->id,
             'external_vmid' => $vm->external_vmid,
             'discovered_status' => 'Missing',
         ]);
 
-        app(\App\Services\VmFactSyncService::class)->sync($vm->fresh());
+        app(VmFactSyncService::class)->sync($vm->fresh());
 
         $this->assertSame('Missing', $vm->fresh()->status);
     }
@@ -197,7 +199,7 @@ class LifecycleTest extends TestCase
     {
         $s = $this->seedScenario();
         $vm = $this->inventoryVm($this->regularUser(), $s, ['status' => 'Missing']);
-        \App\Models\ProviderVm::create([
+        ProviderVm::create([
             'provider_id' => $s['provider']->id,
             'provider_node_id' => $s['providerNode']->id,
             'external_vmid' => $vm->external_vmid,
@@ -205,7 +207,7 @@ class LifecycleTest extends TestCase
             'power_state' => 'running',
         ]);
 
-        app(\App\Services\VmFactSyncService::class)->sync($vm->fresh());
+        app(VmFactSyncService::class)->sync($vm->fresh());
 
         $this->assertSame('Active', $vm->fresh()->status);
     }
@@ -236,6 +238,29 @@ class LifecycleTest extends TestCase
         Sanctum::actingAs($owner);
         $this->postJson("/api/inventory/{$vm->id}/retry")->assertStatus(422);
         Bus::assertNotDispatched(ProvisionVmJob::class);
+    }
+
+    public function test_retry_flips_status_to_provisioning_and_blocks_a_second_click(): void
+    {
+        $s = $this->seedScenario(['approval_required' => false]);
+        $owner = $this->regularUser();
+        $pr = ProvisionRequest::create($this->provisionPayload($s) + ['requester_id' => $owner->id]);
+        $vm = $this->inventoryVm($owner, $s, ['status' => 'Failed', 'error_message' => 'boom', 'provision_request_id' => $pr->id]);
+
+        Sanctum::actingAs($owner);
+
+        // First retry: dispatches AND immediately flips the row to Provisioning (instant UI feedback,
+        // error cleared) — no longer left showing Failed while the job waits in the queue.
+        $this->postJson("/api/inventory/{$vm->id}/retry")->assertOk();
+        $fresh = $vm->fresh();
+        $this->assertSame('Provisioning', $fresh->status);
+        $this->assertNull($fresh->error_message);
+        Bus::assertDispatched(ProvisionVmJob::class, 1);
+
+        // Second click while it's still queued: status is no longer Failed → rejected, no double-dispatch
+        // onto the same reused Terraform workspace/tfstate.
+        $this->postJson("/api/inventory/{$vm->id}/retry")->assertStatus(422);
+        Bus::assertDispatched(ProvisionVmJob::class, 1);   // still exactly one
     }
 
     // ====================================================================

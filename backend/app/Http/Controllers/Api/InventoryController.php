@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ProvisionVmJob;
 use App\Models\ApprovalRequest;
 use App\Models\CatalogHardeningVersion;
-use App\Models\Group;
 use App\Models\Inventory;
 use App\Models\InventoryDisk;
+use App\Models\ProviderVm;
 use App\Models\User;
 use App\Services\AuditService;
 use App\Services\LifecycleService;
@@ -93,6 +93,12 @@ class InventoryController extends Controller
         if (! $inventory->provision_request_id) {
             abort(422, 'No originating request to retry.');
         }
+
+        // Flip to Provisioning BEFORE dispatch (the job otherwise only sets it once it STARTS, which
+        // can be minutes later behind a saturated queue). This gives the UI instant feedback AND makes
+        // the `status !== 'Failed'` guard above reject a second Retry click → no double-dispatch onto
+        // the same reused Terraform workspace/tfstate.
+        $inventory->update(['status' => 'Provisioning', 'error_message' => null]);
 
         ProvisionVmJob::dispatch($inventory->provision_request_id, $inventory->vm_name, $inventory->id);
         $audit->log($request->user(), 'RETRY_PROVISION', "Retried provisioning {$inventory->vm_name}");
@@ -238,7 +244,7 @@ class InventoryController extends Controller
             // Remove the stale discovered provider_vms row too, so it also disappears from the
             // Discovery/Node Explorer — the VM is truly gone.
             if ($inventory->provider_id && $vmid) {
-                \App\Models\ProviderVm::where('provider_id', $inventory->provider_id)->where('external_vmid', $vmid)->delete();
+                ProviderVm::where('provider_id', $inventory->provider_id)->where('external_vmid', $vmid)->delete();
             }
             $inventory->disks()->delete();
             $inventory->delete();

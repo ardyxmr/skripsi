@@ -3,8 +3,10 @@
 # ExoVirt sample hardening — RHEL FAMILY (Rocky / AlmaLinux / RHEL / Fedora) — VERSION 2 (baseline + patching)
 # ============================================================================
 # Everything in v1, PLUS package patching and automatic security updates.
-# NEEDS INTERNET (dnf reaches the repos). Runs via the portal "Hardening" button
-# as `sysuser` + sudo. Upload as the catalog's Hardening Playbook, VERSION 2.
+# NEEDS INTERNET + an enabled dnf repo. Works on ROCKY & FEDORA out of the box.
+# On plain RHEL, dnf has NO repos until a subscription is attached (or a local repo
+# mounted) — this playbook DETECTS that and skips patching (v1 config still applies)
+# rather than failing. Runs via the portal "Hardening" button as `sysuser` + sudo.
 # ============================================================================
 - name: ExoVirt hardening v2 — RHEL family (Rocky/AlmaLinux/RHEL/Fedora) baseline + patching
   hosts: all
@@ -41,25 +43,52 @@
         password_lock: true
 
     # ---- v2: patching + automatic security updates ----
-    - name: "3. Apply available package updates (upgrade installed packages)"
+    # IMPORTANT (RHEL vs Rocky/Fedora): dnf needs an ENABLED repo. Rocky & Fedora ship
+    # public repos, so patching runs. Plain RHEL has NO repos until you attach a
+    # subscription (`subscription-manager register --auto-attach`) or mount a local repo.
+    # So we CHECK first and skip patching gracefully (the v1 config hardening above is
+    # still applied) instead of failing the whole hardening run.
+    - name: "3. Check for an enabled dnf repository"
+      ansible.builtin.command: dnf repolist --enabled -q
+      register: exovirt_dnf_repos
+      changed_when: false
+      failed_when: false
+
+    - name: "3b. Decide whether patching is possible"
+      ansible.builtin.set_fact:
+        exovirt_have_repos: "{{ exovirt_dnf_repos.rc == 0 and (exovirt_dnf_repos.stdout | trim | length) > 0 }}"
+
+    - name: "NOTE — patching SKIPPED (no enabled dnf repo, e.g. un-subscribed RHEL)"
+      ansible.builtin.debug:
+        msg: >-
+          No enabled dnf repository found. On RHEL, register a subscription
+          (subscription-manager register --auto-attach) or mount a local repo, then
+          re-run v2. The v1 config hardening was still applied.
+      when: not exovirt_have_repos
+
+    - name: "4. Apply available package updates (upgrade installed packages)"
       ansible.builtin.dnf:
         name: "*"
         state: latest
         update_only: true          # only upgrade what's installed; drop this line for a full upgrade
+      when: exovirt_have_repos
 
-    - name: "4. Install dnf-automatic (automatic security updates)"
+    - name: "5. Install dnf-automatic (automatic security updates)"
       ansible.builtin.dnf:
         name: dnf-automatic
         state: present
+      when: exovirt_have_repos
 
-    - name: "4b. Configure dnf-automatic to APPLY (not just download) updates"
+    - name: "5b. Configure dnf-automatic to APPLY (not just download) updates"
       ansible.builtin.lineinfile:
         path: /etc/dnf/automatic.conf
         regexp: "^apply_updates ="
         line: "apply_updates = yes"
+      when: exovirt_have_repos
 
-    - name: "4c. Enable the dnf-automatic timer"
+    - name: "5c. Enable the dnf-automatic timer"
       ansible.builtin.systemd:
         name: dnf-automatic.timer
         enabled: true
         state: started
+      when: exovirt_have_repos

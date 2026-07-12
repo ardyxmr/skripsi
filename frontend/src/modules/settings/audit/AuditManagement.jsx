@@ -43,6 +43,8 @@ export default function AuditManagement() {
   const [total, setTotal] = useState(0);
   const [lastPage, setLastPage] = useState(1);
   const [actionTypesList, setActionTypesList] = useState([]);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);   // custom Action-type dropdown
+  const actionMenuRef = useRef(null);
   // One search box, scoped: the same input filters free-text, Inventory ID, or VM ID depending on
   // searchScope — instead of three separate boxes. (Inventory ID = exact per-instance via metadata.)
   const [searchScope, setSearchScope] = useState('all'); // 'all' | 'inventory_id' | 'vmid'
@@ -88,6 +90,14 @@ export default function AuditManagement() {
     const id = setInterval(() => { if (!document.hidden) loadLogs({ silent: true }); }, 5000);
     return () => clearInterval(id);
   }, [page, dateStart, dateEnd, loadLogs]);
+
+  // Close the custom Action-type dropdown on any outside click.
+  useEffect(() => {
+    if (!actionMenuOpen) return undefined;
+    const onDown = (e) => { if (actionMenuRef.current && !actionMenuRef.current.contains(e.target)) setActionMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [actionMenuOpen]);
 
   // Download State
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
@@ -311,20 +321,39 @@ export default function AuditManagement() {
             )}
           </div>
 
-          {/* Action type (compact) */}
-          <div className="relative shrink-0">
-            <Filter className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
-            <select
-              value={actionFilter}
-              onChange={(e) => setActionFilter(e.target.value)}
+          {/* Action type (compact) — custom dropdown: a native <select> popup auto-widens to the
+              longest option and spilled past the panel into the far-right scrollbar. */}
+          <div className="relative shrink-0" ref={actionMenuRef}>
+            <Filter className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 z-10" size={13} />
+            <button
+              type="button"
+              onClick={() => setActionMenuOpen((o) => !o)}
               title="Filter by action type"
-              className="pl-7 pr-7 py-[7px] max-w-[150px] text-[12px] border border-gray-200 dark:border-theme rounded-input bg-white dark:bg-surface text-slate-600 dark:text-zinc-300 focus:outline-none focus:border-indigo-500 appearance-none cursor-pointer truncate"
+              className="flex items-center justify-between gap-1 pl-7 pr-2 py-[7px] w-[150px] text-[12px] border border-gray-200 dark:border-theme rounded-input bg-white dark:bg-surface text-slate-600 dark:text-zinc-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
-              {actionTypes.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+              <span className="truncate text-left">{actionFilter}</span>
+              <ChevronDown className={`shrink-0 text-slate-400 transition-transform ${actionMenuOpen ? 'rotate-180' : ''}`} size={12} />
+            </button>
+            {actionMenuOpen && (
+              // right-0 → the list aligns to the button's RIGHT edge and grows LEFT (into the search
+              // area, which has room), so a long action name can never overflow into the scrollbar.
+              <ul
+                role="listbox"
+                className="absolute right-0 top-full mt-1 z-30 w-max min-w-[150px] max-w-[280px] max-h-64 overflow-y-auto custom-scrollbar bg-white dark:bg-card border border-gray-200 dark:border-theme rounded-input shadow-modal py-1"
+              >
+                {actionTypes.map((type) => (
+                  <li
+                    key={type}
+                    role="option"
+                    aria-selected={type === actionFilter}
+                    onClick={() => { setActionFilter(type); setActionMenuOpen(false); }}
+                    className={`px-3 py-1.5 text-[12px] cursor-pointer whitespace-nowrap hover:bg-indigo-50 dark:hover:bg-indigo-900/20 ${type === actionFilter ? 'font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/10' : 'text-slate-600 dark:text-zinc-300'}`}
+                  >
+                    {type}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {/* Download (icon only) */}

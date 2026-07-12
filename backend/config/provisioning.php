@@ -20,10 +20,13 @@ return [
     // and revealed only via the audited GET /inventory/{id}/credentials endpoint.
     'ci_user' => env('PROVISION_CI_USER', 'sysuser'),
 
-    // Ansible hardening (Stage 8). A dedicated automation keypair is injected into every NEW VM via
-    // cloud-init (public key on the ci_user) so Ansible connects KEY-based — independent of the
-    // template's ssh_pwauth. The private key stays on the worker (never copied into a workspace).
-    'ansible_ssh_user' => env('ANSIBLE_SSH_USER', env('PROVISION_CI_USER', 'sysuser')),
+    // Ansible hardening (Stage 8). Connects KEY-based as the BAKED break-glass account `sysadmin`
+    // (NOT the ci_user `sysuser`): sysuser's password is force-expired on first login, which makes
+    // sshd refuse non-interactive commands ("password change required, no TTY") → hardening dies at
+    // the first task. sysadmin has a LOCKED (not expired) password, a baked SSH key, and NOPASSWD
+    // sudo, so key-based non-interactive Ansible works. The worker's private key must match the
+    // public key baked into sysadmin's authorized_keys on the templates.
+    'ansible_ssh_user' => env('ANSIBLE_SSH_USER', 'sysadmin'),
     'ansible_public_key_path' => env('ANSIBLE_PUBLIC_KEY_PATH', storage_path('app/ansible/automation_key.pub')),
     'ansible_private_key_path' => env('ANSIBLE_PRIVATE_KEY_PATH', storage_path('app/ansible/automation_key')),
 

@@ -8,11 +8,11 @@ use App\Models\User;
 use App\Services\AuditService;
 use App\Services\Provisioning\AnsibleRunner;
 use Illuminate\Bus\Queueable;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -62,7 +62,7 @@ class HardenVmJob implements ShouldQueue
             file_put_contents($inv, sprintf(
                 "[target]\n%s ansible_user=%s ansible_ssh_private_key_file=%s ansible_python_interpreter=auto_silent\n",
                 $vm->ip_address,
-                config('provisioning.ansible_ssh_user', 'sysuser'),
+                config('provisioning.ansible_ssh_user', 'sysadmin'),
                 config('provisioning.ansible_private_key_path'),
             ));
             @chmod($inv, 0600);

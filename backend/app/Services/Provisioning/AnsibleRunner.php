@@ -21,6 +21,12 @@ class AnsibleRunner
                 'ANSIBLE_HOST_KEY_CHECKING' => 'False',
                 'ANSIBLE_RETRY_FILES_ENABLED' => 'False',
                 'ANSIBLE_NOCOLOR' => '1',
+                // Put Ansible's temp dirs under /tmp instead of the login user's HOME. On the TARGET,
+                // sysuser's ~/.ansible can be unwritable (expired/force-change account, odd home perms)
+                // → "Failed to create temporary directory / UNREACHABLE". become-to-root can still read
+                // a /tmp tmpfile. ANSIBLE_LOCAL_TEMP covers the control node the same way.
+                'ANSIBLE_REMOTE_TMP' => '/tmp/.ansible-exovirt/tmp',
+                'ANSIBLE_LOCAL_TEMP' => '/tmp/.ansible-exovirt/local',
             ])
             ->run(['ansible-playbook', '-i', $inventory, $playbook]);
 

@@ -180,6 +180,17 @@ class CatalogController extends Controller
         $path = $file->storeAs($dir, $storedName, 'local');
         $abs = Storage::disk('local')->path($path);
 
+        // storeAs creates these dirs with the local disk's `private` visibility (0700) owned by the
+        // WEB user (www-data). But the hardening RUN copies this playbook as the QUEUE WORKER (a
+        // different user, e.g. sysadmin), which then can't traverse a 0700 www-data dir → "Permission
+        // denied". Open the dir chain for traversal and keep the file readable so the worker can read
+        // it. (Hardening playbooks are config, not secrets.)
+        $disk = Storage::disk('local');
+        @chmod($disk->path('catalog-hardening'), 0755);
+        @chmod($disk->path("catalog-hardening/{$catalog->id}"), 0755);
+        @chmod($disk->path($dir), 0755);
+        @chmod($abs, 0644);
+
         if ($err = $this->validateHardeningArtifact($abs, $ext)) {
             Storage::disk('local')->deleteDirectory($dir);
             $ver->delete();

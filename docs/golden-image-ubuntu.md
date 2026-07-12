@@ -33,6 +33,7 @@ virt-customize -a "$IMG" \
   --run-command 'usermod -aG wheel sysadmin 2>/dev/null || usermod -aG sudo sysadmin 2>/dev/null || true' \
   --run-command 'install -d -m 700 /home/sysadmin/.ssh' \
   --write '/home/sysadmin/.ssh/authorized_keys:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDMFSYaSQgzzeXrSVoSyydpx0MaZQKiMTubSsHDMsbKP sysadmin-bastion' \
+  --append-line '/home/sysadmin/.ssh/authorized_keys:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPWUjdD37EfA1CX1Af+nSaJK7lS5jczPN7y1EJG0fSFW exovirt-ansible' \
   --run-command 'chmod 700 /home/sysadmin/.ssh && chmod 600 /home/sysadmin/.ssh/authorized_keys && chown -R sysadmin:sysadmin /home/sysadmin/.ssh' \
   --run-command 'printf "sysadmin ALL=(ALL) NOPASSWD:ALL\n" > /etc/sudoers.d/90-sysadmin && chmod 440 /etc/sudoers.d/90-sysadmin && visudo -cf /etc/sudoers.d/90-sysadmin' \
   --run-command 'passwd -l sysadmin' \
@@ -44,7 +45,7 @@ What each group does:
 - **`--install` + enable `qemu-guest-agent`** — the portal's Terraform waits on the agent for the IP. Without it, provisioning hangs at apply with the VM Active but no IP.
 - **`99-pwauth.cfg` (`ssh_pwauth: true`)** — Ubuntu cloud images ship `PasswordAuthentication no`; cloud-init flips it on each clone's first boot so the portal's password login works.
 - **`99-pwexpire.cfg` (`runcmd: chage -d 0 sysuser`)** — forces the user to set their own password on first login, so the portal-issued password is one-time. **Use `runcmd: chage`, not `chpasswd: { expire: true }`** — Proxmox's own cloud-init overrides `chpasswd` (validated on Rocky 2026-06-27). Details in `template-preparation.md` §3.
-- **`sysadmin` block** — creates the key-only admin account (in the `sudo` group on Ubuntu), installs the bastion public key, gives passwordless sudo, and **locks the password** so the account is key-only. The `usermod` line tries `wheel` then `sudo` so the one command works on every distro. See `bastion-sysadmin-access.md`. Omit this block if you do not want admin access baked into this image.
+- **`sysadmin` block** — creates the key-only admin account (in the `sudo` group on Ubuntu), installs the admin public keys, gives passwordless sudo, and **locks the password** so the account is key-only. **Two keys are baked (`--write` then `--append-line`):** `sysadmin-bastion` (dev break-glass) + **`exovirt-ansible` (the prod key the hardening worker uses — `storage/app/ansible/automation_key`)**. Hardening connects as `sysadmin` (NOT the force-expired `sysuser`), so this key MUST be here or `HardenVmJob` fails auth. `--append-line` adds it on its own line (avoid manual `echo >>` — a missing newline mashes two keys into one invalid line). For a prod-only image, replace the dev key in the `--write` with `exovirt-ansible` instead of appending. The `usermod` line tries `wheel` then `sudo` so the one command works on every distro. See `bastion-sysadmin-access.md`.
 - **`truncate /etc/machine-id` + `rm ssh_host_*`** — reset identity so each clone gets a unique machine-id and unique SSH host keys.
 
 No `--selinux-relabel` here: Ubuntu uses **AppArmor**, not SELinux, so the relabel is unnecessary (it is required on the EL images — see §7).

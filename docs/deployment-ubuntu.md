@@ -194,6 +194,29 @@ sudo chmod -R g+rwX storage bootstrap/cache
 > Cek: `stat -c '%U %a' storage/app/ansible/automation_key` → harus `appd 600` (atau user worker-mu).
 > Ini juga alasan urutannya penting: **selalu** kunci ulang kunci Ansible setelah menyentuh izin `storage` secara rekursif.
 
+**Akses bastion ke VM (opsional, buat troubleshoot manual).** Server portal ini juga jadi bastion:
+`sysadmin` bisa SSH ke tiap VM sebagai `sysadmin` pakai automation key yang sama (key-nya di-bake ke
+`sysadmin` di golden image — lihat `golden-image-ubuntu.md`). Biar gak usah `-i <path>` tiap kali,
+bikin `~/.ssh/config` **sebagai user worker/bastion** (mis. `sysadmin`):
+
+```bash
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+cat >> ~/.ssh/config <<'EOF'
+
+# Bastion → VM portal: pakai automation key + user sysadmin otomatis.
+# Ganti 192.168.200.* dengan subnet VM-mu, dan path key kalau beda.
+Host 192.168.200.*
+    User sysadmin
+    IdentityFile /home/app/exovirt/backend/storage/app/ansible/automation_key
+    StrictHostKeyChecking no
+EOF
+chmod 600 ~/.ssh/config
+```
+
+Setelah ini: `ssh 192.168.200.75` langsung masuk sebagai `sysadmin` (key-based, tanpa password).
+Tanpa config ini, `ssh sysadmin@<ip>` biasa akan minta password (key gak ada di `~/.ssh/` default) —
+harus eksplisit `ssh -i /home/app/exovirt/backend/storage/app/ansible/automation_key sysadmin@<ip>`.
+
 ---
 
 ## Fase 7 — Isi `backend/.env` (prod)

@@ -66,17 +66,21 @@
           re-run v2. The v1 config hardening was still applied.
       when: not exovirt_have_repos
 
+    # NOTE: we drive the `dnf` CLI via `command` instead of the ansible.builtin.dnf module. On very
+    # new dnf5 systems (e.g. Fedora 44) the module's libdnf5 bindings can be out of sync with the
+    # ansible-core shipped on the control node, crashing with
+    # "'Base' object has no attribute 'load_config_from_file'". The CLI is stable across dnf4 (EL)
+    # and dnf5 (Fedora). `changed_when` keys off dnf's "Nothing to do" so reporting stays accurate.
     - name: "4. Apply available package updates (upgrade installed packages)"
-      ansible.builtin.dnf:
-        name: "*"
-        state: latest
-        update_only: true          # only upgrade what's installed; drop this line for a full upgrade
+      ansible.builtin.command: dnf -y --refresh upgrade
+      register: exovirt_dnf_upgrade
+      changed_when: "'Nothing to do' not in exovirt_dnf_upgrade.stdout"
       when: exovirt_have_repos
 
     - name: "5. Install dnf-automatic (automatic security updates)"
-      ansible.builtin.dnf:
-        name: dnf-automatic
-        state: present
+      ansible.builtin.command: dnf -y install dnf-automatic
+      register: exovirt_dnf_install
+      changed_when: "'Nothing to do' not in exovirt_dnf_install.stdout"
       when: exovirt_have_repos
 
     - name: "5b. Configure dnf-automatic to APPLY (not just download) updates"

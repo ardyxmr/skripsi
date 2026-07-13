@@ -203,19 +203,38 @@ bikin `~/.ssh/config` **sebagai user worker/bastion** (mis. `sysadmin`):
 mkdir -p ~/.ssh && chmod 700 ~/.ssh
 cat >> ~/.ssh/config <<'EOF'
 
-# Bastion → VM portal: pakai automation key + user sysadmin otomatis.
-# Ganti 192.168.200.* dengan subnet VM-mu, dan path key kalau beda.
-Host 192.168.200.*
+# Bastion → VM: pakai automation key + user sysadmin otomatis.
+# WAJIB satu pola Host per subnet DC — tambah subnet tiap DC baru di-onboard.
+# Contoh: Jakarta 192.168.200.* + Lampung 192.168.229.* (path key sesuaikan kalau beda).
+Host 192.168.200.* 192.168.229.*
     User sysadmin
     IdentityFile /home/app/exovirt/backend/storage/app/ansible/automation_key
+    IdentitiesOnly yes
     StrictHostKeyChecking no
 EOF
 chmod 600 ~/.ssh/config
 ```
 
-Setelah ini: `ssh 192.168.200.75` langsung masuk sebagai `sysadmin` (key-based, tanpa password).
-Tanpa config ini, `ssh sysadmin@<ip>` biasa akan minta password (key gak ada di `~/.ssh/` default) —
-harus eksplisit `ssh -i /home/app/exovirt/backend/storage/app/ansible/automation_key sysadmin@<ip>`.
+Setelah ini: `ssh 192.168.229.146` langsung masuk sebagai `sysadmin` (key-based, tanpa password),
+**seragam di semua DC**.
+
+> ⚠️ **Multi-DC — gejala kalau subnet sebuah DC belum masuk config.** Tanpa blok `Host` yang cocok,
+> `ssh sysadmin@<ip>` cuma nawarin default key `~/.ssh/id_*` (gak ada) → **jatuh ke password**,
+> padahal VM-nya sebenarnya percaya key itu. Ini murni **gap config client-side, BUKAN
+> ketidakseragaman server** — template tiap DC bake `authorized_keys` yang identik, jadi key yang
+> sama diterima di mana pun. Cek dengan `ssh -v`: DC yang cocok muncul `Offering public key … /
+> Server accepts key … / Authenticated`; DC yang belum masuk config muncul semua `identity file …
+> type -1` lalu `password:`.
+
+**Verifikasi key beneran kepakai** (jangan percaya `ssh` polos — bisa diam-diam fallback ke password
+kalau path key salah / subnet belum masuk config):
+
+```bash
+ssh -i /home/app/exovirt/backend/storage/app/ansible/automation_key \
+    -o IdentitiesOnly=yes -o BatchMode=yes sysadmin@<ip-vm> 'id; sudo -n true'
+# BatchMode=yes = gagal-tertutup (gak fallback password); IdentitiesOnly=yes = cuma nawarin key ini.
+# Harusnya: uid=1000(sysadmin) ... + sudo -n sukses (tanpa prompt).
+```
 
 ---
 

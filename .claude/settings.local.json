@@ -121,7 +121,8 @@
       "Bash(echo \"EXIT=$?\")",
       "Bash(rtk npm *)",
       "Bash(sed -n '1,90p' components/common/LiveDataPoller.jsx)",
-      "Bash(rtk git *)"
+      "Bash(rtk git *)",
+      "Bash(cd /home/appd/my-project/backend)"
     ]
   }
 }

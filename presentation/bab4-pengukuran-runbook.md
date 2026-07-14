@@ -31,34 +31,91 @@ Panduan langkah demi langkah untuk **mengukur data nyata** portal ExoVirt + **sc
 **Yang diukur:** (a) waktu proses *provisioning*, (b) jumlah langkah/klik pengguna.
 **Indikator target (bab3):** penurunan waktu ≥ 50% + langkah berkurang vs manual.
 
+### 1.a Ruang lingkup waktu (BACA DULU sebelum mengukur)
+
+H1 di `bab2.md` membandingkan **antarmuka aplikasi vs antarmuka Proxmox VE bawaan**, bukan membandingkan jabatan. Karena itu yang masuk uji beda hanya **waktu yang disebabkan oleh alat**, bukan waktu keputusan manusia. Waktu *provisioning* dipecah tiga segmen:
+
+| Segmen | Portal (ExoVirt) | Manual (Proxmox GUI) | Masuk uji H1? |
+|---|---|---|:---:|
+| **t1** interaksi pengguna | mulai wizard → klik **Submit** | tercakup di `t_manual` | ✅ |
+| **t2** tunggu keputusan approval | **Submit → Approve** | tiket/email mengendap di admin | ❌ **dikeluarkan** |
+| **t3** eksekusi otomatis | **Approve → status Active** | tercakup di `t_manual` | ✅ |
+
+- **Waktu provisioning portal (angka H1) = t1 + t3.** t2 **tidak** dijumlahkan.
+- **Waktu provisioning manual (angka H1) = `t_manual`** = login Proxmox → VM benar-benar jalan, satu blok tanpa jeda.
+
+**Kenapa t2 dikeluarkan (siapkan jawaban ini untuk penguji):**
+
+1. **Approval ada di kedua alur.** Pada proses manual approval tetap terjadi lewat tiket/email ke administrator (lihat `bab1.md` latar belakang + PIECES *Service* di `bab3.md`), hanya saja informal dan tidak terekam. Portal tidak menambah langkah. Portal **memformalkan** approval yang tadinya tak tercatat menjadi tercatat di audit trail.
+2. **Approval variabel tata kelola (RM2), bukan efisiensi (RM1).** Lamanya bergantung pada kapan *approver* membuka portal, bukan pada kualitas sistem. Memasukkannya ke uji beda sama saja mengukur ketersediaan manusia.
+3. **Mengeluarkan t2 bersifat konservatif, justru menguntungkan manual.** Waktu tunggu nyata alur manual berjam-jam sampai berhari-hari (120 tiket / 2 bulan / 2 admin pembuat VM, lihat `bab1.md` Tabel 1.1). Angka 5–20 menit itu **waktu kerja admin**, bukan waktu tunggu pengguna. Dengan mengeluarkan waktu tunggu dari **kedua** sisi, manual diberi skenario terbaiknya dan portal tetap menang.
+
+> **t2 tetap dicatat**, tapi dilaporkan **deskriptif** di Bab IV bagian tata kelola (RM2), bukan di uji beda §4.3.
+
+### 1.b Penugasan aktor (asimetris dengan sengaja: ini temuan, bukan cacat)
+
+| Arm | Aktor | Alasan |
+|---|---|---|
+| **Portal** | **User (Requestor)** biasa, admin hanya meng-*approve* | sesuai klaim *self-service*; ini pengguna paling awam |
+| **Manual** | **Admin** ber-hak-akses penuh di Proxmox GUI | di alur manual **hanya** admin yang bisa; ini skenario **terbaik** manual |
+
+Catat di Bab IV: pengguna biasa **tidak dapat sama sekali** melakukan *provisioning* manual karena tidak punya hak akses Proxmox, sehingga waktunya bukan lambat melainkan **tak terhingga**. Portal membuat tugas itu menjadi mungkin. Mengadu portal-pengguna-awam melawan manual-admin-ahli berarti pengujian sudah dicondongkan ke pihak manual, dan itu memperkuat kesimpulan.
+
 **Ukuran sampel:** ulang **≥ 10 percobaan** untuk kondisi yang sama (1 VM) di portal, dan **≥ 10** untuk manual. Sepuluh angka per kelompok cukup untuk uji Shapiro-Wilk → T-Test/Wilcoxon.
 **(Opsional, memperkuat H1 "O(1) vs O(N)"):** ukur juga batch **N = 1, 5, 10** → tunjukkan jumlah langkah pengguna portal ~tetap saat N naik, sedangkan manual naik linear.
+**(Opsional, robustness):** arm tambahan **admin portal yang self-approve vs admin Proxmox GUI**. Aktor dan hak akses identik, approval hilang dari dua sisi, jadi murni mengukur gain otomatisasi. Pakai kalau waktu cukup; desain utama sudah sah tanpa ini.
 
-**Langkah (per percobaan, portal):**
-1. *Login* ke portal.
-2. Buka wizard **Request VM** → isi: Environment → Provider → Node → Catalog → Nama VM → Jumlah → Tier → Network → Datastore → halaman **Review** (lihat Total CPU/RAM/Disk) → **Submit**. **Hitung jumlah langkah/klik** dari mulai wizard sampai Submit.
-3. Admin lakukan **Approve** di menu Approvals.
+### 1.c Langkah per percobaan — PORTAL
+
+1. *Login* ke portal sebagai **User (Requestor)**.
+2. Buka wizard **Request VM** → isi: Environment → Provider → Node → Catalog → Nama VM → Jumlah → Tier → Network → Datastore → halaman **Review** (lihat Total CPU/RAM/Disk) → **Submit**.
+   - **Hitung jumlah langkah/klik pengguna** dari wizard terbuka sampai Submit.
+   - **Catat t1**: stopwatch mulai saat wizard terbuka, stop saat klik Submit.
+3. Admin lakukan **Approve** di menu Approvals. **Hitung langkah admin terpisah**, jangan dicampur ke langkah pengguna.
 4. Tunggu sampai VM berstatus **Active** di **Inventory**.
-5. **Catat dua waktu** (pisahkan, karena approval bersifat async):
-   - **Waktu interaksi pengguna** = mulai wizard → klik Submit.
-   - **Waktu total** = Submit → status Active (pakai timestamp Inventory/Audit agar objektif).
+5. Ambil **t2** dan **t3** dari **timestamp Audit Trail** (lebih objektif daripada stopwatch):
+   - `t2` = waktu baris `approved` − waktu baris `created/submitted`
+   - `t3` = waktu status `Active` − waktu baris `approved`
+6. Hitung **t1 + t3**. Angka inilah yang masuk uji beda.
+
+### 1.d Langkah per percobaan — MANUAL (Proxmox VE GUI)
+
+Protokol identik, variabel kontrol sama (template, tier, network, datastore, pola nama).
+
+1. *Login* ke Proxmox VE GUI sebagai **admin**. **Stopwatch mulai.**
+2. Clone template → isi nama/VMID → set CPU/RAM/Disk sesuai tier → set network + datastore → konfigurasi cloud-init (user, password, IP) → **Start** VM.
+3. **Stopwatch stop** saat VM benar-benar **jalan** (status running + bisa di-*login*), bukan saat tombol Start diklik.
+4. **Hitung jumlah langkah/klik** sepanjang no. 2.
+5. Angka ini = **`t_manual`**, langsung masuk uji beda.
+
+> ⚠️ **Titik stop wajib sama makna di kedua arm: "VM siap dipakai".** Portal = status `Active` di Inventory. Manual = VM running + dapat di-*login*. Jangan stop di "tombol sudah diklik".
 
 **Tabel pencatatan (portal):**
 
-| Trial | Jumlah langkah | Waktu interaksi (dtk) | Waktu total → Active (dtk) |
-|------:|---------------:|----------------------:|---------------------------:|
-| 1 | | | |
-| … | | | |
-| 10 | | | |
-| **Rata-rata** | | | |
+| Trial | Langkah user | Langkah admin (approve) | t1 interaksi (dtk) | t3 eksekusi (dtk) | **t1+t3 → uji H1** (dtk) | t2 tunggu approval (dtk, deskriptif) |
+|------:|-------------:|------------------------:|-------------------:|------------------:|-------------------------:|-------------------------------------:|
+| 1 | | | | | | |
+| … | | | | | | |
+| 10 | | | | | | |
+| **Rata-rata** | | | | | | |
+
+**Tabel pencatatan (manual):**
+
+| Trial | Jumlah langkah | `t_manual` login → VM jalan (dtk) |
+|------:|---------------:|----------------------------------:|
+| 1 | | |
+| … | | |
+| 10 | | |
+| **Rata-rata** | | |
+
+> Kolom **`t1+t3`** (portal) vs kolom **`t_manual`** (manual) adalah dua kelompok yang masuk **Shapiro-Wilk → T-Test/Wilcoxon**. Kolom **t2 tidak ikut**.
 
 **Screenshot bukti yang HARUS diambil:**
 - [ ] Tiap langkah wizard (minimal: halaman Review dengan Total CPU/RAM/Disk)
 - [ ] Menu Approvals saat Approve
 - [ ] Inventory menampilkan VM **Active** + kolom waktu
-- [ ] Audit Trail baris `created` → `provisioned/Active` (bukti timestamp objektif)
-
-> Lakukan **hal yang sama untuk Manual (Proxmox GUI)** dengan protokol identik → tabel manual terpisah. Dua tabel ini yang masuk uji beda.
+- [ ] Audit Trail baris `created` → `approved` → `provisioned/Active` (bukti timestamp objektif untuk t2 & t3)
+- [ ] **Manual:** tiap dialog Proxmox (clone, hardware, cloud-init, start) + VM status running
 
 ---
 
@@ -135,9 +192,10 @@ Panduan langkah demi langkah untuk **mengukur data nyata** portal ExoVirt + **sc
 ## 5. Alur data → Bab IV
 
 - **4.2 Fungsional:** tabel black box + **% keberhasilan**.
-- **4.3 Efisiensi (H1):** tabel Portal vs Manual → **Shapiro-Wilk** → **Independent T-Test** (normal) / **Wilcoxon** (tidak normal). Terraform CLI (jurnal) di pembahasan.
+- **4.3 Efisiensi (H1):** dua kelompok = **`t1+t3` (portal)** vs **`t_manual`** → **Shapiro-Wilk** → **Independent T-Test** (normal) / **Wilcoxon** (tidak normal). Sertakan tabel jumlah langkah (user vs admin). **`t2` tidak masuk uji.** Terraform CLI (jurnal) di pembahasan.
 - **4.4 Konsistensi (H2):** % kesesuaian Portal vs Manual → uji beda bila datanya numerik cukup, atau paparan deskriptif + tabel.
 - **4.5 Kebergunaan (H3):** skor SUS + kategori.
-- **4.6 Pembahasan:** kaitkan tiap hasil ke Rumusan Masalah 1–4 + keputusan H0/H1.
+- **4.6 Tata kelola (RM2, deskriptif):** laporkan **`t2` (waktu tunggu approval)** di sini sebagai karakteristik *approval workflow* + bukti audit trail. Tegaskan approval juga ada di alur manual namun informal dan tak terekam, sehingga portal memformalkan, bukan menambah, langkah tersebut.
+- **4.7 Pembahasan:** kaitkan tiap hasil ke Rumusan Masalah 1–4 + keputusan H0/H1. Cantumkan **batasan ruang lingkup waktu** (§1.a): waktu tunggu keputusan manusia dikeluarkan dari kedua kelompok, dan pengeluaran itu konservatif karena menguntungkan alur manual.
 
 > Alat bantu uji statistik: SPSS / Jamovi / Python (scipy `shapiro`, `ttest_ind`, `wilcoxon`) — **screenshot output ujinya juga** sebagai bukti.

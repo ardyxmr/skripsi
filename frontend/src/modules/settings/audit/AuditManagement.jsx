@@ -4,6 +4,18 @@ import ResizableTh from '../../../components/ResizableTh';
 import api from '../../../lib/api';
 import { useUI } from '../../../stores/uiStore';
 
+// Two axes, mirroring App\Services\AuditSeverity: an operation is SUCCESS/FAILED, an observed
+// health state is HEALTHY/WARNING/CRITICAL. Green reads "fine", amber "act soon", red "act now",
+// and CRITICAL is filled rather than tinted so a downed provider outranks a failed operation.
+const SEVERITY_STYLES = {
+  SUCCESS: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20',
+  HEALTHY: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20',
+  WARNING: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20',
+  FAILED: 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20',
+  CRITICAL: 'text-white bg-rose-600 border-rose-700 dark:bg-rose-600 dark:border-rose-500',
+  UNKNOWN: 'text-slate-500 dark:text-zinc-400 bg-slate-100 dark:bg-zinc-500/10 border-slate-200 dark:border-zinc-500/20',
+};
+
 // API rows arrive camelCased; alias to the snake_case fields this table renders.
 function normalizeLog(row) {
   return {
@@ -11,18 +23,11 @@ function normalizeLog(row) {
     user_id: row.userId ?? row.user_id,
     user_name: row.userName ?? row.user_name ?? '—',
     action_type: row.actionType ?? row.action_type ?? '—',
-    // No status column in the append-only schema → derive the outcome. Prefer the explicit
-    // metadata.result the lifecycle jobs record (success/failed/rejected/…) so a FAILED job no
-    // longer shows green; otherwise fall back to the action verb. POWER_OFF is an out-of-band
-    // shutdown the portal didn't initiate → Unknown.
-    status: row.status ?? (() => {
-      const result = row.metadata?.result;
-      if (result) return String(result).toLowerCase() === 'success' ? 'SUCCESS' : 'FAILED';
-      const a = (row.actionType ?? row.action_type ?? '').toUpperCase();
-      if (/FAILED|THROTTLED|DISCONNECTED/.test(a)) return 'FAILED';
-      if (a === 'POWER_OFF') return 'UNKNOWN';
-      return 'SUCCESS';
-    })(),
+    // Severity comes from the server (App\Services\AuditSeverity), the single source of truth for
+    // API, CSV and UI alike. The old client-side guess pattern-matched the action name, which read
+    // "CREATE_VM → Provision FAILED …" as green and called a disconnected provider a FAILED
+    // operation. Only fall back when talking to a backend that predates the field.
+    status: row.severity ?? row.status ?? 'UNKNOWN',
     description: row.description ?? '',
     ip_address: row.ipAddress ?? row.ip_address ?? '',
     created_at: row.createdAt ?? row.created_at,
@@ -412,9 +417,7 @@ export default function AuditManagement() {
                     </td>
                     <td className="px-4 py-3 align-top">
                       <span className={`inline-flex items-center px-2 py-1 text-[10px] font-bold rounded border whitespace-nowrap ${
-                        log.status === 'SUCCESS' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' :
-                        log.status === 'FAILED' ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20' :
-                        'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20'
+                        SEVERITY_STYLES[log.status] ?? SEVERITY_STYLES.UNKNOWN
                       }`}>
                         {log.status}
                       </span>

@@ -188,11 +188,26 @@ class ProvisionRequestService
             })
             ->whereIn('approval_requests.status', $statuses)
             ->when($ignoreRequestId, fn ($q) => $q->where('provision_requests.id', '!=', $ignoreRequestId))
-            ->get(['provision_requests.vm_name', 'provision_requests.instance_count']);
+            ->get(['provision_requests.id', 'provision_requests.vm_name', 'provision_requests.instance_count']);
+
+        // Where the 'Approved' reservation has to end. An approval row stays Approved for good, so
+        // without this the "brief window" above never closes: destroying the VM releases the name in
+        // Inventory while the spent approval keeps holding it, and the name is dead forever.
+        // Once a name has an inventory row, THAT row is the authority — it holds the name while the
+        // VM lives and releases it on Deleted. Checked per NAME, not per request, so a half-landed
+        // batch still reserves the slots that haven't materialised yet.
+        $landed = Inventory::query()
+            ->whereIn('provision_request_id', $rows->pluck('id'))
+            ->pluck('vm_name')
+            ->map(fn ($n) => strtolower($n))
+            ->flip();
 
         $names = [];
         foreach ($rows as $row) {
             foreach ($this->targetNames($row->vm_name, (int) $row->instance_count) as $n) {
+                if ($landed->has(strtolower($n))) {
+                    continue;
+                }
                 $names[strtolower($n)] = $n;
             }
         }

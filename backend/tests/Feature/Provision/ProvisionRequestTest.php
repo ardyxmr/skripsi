@@ -3,6 +3,7 @@
 namespace Tests\Feature\Provision;
 
 use App\Jobs\ProvisionVmJob;
+use App\Models\ApprovalRequest;
 use App\Models\ProvisionRequest;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -275,6 +276,36 @@ class ProvisionRequestTest extends TestCase
         $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'STRESS', 'instance_count' => 1]))
             ->assertCreated();
         Bus::assertDispatched(ProvisionVmJob::class, 1);
+    }
+
+    /**
+     * The approval-gated twin of the test above, which only ever exercised the no-approval path and
+     * so never met reservedNames(). An approval row stays 'Approved' for good, so the name it
+     * reserved must be released once its VM actually lands — otherwise destroying that VM frees the
+     * name in Inventory while the dead approval keeps holding it, forever.
+     */
+    public function test_a_deleted_vms_name_can_be_reused_when_the_env_requires_approval(): void
+    {
+        $s = $this->seedScenario(['approval_required' => true]);
+        $user = $this->regularUser();
+        Sanctum::actingAs($user);
+
+        $id = $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'APP', 'instance_count' => 1]))
+            ->assertCreated()->json('id');
+        $approval = ApprovalRequest::where('reference_id', $id)->where('request_type', 'PROVISION')->sole();
+
+        Sanctum::actingAs($this->manager());
+        $this->postJson("/api/approvals/{$approval->id}/approve", ['action_reason' => 'ok'])->assertOk();
+        $this->assertSame('Approved', $approval->fresh()->status);
+
+        // The VM lands (Bus is faked, so stand in for ProvisionVmJob), then the user destroys it.
+        $vm = $this->inventoryVm($user, $s, ['vm_name' => 'APP', 'provision_request_id' => $id]);
+        $vm->update(['status' => 'Deleted', 'destroyed_at' => now()]);
+
+        // Inventory has released the name; the spent approval must not still be holding it.
+        Sanctum::actingAs($user);
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['vm_name' => 'APP', 'instance_count' => 1]))
+            ->assertCreated();
     }
 
     public function test_duplicate_name_of_a_still_pending_request_is_rejected_at_submit(): void

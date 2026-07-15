@@ -8,6 +8,8 @@ import { useCatalogContext } from '../contexts/CatalogContext';
 import { useTierContext } from '../contexts/TierContext';
 import { useNodeContext } from '../contexts/NodeContext';
 import { checkEnvCompat } from '../lib/envCompat';
+import { isOffline, isDegraded } from '../lib/resourceStatus';
+import StatusPill from '../components/common/StatusPill';
 import { capacityBadge } from '../lib/nodeCapacity';
 import { useNetworkContext } from '../contexts/NetworkContext';
 import { useDatastoreContext } from '../contexts/DatastoreContext';
@@ -72,8 +74,17 @@ export default function VmRequest() {
   const [submitting, setSubmitting] = useState(false);
   const [warn, setWarn] = useState(false); // shown when the user clicks an incomplete step's button
 
-  const activeEnvironments = useMemo(
-    () => (environments || []).filter((e) => e.status === 'Active'),
+  // Two questions, two fields. adminStatus = "did an admin enable this?", status = "is it reachable
+  // right now?" — status has been health-derived since Environment gained effectiveStatus(), so the
+  // old `status === 'Active'` silently dropped every Degraded env and left the wizard with nothing
+  // to pick. Degraded means one allowed provider/node is down but a usable path remains, which is
+  // exactly why resourceStatus keeps it OUT of OFFLINE_STATUSES: still provisionable, just amber.
+  //
+  // Both halves are load-bearing. isOffline alone is not enough: effectiveStatus() returns
+  // 'Inactive' for an admin-disabled env, and 'Inactive' is not an OFFLINE_STATUS (it is a
+  // governance choice, not an outage), so it would sail through. adminStatus is what holds it back.
+  const selectableEnvironments = useMemo(
+    () => (environments || []).filter((e) => e.adminStatus === 'Active' && !isOffline(e.status)),
     [environments]
   );
 
@@ -145,7 +156,7 @@ export default function VmRequest() {
     }
   }, [environmentId, allowedEnvId, allowed, catalogs, allNodes, desiredCatalogId, desiredTierId]);
 
-  const selectedEnv = activeEnvironments.find((e) => String(e.id) === String(environmentId));
+  const selectedEnv = selectableEnvironments.find((e) => String(e.id) === String(environmentId));
   const isPermanentEnv = selectedEnv && (selectedEnv.expiryType === 'permanent' || selectedEnv.expiryType === 'lifetime');
   const envDuration = isPermanentEnv ? 'Lifetime' : selectedEnv ? `${selectedEnv.expiryValue} Days` : '';
 
@@ -324,7 +335,7 @@ export default function VmRequest() {
             <div className="text-[12px] text-gray-500 dark:text-gray-400 mb-5">Environment determines lifecycle and expiration policy.</div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              {activeEnvironments.map((e) => {
+              {selectableEnvironments.map((e) => {
                 const permanent = e.expiryType === 'permanent' || e.expiryType === 'lifetime';
                 // When the user arrived from the Catalog page, flag whether this env can actually host
                 // their pre-selected catalog + tier (warn-but-selectable — see checkEnvCompat).
@@ -341,8 +352,19 @@ export default function VmRequest() {
                     className={`text-center p-5 bg-white dark:bg-card border rounded-xl cursor-pointer transition-[transform,box-shadow] duration-200 hover:shadow-md hover:scale-[1.02] ${String(environmentId) === String(e.id) ? 'border-teal-500 shadow-md ring-2 ring-teal-500/20 bg-teal-50/10 dark:bg-teal-900/10' : compat && !compat.ok ? 'border-amber-300 dark:border-amber-700/60' : 'border-gray-200 dark:border-theme'}`}
                   >
                     <div className="text-[15px] font-semibold text-gray-800 dark:text-gray-100 mb-2">{e.environmentName}</div>
-                    <div className="text-[11px] px-3 py-1 rounded-full inline-block font-medium bg-gray-50 dark:bg-surface text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-theme">
-                      {permanent ? 'Lifetime' : `${e.expiryValue} Days`}
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="text-[11px] px-3 py-1 rounded-full inline-block font-medium bg-gray-50 dark:bg-surface text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-theme">
+                        {permanent ? 'Lifetime' : `${e.expiryValue} Days`}
+                      </div>
+                      {/* Say so up front: a degraded env is still provisionable, but one of its
+                          providers/nodes is down, so some catalogs and nodes won't be on offer. */}
+                      {/* StatusPill takes no title and doesn't spread rest props, so the tooltip
+                          lives on a wrapper rather than bending a shared component for one caller. */}
+                      {isDegraded(e.status) && (
+                        <span title="One of this environment's providers or nodes is unreachable. You can still provision here, but only the resources that remain online are available.">
+                          <StatusPill status="Degraded" shape="full" />
+                        </span>
+                      )}
                     </div>
                     {compat && (
                       compat.ok ? (
@@ -369,7 +391,7 @@ export default function VmRequest() {
                   </div>
                 );
               })}
-              {activeEnvironments.length === 0 && (
+              {selectableEnvironments.length === 0 && (
                 <div className="col-span-3 text-center text-[13px] text-gray-400 py-8">No environments available.</div>
               )}
             </div>

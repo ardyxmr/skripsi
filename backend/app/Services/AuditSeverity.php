@@ -61,7 +61,7 @@ final class AuditSeverity
     /**
      * @param  array<string,mixed>  $metadata
      */
-    public static function for(?string $actionType, array $metadata = []): string
+    public static function for(?string $actionType, array $metadata = [], ?string $description = null): string
     {
         $action = strtoupper((string) $actionType);
 
@@ -99,6 +99,22 @@ final class AuditSeverity
         $result = $metadata['result'] ?? null;
         if ($result !== null) {
             return strtolower((string) $result) === 'success' ? self::SUCCESS : self::FAILED;
+        }
+
+        // Legacy bridge, and a net for any call site that forgets metadata. Rows written before
+        // ProvisionVmJob recorded a result carry the outcome only in their prose ("Provision FAILED
+        // RES-02 (step apply…)"), and the trail is append-only so they can never be corrected in
+        // place. Reading prose is fragile by nature — hence last, and only when nothing better
+        // exists.
+        //
+        // Case-SENSITIVE on purpose: every failure line in this codebase shouts the marker in caps
+        // (Provision/Destroy/Resize/Edit Resources/Add-disk FAILED), while VM names are lower case,
+        // so "Provisioned failed-over-db" stays green. Matching case-insensitively would flag it,
+        // because the hyphen is a word boundary. A VM named in CAPS containing FAILED would still
+        // false-positive; that is the accepted ceiling of prose-reading, and precisely why metadata
+        // outranks it and why this only ever fires for rows that carry no result.
+        if ($description !== null && preg_match('/\bFAILED\b/', $description) === 1) {
+            return self::FAILED;
         }
 
         return self::SUCCESS;

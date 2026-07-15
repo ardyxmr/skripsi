@@ -32,6 +32,6 @@ class AuditLog extends Model
 
     public function getSeverityAttribute(): string
     {
-        return AuditSeverity::for($this->action_type, $this->metadata ?? []);
+        return AuditSeverity::for($this->action_type, $this->metadata ?? [], $this->description);
     }
 }

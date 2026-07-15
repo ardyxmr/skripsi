@@ -274,6 +274,28 @@ class AuditTrailTest extends TestCase
         }
     }
 
+    /**
+     * Rows written before ProvisionVmJob recorded a result carry the outcome only in their prose,
+     * and an append-only trail can never be corrected in place — so the description is the last
+     * resort. Metadata still wins when present.
+     */
+    public function test_legacy_rows_without_metadata_fall_back_to_the_description(): void
+    {
+        $legacy = 'Provision FAILED RES-02 (step apply, workspace: /home/app/exovirt/…/RES-02)';
+        $this->assertSame(AuditSeverity::FAILED, AuditSeverity::for('CREATE_VM', [], $legacy));
+
+        // A success line must stay green even though it shares the verb.
+        $this->assertSame(AuditSeverity::SUCCESS, AuditSeverity::for('CREATE_VM', [], 'Provisioned RES-01 (vmid 101)'));
+
+        // The hyphen is a word boundary, so a case-insensitive match would flag this VM's own name.
+        // Matching the caps marker the failure lines actually use keeps it green.
+        $this->assertSame(AuditSeverity::SUCCESS, AuditSeverity::for('CREATE_VM', [], 'Provisioned failed-over-db (vmid 102)'));
+
+        // Metadata outranks prose in both directions.
+        $this->assertSame(AuditSeverity::SUCCESS, AuditSeverity::for('CREATE_VM', ['result' => 'success'], $legacy));
+        $this->assertSame(AuditSeverity::FAILED, AuditSeverity::for('CREATE_VM', ['result' => 'failed'], 'Provisioned RES-01'));
+    }
+
     public function test_severity_is_exposed_on_the_api_payload(): void
     {
         $s = $this->seedScenario(['approval_required' => false]);

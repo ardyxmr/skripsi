@@ -16,6 +16,18 @@ Panduan langkah demi langkah untuk **mengukur data nyata** portal ExoVirt + **sc
 ## 0. Persiapan (sekali di awal)
 
 - **Dokumentasikan lingkungan uji** (untuk reproducibility di Bab IV): provider Proxmox (Jakarta/Lampung), node, spek host (CPU/RAM), template katalog yang dipakai, versi Proxmox VE.
+
+  **✅ TERISI 2026-07-15** (terbaca dari screenshot console manual-9):
+
+  | Item | Nilai | Bukti |
+  |---|---|---|
+  | **Versi Proxmox VE** | **9.1.11** | header GUI |
+  | **Node** | `pve` (Datacenter → pve) | sidebar |
+  | **Template dipakai** | **`rhel10-cloud` (VMID 9003)** | sidebar |
+  | Peta VMID template | 9000 `rocky10-cloud` · 9001 `ubuntu26-cloud` · 9002 `fedora44-cloud` · **9003 `rhel10-cloud`** · 9004 `winserver2022` | sidebar |
+  | Datastore | `local` · `local-lvm` · `vmdata` | sidebar |
+  | VM uji manual | `manual-1`..`manual-10` = **VMID 101–110** | sidebar |
+  | ⬜ Spek host (CPU/RAM) | **belum dicatat** — ambil dari pve → Summary | — |
 - **Kunci variabel kontrol** (WAJIB sama di semua percobaan & di kedua metode):
   - **Template/katalog sama → `RHEL`** (2026-07-14). Rocky dibuang: template Jakarta-nya ter-resize permanen ke 40 GB karena salah sasaran → Insiden #2 §2b. Ubuntu dibuang: *base image* **3584M = 3,5 GiB** → increment jadi **36,5** (pecahan, di kolom yang sudah terbukti menjebak). **RHEL bawaan 10 GB → increment +30 → 40 GB, bulat.**
   - **Tier sama → CPU/RAM/Disk identik.** Dipakai: **Bronze** (`disk_gb` = 40).
@@ -80,16 +92,75 @@ Catat di Bab IV: pengguna biasa **tidak dapat sama sekali** melakukan *provision
 
 ### 1.c Langkah per percobaan — PORTAL
 
+> 🔒 **TITIK MASUK = MENU CATALOG, bukan menu Provisioning** (keputusan 2026-07-15, **sebelum** arm portal diukur).
+> **Alasan utama — `bab3.md:147` sudah mendeskripsikan alurnya:** *"proses provisioning dimulai ketika pengguna **memilih layanan yang tersedia** dan mengisi formulir permintaan mesin virtual"*. Pilih layanan dulu, baru isi formulir. Itu jalur katalog, dan itulah alur pada Gambar 3.3. Mengukur jalur lain = mengukur sesuatu yang tidak pernah dideskripsikan naskah.
+> **Alasan pendukung — padanan struktural dengan manual:** di manual, satu tindakan klik-kanan pada template RHEL sudah sekaligus menentukan image + node + provider; admin tidak memilih node secara terpisah. Jalur katalog bekerja identik.
+>
+> **Yang SEBENARNYA otomatis (dibaca dari kode, jangan dari asumsi):** `Catalog.jsx:93` hanya mengoper `{ catalogId, tierId }`. Blok rekonsiliasi `VmRequest.jsx:118-146` menurunkan sisanya, **tetapi baris 120 menunggu `environmentId` terisi lebih dulu** (perlu allow-list kebijakan environment).
+>
+> | Field | Status di jalur katalog |
+> |---|---|
+> | Environment | ⌨️ **tetap dipilih manual** (rekonsiliasi menunggunya) |
+> | Provider · Node · Catalog · Tier | ✅ otomatis (`VmRequest.jsx:137-144`), **hanya bila kebijakan env mengizinkan** (`providerOk && node`) |
+> | Network · Datastore | ⌨️ **tetap manual** — tidak ada `setNetworkId`/`setDatastoreId` di blok rekonsiliasi |
+> | Nama VM · Jumlah · disk (opsional) | ⌨️ manual |
+>
+> ➡️ Jalur katalog memangkas **4 pemilihan**, bukan seluruhnya.
+>
+> ⚠️ **KESEPULUH TRIAL WAJIB MEMAKAI TITIK MASUK YANG SAMA.** Trial 1–5 lewat katalog lalu 6–10 lewat menu provisioning = jumlah langkah berubah di tengah seri = penyakit yang sama dengan yang membunuh seri Rocky. Pilih satu, umumkan di Bab IV, konsisten sampai trial ke-10.
+>
+> ℹ️ Pilihan ini nyaris tidak mengubah kesimpulan: `t3` mendominasi waktu (selisih `t1` antar-jalur hanya ±20 dtk), dan untuk langkah katalog ≈8 vs menu penuh ≈12, keduanya jauh di bawah manual 23. Yang dibeli di sini adalah **kemampuan bertahan saat diuji**, bukan angka.
+
 1. *Login* ke portal sebagai **User (Requestor)**. **TIDAK dihitung** (waktu maupun langkah) — sama seperti manual, lihat §1.e.
-2. Buka wizard **Request VM** → isi: Environment → Provider → Node → Catalog → Nama VM → Jumlah → Tier → Network → Datastore → halaman **Review** (lihat Total CPU/RAM/Disk) → **Submit**.
+2. Buka menu **Catalog** → klik kartu katalog **RHEL** ⏱️ *(stopwatch `t1` MULAI di sini — setara "klik kanan template" pada manual)* → wizard terbuka → isi: Environment → *(provider/node/catalog/tier terisi otomatis — **verifikasi**, jangan diasumsikan)* → Nama VM → **Jumlah = 1** → Network → Datastore → halaman **Review** (lihat Total CPU/RAM/Disk) → **Submit**.
    - **Hitung jumlah langkah/klik pengguna** dari wizard terbuka sampai Submit.
    - **Catat t1**: stopwatch mulai saat wizard terbuka, stop saat klik Submit.
 3. Admin lakukan **Approve** di menu Approvals. **Hitung langkah admin terpisah**, jangan dicampur ke langkah pengguna.
 4. Tunggu sampai VM berstatus **Active** di **Inventory**.
-5. Ambil **t2** dan **t3** dari **timestamp Audit Trail** (lebih objektif daripada stopwatch):
-   - `t2` = waktu baris `approved` − waktu baris `created/submitted`
-   - `t3` = waktu status `Active` − waktu baris `approved`
-6. Hitung **t1 + t3**. Angka inilah yang masuk uji beda.
+5. Ambil **t2** dari **timestamp Audit Trail**: `t2` = waktu baris **`APPROVE_REQUEST`** − waktu baris **`CREATE_PROVISION_REQUEST`**.
+   - Action `APPROVE_REQUEST` dirakit dinamis di `ApprovalWorkflowService.php:47` (`strtoupper($action).'_REQUEST'`), karena itu tidak muncul saat mencari string literal `'APPROVE_REQUEST'` di kode. **Barisnya ADA** — terbukti pada log prod 2026-07-14: `20:35:01 budi CREATE_PROVISION_REQUEST` → `20:35:21 ani APPROVE_REQUEST` → `20:36:31 budi CREATE_VM`.
+   - ⚠️ Log admin **tanpa** baris `APPROVE_REQUEST` bukan berarti fiturnya tidak ada: admin melewati approval (bypass). Pada arm portal, aktor = **User (Requestor)**, penyetuju = orang lain, jadi barisnya pasti terbit.
+6. **`t3` = (IP muncul di Proxmox Summary) − (timestamp `approved` dari Audit Trail).** Setelah klik Approve, pindah ke Proxmox, tunggu VM barunya muncul, buka **Summary**, hentikan stopwatch saat IP terbaca. **Prosedur dan layarnya sama persis dengan manual.**
+7. Hitung **t1 + t3**. Angka inilah yang masuk uji beda.
+8. Catat juga **selisih `Active` → IP muncul** per trial (deskriptif, lihat kotak di bawah).
+
+> 🚨 **KOREKSI BESAR 2026-07-15 — `Active` BUKAN padanan "IP muncul". Versi lama runbook ini SALAH.**
+> §1.d sebelumnya menyatakan *"IP muncul = padanan persis status `Active` di portal (Terraform selesai, IP diketahui)"*. **Klaim itu keliru dan biasnya menguntungkan portal.**
+>
+> **Bukti di kode:** `ProvisionVmJob.php:122-126` menetapkan `status = 'Active'` **langsung setelah `terraform->apply()` kembali**, dengan `ip_address = $out['default_ipv4'] ?? null`. Komentar di `ProvisionVmJob.php:142-144` mengakuinya: *"Guest-agent IP lag: a fresh clone reports its IP only after it finishes booting, so the sync above **often gets vmid/specs but no IP**"*. Audit `'Provisioned ...'` menyusul di baris 150. → **timestamp `Active` dan timestamp audit sama-sama berarti "Terraform selesai", bukan "VM hidup dan dapat diakses".** IP baru dikejar `SyncVmFactsJob` (tunda 5 dtk, maks 6 × 5 dtk ≈ 30 dtk, lalu diserahkan ke sapuan 30 dtk).
+>
+> **Kenapa fatal:** manual menghentikan stopwatch saat guest sudah boot dan melaporkan IP; portal akan berhenti sebelum guest boot. **Portal berhenti lebih awal → bias searah dengan hipotesis kita.** Jenis kesalahan paling berbahaya.
+>
+> **Jebakan kebalikannya — JANGAN pakai IP yang tampil di Inventory portal:** angka itu memuat tunda 5 dtk buatan + hingga 6 percobaan + polling UI 10 dtk + kemungkinan sapuan 30 dtk. Itu **menghukum portal** dengan latensi pembukuan yang tak ada hubungannya dengan kecepatan provisioning. Dua instrumen portal ini bias ke arah berlawanan; keduanya ditolak.
+>
+> **✅ Aturan yang berlaku: amati peristiwa FISIK yang sama dengan ALAT yang sama di kedua kelompok — IP muncul di Proxmox Summary.** Timestamp `approved` tetap dari audit (tindakan manusia, tercatat seketika, tidak ambigu).
+
+> 📊 **CATAT SEBAGAI TEMUAN: selisih `Active` → IP muncul.** Portal menandai `Active` saat Terraform selesai, padahal VM belum tentu dapat dimasuki. Pengguna yang melihat `Active` lalu langsung SSH akan gagal. Catat selisihnya tiap trial, laporkan **deskriptif** (bukan uji beda). Ini bahan **Bab V**: status `Active` portal bersifat optimistis, dan penyempurnaannya adalah menunda `Active` sampai IP terkonfirmasi.
+
+> ⚠️ **Konsekuensi jujur:** `t3` menjadi lebih besar daripada perkiraan awal, sehingga H1 pada metrik **waktu** makin berat. Itu memang harga dari titik ukur yang benar. Angka yang benar lebih berharga daripada angka yang menang.
+
+> 🔒 **KOLOM "Jumlah" WAJIB = 1 UNTUK KESEPULUH TRIAL H1** (keputusan 2026-07-15, diambil **sebelum** arm portal diukur).
+> Portal memang punya **batch mode** — kolom `instance_count` pada tabel `provision_requests` (default 1, komentar `// batch size`), dibatasi **60** oleh `ProvisionRequestController.php:21` agar sufiks `-0N` muat dalam batas 63 karakter hostname. Manual **tidak punya padanannya**.
+> **Tetap 1-per-1 di H1, alasannya statistik dan mengunci:** Mann-Whitney U menuntut dua sampel independen. Arm manual memberi **10 pengukuran**; satu batch berisi 10 VM hanya menghasilkan **1 peristiwa = 1 pengukuran**. Uji 10 lawan 1 tidak dapat dijalankan. Untuk memperoleh 10 pengukuran portal via batch dibutuhkan **10 batch × 10 VM = 100 VM ≈ 4 TB** — tidak mungkin. Tambahan: satuan `t_manual` = waktu membuat **satu** VM, dan `bab2.md:177` berbunyi *"dalam proses provisioning mesin virtual"* (satuannya proses per VM).
+
+### 1.c-bis BATCH MODE — temuan deskriptif TERPISAH, 🚫 di luar uji beda H1
+
+**Diputuskan 2026-07-15, SEBELUM hasil H1 diketahui.** Pencatatan tanggal ini penting: bila batch baru dimunculkan **setelah** H1-waktu ketahuan gagal, ia terbaca sebagai penyelamatan pasca-fakta dan masuk kategori yang sama dengan menukar pembanding ke VMware (§1.f).
+
+**Kenapa batch JUSTRU lemah bila dipaksa masuk H1:** batch bukan selisih *efisiensi*, melainkan selisih **kemampuan**. Penguji akan berkata *"Anda mengadu satu aksi batch melawan sepuluh aksi manual — itu bukan tugas yang sama"*, dan klaimnya runtuh. Bentuknya identik dengan argumen §1.b (pengguna non-admin tidak bisa provisioning manual sama sekali → waktunya tak terhingga, bukan lambat). Dilaporkan sebagai **temuan deskriptif**, klaimnya tidak dapat dibantah.
+
+**Protokol:** jalankan **SATU** batch **setelah** 10 trial pokok selesai (jangan sebelum — bisa mencemari kapasitas node dan antrean). Ukuran batch menyesuaikan sisa kapasitas (5 atau 10 VM).
+
+| Yang dicatat | Portal (1 batch berisi N VM) | Manual (padanan N VM) |
+|---|---|---|
+| Jumlah langkah | dari wizard terbuka → Submit | **23 × N** |
+| `t1` | wizard terbuka → Submit | — |
+| `t3` | Approve → seluruh N VM `Active` | — |
+| Waktu total N VM | `t1 + t3` | **136,90 × N** (ekstrapolasi, **tandai sebagai ekstrapolasi**) |
+
+**Perkiraan hasil pada N = 10:** langkah manual **230** lawan portal **≈12**. Perbandingan ini sah karena keluarannya sama-sama 10 VM. ⚠️ Untuk kolom waktu manual, **jangan mengaku mengukur** 10 VM manual berturut-turut kalau yang dilakukan hanya mengalikan 136,90 × 10 — tulis tegas "ekstrapolasi dari rata-rata 10 trial".
+
+**Tempat pelaporan:** (1) **§4 black-box bagian C** (Provisioning & Inventaris) — tambahkan skenario "ajukan permintaan batch N VM → N VM ter-provision dengan sufiks `-01`..`-0N`"; (2) **4.6 Pembahasan** sebagai temuan deskriptif menjawab RM1; (3) bahan Bab V *queue scaling* [[next-session-future-work-narrative]].
 
 ### 1.d Langkah per percobaan — MANUAL (Proxmox VE GUI)
 
@@ -131,7 +202,7 @@ Protokol identik, variabel kontrol sama (§0). Aktor = **admin**.
 
 **Aturan titik ukur:**
 - ⏱️ **MULAI** saat klik kanan template. **Login TIDAK dihitung** (waktu maupun langkah) — login itu autentikasi, bukan *provisioning*, dan bentuknya sama di kedua metode. Portal juga mulai setelah login (saat wizard terbuka), jadi ini menjaga kesetaraan.
-- ⏱️ **STOP** saat **IP muncul**, bukan saat tombol Start diklik dan **bukan** setelah putty/ganti password. "IP muncul" = padanan persis status `Active` di portal (Terraform selesai, IP diketahui).
+- ⏱️ **STOP** saat **IP muncul**, bukan saat tombol Start diklik dan **bukan** setelah putty/ganti password. ~~"IP muncul" = padanan persis status `Active` di portal (Terraform selesai, IP diketahui).~~ 🚨 **KOREKSI 2026-07-15: kalimat coret itu SALAH.** `Active` hanya berarti Terraform selesai, dan saat itu VM masih boot serta `ip_address` kerap masih NULL (`ProvisionVmJob.php:122-126` + komentar baris 142-144). Padanan yang benar untuk "IP muncul" pada kelompok portal adalah **"IP muncul di Proxmox Summary"** juga — peristiwa fisik yang sama, layar yang sama, mekanisme guest-agent yang sama. Lihat kotak koreksi di §1.c.
 - **Putty + tes login + ganti password ADA DI LUAR jendela ukur.** Force-change itu bawaan template `sysuser` [[template-account-model]] dan **terjadi di kedua metode** — pengguna portal juga harus reveal password → putty → ganti password. Memasukkannya hanya ke manual = membebani manual dengan pekerjaan yang portal tidak dibebani. Terukur **±45 dtk** (2026-07-14); laporkan **deskriptif** saja, jangan masuk uji beda.
 - Angka ini = **`t_manual`**, langsung masuk uji beda.
 
@@ -139,7 +210,17 @@ Protokol identik, variabel kontrol sama (§0). Aktor = **admin**.
 
 **📊 Trial #1 (2026-07-14, SAH):** `t_manual` = **191 dtk** (3:11) · **23 langkah** · disk 40 GB terverifikasi · 236 dtk (3:56) bila putty+ganti-password ikut dihitung → selisih **45 dtk** = beban *onboarding*, di luar uji.
 
-**Catatan hasil untuk Bab IV (bukan langkah, tapi temuan):** hostname otomatis mengikuti nama VM dan filesystem auto-extend setelah resize. Keduanya kerja **template + cloud-init**, identik di manual maupun portal → **BUKAN keunggulan portal**. Tempatnya di **pengujian fungsional §4** (Tabel 3.3 baris cloud-init hostname/auto-resize), jangan diklaim di efisiensi.
+**Catatan hasil untuk Bab IV (bukan langkah, tapi temuan):** hostname otomatis mengikuti nama VM dan filesystem auto-extend setelah resize. Keduanya kerja **template + cloud-init**, identik di manual maupun portal → **BUKAN keunggulan portal**, jangan diklaim di efisiensi.
+
+**✅ AUTO-EXTEND + HOSTNAME TERVERIFIKASI DARI DALAM VM (2026-07-15, `manual-9` & `manual-10`).** Bukti console:
+- `df -h` → `/dev/sda3  40G  2.4G  38G  6%  /` — **filesystem root benar-benar 40 GB**, bukan hanya disk virtualnya.
+- `lsblk` → `sda 40G disk` · `sda1 1M` · `sda2 200M /boot/efi` · **`sda3 39.8G /`**
+- `hostname` → `manual-9` (= nama VM) · prompt `[sysuser@manual-9 ~]$` (akun `sysuser` berfungsi)
+
+> **Kenapa ini penting dan kenapa tab Hardware saja tidak cukup:** tab Hardware hanya membuktikan **disk virtual** = 40 GB. Bila `growpart`/cloud-init gagal, hasilnya 40 GB teralokasi tapi `/` tetap 10 GB — VM tetap boot, tetap bisa login, **tanpa satu pun tanda kesalahan**. Itu persis pola *drift senyap* yang jadi tema §2b, dan hanya `df -h`/`lsblk` dari dalam guest yang menangkapnya. **Hasilnya: tidak terjadi.** Template 10 GB → +30 → 40 GB, filesystem ikut tumbuh. Parameter ke-6 ini bersih, memperkuat temuan 0 kesalahan seri RHEL.
+
+> 🔧 **KOREKSI RUJUKAN (2026-07-15).** Versi sebelumnya menulis *"Tabel 3.3 baris cloud-init hostname/auto-resize"* — **itu keliru**. Isi `bab3.md` sebenarnya: **Tabel 3.1** Perangkat Keras · **3.2** Perangkat Lunak · **3.3 Analisis PIECES** · **3.4** Variabel Penelitian · **3.5** Jadwal. **Tidak ada tabel skenario pengujian di `bab3.md`.** Skenario black-box berada di file terpisah **`presentation/bab4-blackbox-skenario.md`** (bagian A–G).
+> **Konsekuensi:** hostname-ikut-nama-VM dan filesystem auto-extend **belum punya baris skenario di dokumen mana pun**. Bila hendak diuji, **tambahkan sebagai skenario baru di bagian C (Provisioning & Inventaris)** pada `bab4-blackbox-skenario.md` — diuji pada VM **portal** (black-box menguji sistem yang dibangun). Bukti sisi **manual** hanya diperlukan untuk menopang kalimat kejujuran *"ini perilaku cloud-init, bukan keunggulan portal"*.
 
 ### 1.e Aturan menghitung langkah (kunci SEBELUM trial pertama)
 
@@ -174,21 +255,65 @@ Protokol identik, variabel kontrol sama (§0). Aktor = **admin**.
 **Tabel pencatatan (manual):**
 
 **Template: RHEL** (10 GB → +30 → 40 GB) · reset 2026-07-14 (data Rocky VOID — baseline template berubah, lihat §0)
+**Status: ✅ SERI SELESAI 2026-07-15** (10/10 trial). Kolom waktu terisi dari catatan stopwatch; kolom langkah/disk/putty **masih menunggu konfirmasi** — jangan diisi dengan asumsi.
 
-| Trial | Jumlah langkah | **`t_manual` → uji H1** (dtk)<br>klik-kanan → IP muncul | Disk aktual (verifikasi) | +putty/ganti-pwd (dtk, deskriptif) |
-|------:|---------------:|--------------------------------------:|:---:|---------------------------------:|
-| 1 | | | | |
-| 2 | | | | |
-| … | | | | |
-| 10 | | | | |
-| **Rata-rata** | | | | |
+| Trial | VM (VMID) | Jumlah langkah | **`t_manual` → uji H1** (dtk)<br>klik-kanan → IP muncul | Disk aktual (verifikasi) |
+|------:|---|---------------:|--------------------------------------:|:---:|
+| 1 | manual-1 (101) | 23 | **175** (02:55) | ✅ 40 GB |
+| 2 | manual-2 (102) | 23 | **146** (02:26) | ✅ 40 GB |
+| 3 | manual-3 (103) | 23 | **138** (02:18) | ✅ 40 GB |
+| 4 | manual-4 (104) | 23 | **150** (02:30) | ✅ 40 GB |
+| 5 | manual-5 (105) | 23 | **130** (02:10) | ✅ 40 GB |
+| 6 | manual-6 (106) | 23 | **129** (02:09) | ✅ 40 GB |
+| 7 | manual-7 (107) | 23 | **128** (02:08) | ✅ 40 GB |
+| 8 | manual-8 (108) | 23 | **121** (02:01) | ✅ 40 GB |
+| 9 | manual-9 (109) | 23 | **123** (02:03) | ✅ 40 GB |
+| 10 | manual-10 (110) | 23 | **129** (02:09) | ✅ 40 GB |
+| **Rata-rata** | — | **23** (SD = 0) | **136,90** | **10/10 sesuai** |
+
+> ✅ **ARM MANUAL DITUTUP 2026-07-15.** 10 trial mulus mengikuti lembar hitung §1.d tanpa penyimpangan langkah (dikonfirmasi user). Karena SD = 0, angka 23 dilaporkan sebagai **hitungan deterministik**, bukan variabel yang diuji-beda.
+
+> **Kolom `+putty/ganti-pwd` DIHAPUS (keputusan 2026-07-15).** Alasan: (a) sudah ditetapkan **di luar jendela ukur** dan **tidak pernah masuk uji beda**; (b) **identik di kedua metode** — pengguna portal juga reveal password → putty → ganti password ([[template-account-model]]), jadi tidak menyumbang apa pun ke perbandingan; (c) bukan variabel di `bab3.md` Tabel 3.4 (efisiensi = waktu + langkah). **Tidak perlu diukur ulang di seri RHEL.** Yang dipertahankan hanya **kalimat pertahanannya** di Bab IV: *"Proses putty, uji login, dan penggantian kata sandi paksa berada di luar jendela pengukuran karena merupakan perilaku template `sysuser` yang terjadi identik pada kedua metode (terukur ±45 detik pada pengukuran pendahuluan), sehingga memasukkannya hanya ke salah satu kelompok akan membebani kelompok tersebut secara tidak setara."* Angka ±45 dtk berasal dari seri Rocky dan **hanya boleh disebut sebagai ancar-ancar pendahuluan**, bukan data seri RHEL.
+
+> **Tentang kolom `Jumlah langkah`:** angka ini **deterministik, bukan hasil ukur** — selama prosedurnya mengikuti lembar hitung §1.d, nilainya sama di tiap trial (SD = 0). Karena itu **jumlah langkah TIDAK diuji statistik**; ia dilaporkan sebagai **tabel hitungan** pembanding (manual vs portal), sesuai §5. Kolom per-trial ini hanya untuk mencatat **penyimpangan**: bila ada trial yang meleset dari 23 (salah klik lalu mengulang, dialog nyangkut, balik ke tab sebelumnya), tulis angka sebenarnya di baris itu dan jelaskan sebabnya.
+
+**Ringkasan statistik `t_manual` (n = 10, satuan detik):**
+
+| Statistik | Nilai |
+|---|---:|
+| Mean | 136,90 |
+| Median | 129,50 |
+| SD | 16,35 |
+| CV | 11,94 % |
+| Min – Max | 121 – 175 (rentang 54) |
+| Q1 / Q3 (IQR) | 128,25 / 144,00 (15,75) |
+
+**⚠️ Normalitas — Shapiro-Wilk: W = 0,837 · p = 0,041 → `t_manual` TIDAK normal (p ≤ 0,05).**
+Konsekuensinya sudah diantisipasi desain (`bab3.md` §3.3.5): uji beda H1 memakai jalur **non-parametrik**. ⚠️ **Presisi istilah:** portal dan manual = **dua kelompok independen**, jadi uji yang benar adalah **Mann-Whitney U** (= *Wilcoxon rank-sum*), **BUKAN** *Wilcoxon signed-rank* (itu untuk data berpasangan). Runbook/bab3 yang menulis "Wilcoxon" saja harus dipertegas — ini umpan empuk penguji. Angka Shapiro-Wilk di atas = **pratinjau**; bukti Bab IV tetap ambil dari **output SPSS/Jamovi** (screenshot).
+
+**📉 EFEK BELAJAR — signifikan, dan ini TEMUAN, bukan cacat:**
+
+| Ukuran | Nilai |
+|---|---:|
+| Spearman ρ (urutan trial vs waktu) | **−0,857** (p = 0,0015) |
+| Slope regresi | **−4,41 dtk per trial** |
+| Mean trial 1–5 | 147,80 dtk |
+| Mean trial 6–10 | **126,00 dtk** (−21,80 dtk / −14,7 %) |
+| Trial 1 (175) vs Trial 10 (129) | −46 dtk = **26,3 % lebih cepat** |
+
+Operator makin cepat seiring pengulangan, lalu **mendatar di ~121–130 dtk mulai trial ~5**. Artinya: (a) seri ini mencapai *steady state*, jadi valid secara internal; (b) angka manual ini adalah **kondisi TERBAIK manual** — dikerjakan admin penuh-hak yang juga pengembang sistemnya, setelah 10 kali latihan. Operator baru butuh 175 dtk. Ini memperkuat argumen §1.b, bukan melemahkannya.
+
+> 🚫 **JANGAN buang Trial #1 diam-diam.** Trial #1 (175 dtk) adalah *mild outlier* Tukey (pagar atas = 167,6) dan kalau dibuang datanya jadi normal (W = 0,894 · p = 0,218 · mean 132,67) sehingga "boleh" pakai T-Test. **Itu justru jebakannya.** Membuang data setelah melihat hasilnya, demi lolos uji normalitas, persis yang dicari penguji. Trial #1 adalah pengukuran sah (disk benar, prosedur benar) — satu-satunya "dosanya" adalah operator belum hafal. **Keputusan: pakai 10-10-nya + Mann-Whitney.** Non-parametrik sudah ada di desain sejak awal, jadi tidak butuh pembenaran pasca-fakta, dan median (129,5) tahan outlier.
+
+**🎯 Ambang target H1** (`bab3`: waktu turun ≥ 50 %): portal (`t1+t3`) harus **≤ 68,5 dtk** (basis mean) atau **≤ 64,8 dtk** (basis median).
 
 > ⚠️ **SEPULUH trial WAJIB memakai template yang SAMA.** Baseline berubah di tengah jalan = sepuluh-sepuluhnya hangus. Ini yang membunuh seri Rocky.
 > Trial yang **dibatalkan** (mis. salah *increment* → disk 50 GB) jangan dihapus — pindahkan ke lembar observasi **§2b** sebagai data kesalahan manusia.
 
 **🗑️ Seri Rocky (VOID, disimpan sebagai jejak):** Trial #1 = 191 dtk / 23 langkah / disk 40 GB / Δ45 dtk putty. Angkanya **tidak dipakai** (template Rocky ter-resize permanen di tengah seri → baseline berubah). **Insidennya tetap dipakai** di §2b.
 
-> Kolom **`t1+t3`** (portal) vs kolom **`t_manual`** (manual) adalah dua kelompok yang masuk **Shapiro-Wilk → T-Test/Wilcoxon**. Kolom **t2 tidak ikut**.
+> Kolom **`t1+t3`** (portal) vs kolom **`t_manual`** (manual) adalah dua kelompok yang masuk **Shapiro-Wilk → Independent T-Test / Mann-Whitney U**. Kolom **t2 tidak ikut**.
+> ⚠️ Karena Shapiro-Wilk `t_manual` sudah menolak normalitas (p = 0,041), jalur yang terpakai = **Mann-Whitney U** (*Wilcoxon rank-sum*, dua kelompok **independen**) — **bukan** *Wilcoxon signed-rank* (berpasangan).
 
 **Screenshot bukti yang HARUS diambil:**
 - [ ] Tiap langkah wizard (minimal: halaman Review dengan Total CPU/RAM/Disk)
@@ -197,6 +322,74 @@ Protokol identik, variabel kontrol sama (§0). Aktor = **admin**.
 - [ ] Audit Trail baris `created` → `approved` → `provisioned/Active` (bukti timestamp objektif untuk t2 & t3)
 - [ ] **Manual:** tiap dialog Proxmox (clone, hardware, cloud-init, start) + VM status running
 
+### 1.g Dua jenis bukti — jangan dicampur (ditetapkan 2026-07-15)
+
+Proses pembuatan VM manual **tidak direkam** saat 10 trial berlangsung; yang tersisa hanya VM jadi (`manual-1`..`manual-10`). Itu **tidak menghilangkan bukti apa pun**, asalkan dua kategori ini dibedakan:
+
+| | **Bukti ANTARMUKA** | **Bukti HASIL PENGUKURAN** |
+|---|---|---|
+| Isinya | Bentuk dialog & label alat: dialog Clone, tab Cloud-Init, **dialog Resize berlabel "Size Increment (GiB)"** | Konfigurasi VM aktual, timestamp, disk terverifikasi, tabel waktu |
+| Sifat | **Properti perangkat lunak** — sama kapan pun difoto | **Peristiwa** — terikat pada trial yang benar-benar terjadi |
+| Boleh diambil ulang belakangan? | ✅ **Ya** | 🚫 **Tidak.** Merekonstruksinya = memalsukan data |
+| Status sekarang | ⬜ belum, **bisa diambil kapan saja** | ✅ **utuh** — 10 VM masih hidup, tinggal difoto tab Hardware-nya |
+
+**Aturan caption:** tulis apa adanya — *"Gambar 4.x — Dialog Resize pada Proxmox VE menampilkan label Size Increment (GiB)"*. **JANGAN** menulis *"dokumentasi saat trial #3 berlangsung"* untuk gambar yang diambil belakangan. Yang didokumentasikan adalah **antarmuka**, bukan pengakuan telah merekam proses. Selama caption-nya jujur, tidak ada yang dilanggar.
+
+> ⚠️ **PROSEDUR AMAN mengambil screenshot dialog Resize — baca dulu.** Membuka dialog ini **persis cara Insiden #1 dan #2 terjadi**. Jangan sampai memotret bukti malah melahirkan insiden ketiga.
+> 1. Pakai **`manual-10` (VMID 110)** — VM yang memang akan dihapus. Salah klik = kerugian nol.
+> 2. **JANGAN PERNAH di template.** Cek nama + VMID di panel kiri sebelum menyentuh tab Hardware.
+> 3. Hardware → Hard Disk → Disk Action → Resize → **screenshot** → **Cancel**. Jangan tekan "Resize disk".
+> 4. Dialog Clone: klik-kanan template RHEL → Clone → screenshot → **Cancel** (aman: tidak ada perubahan sampai tombol Clone ditekan).
+> 5. Cloud-Init: buka `manual-10` → tab Cloud-Init. **Lebih baik daripada foto saat pembuatan** — membuktikan kondisi akhir sebenarnya (user, Upgrade packages ter-*uncheck*, IP DHCP).
+
+### 1.f Data pembanding EKSTERNAL — VMware (bank) · 🚫 DI LUAR UJI BEDA
+
+**Sumber:** kerabat peneliti, admin di sebuah bank, mengukur di environment VMware tempatnya bekerja (2026-07-15). **Protokol:** *tanpa template* — native install 1 VM, lalu clone; IP DHCP; tiap hasil clone wajib **set hostname + reset machine-ID** secara manual.
+
+| Trial | mm:ss | Detik | Jenis operasi |
+|------:|:-----:|------:|---|
+| 1 | 18:30 | **1110** | **Native install** (bangun VM sumber — *bukan* provisioning) |
+| 2 | 06:43 | 403 | clone + hostname + reset machine-ID |
+| 3 | 04:46 | 286 | clone + hostname + reset machine-ID |
+| 4 | 04:38 | 278 | clone + hostname + reset machine-ID |
+| 5 | 04:50 | 290 | clone + hostname + reset machine-ID |
+| 6 | 04:52 | 292 | clone + hostname + reset machine-ID |
+| 7 | 04:21 | 261 | clone + hostname + reset machine-ID |
+| 8 | 04:01 | 241 | clone + hostname + reset machine-ID |
+| 9 | 04:03 | 243 | clone + hostname + reset machine-ID |
+| 10 | 04:09 | 249 | clone + hostname + reset machine-ID |
+
+| Kelompok | n | Mean | Median | SD | CV |
+|---|--:|-----:|-------:|---:|---:|
+| Semua-10 (campur install + clone) | 10 | 365,30 | 282,00 | 265,78 | **72,76 %** ⚠️ |
+| **Clone saja (trial 2–10)** | 9 | **282,56** | 278,00 | 49,45 | 17,50 % |
+| Clone mantap (trial 3–10) | 8 | 267,50 | 269,50 | 21,53 | 8,05 % |
+
+> ⚠️ **Trial #1 (1110 dtk) BUKAN kurva belajar — itu operasi yang berbeda jenis.** Native install = biaya membangun *golden image* secara manual (3,9× satu clone), dibayar **sekali**, bukan biaya provisioning per-VM. Mencampurnya ke dalam satu mean menghasilkan CV 72,76 % yang tidak bermakna. Laporkan terpisah.
+
+**🚫 KENAPA DATA INI TIDAK BOLEH MASUK UJI BEDA H1 — enam variabel berbeda:**
+
+| # | Variabel | VMware (bank) | Arm manual penelitian |
+|--:|---|---|---|
+| 1 | **Hypervisor** | VMware | **Proxmox VE** ← `bab2.md:177` mengunci *"antarmuka Proxmox VE bawaan"* |
+| 2 | **Template** | tidak ada | RHEL golden image |
+| 3 | **Operator** | kerabat (admin bank) | peneliti |
+| 4 | **Hardware/host** | env bank, spek tak diketahui | lab Proxmox Jakarta |
+| 5 | **Prosedur** | + set hostname + reset machine-ID | otomatis (cloud-init) |
+| 6 | **OS/datastore/jaringan** | tidak terkontrol | terkunci §0 |
+
+**Alasan #1 sudah menutup perkara sendirian:** H1 yang terdaftar berbunyi *"antara aplikasi yang dikembangkan dan **antarmuka Proxmox VE bawaan**"*. VMware bukan Proxmox VE. Memasukkannya = menguji hipotesis yang tidak pernah dirumuskan. **Perlakuan sama persis dengan data Terraform CLI dari jurnal:** pembanding **deskriptif** di pembahasan, tidak pernah masuk statistik inferensial.
+
+> 🚨 **PERINGATAN INTEGRITAS — baca sebelum tergoda.** Angka VMware (282,56 dtk) hampir **dua kali** arm manual Proxmox (136,90 dtk). Kalau `t1+t3` portal ternyata ~160 dtk, memakai VMware sebagai pembanding membuat H1 **lolos telak**, sedangkan pembanding yang sah bisa **gagal**. Justru karena itulah ia tidak boleh dipakai: **mengganti kelompok pembanding setelah melihat bahwa kelompok yang sah mungkin tidak menguntungkan** adalah pelanggaran metodologi yang jauh lebih fatal daripada hipotesis yang gagal. Hipotesis gagal itu temuan; pembanding yang ditukar itu cacat.
+
+**✅ DI MANA DATA INI JUSTRU BERHARGA (pakai di sini):**
+1. **Triangulasi Bab I.** Survei lapangan mengklaim manual = **5–20 menit/VM** [[proposal-revisi-plan]]. Clone VMware = 282,56 dtk ≈ **4,7 menit**, native install = **18,5 menit**. Rentang 5–20 menit itu kini punya pengukuran independen yang mendukungnya — bukan lagi sekadar estimasi tiket. Ini menambal kritik "angka masalahnya dari mana?".
+2. **Membuktikan arm manual penelitian adalah kondisi TERBAIK manual.** Praktisi sungguhan di env produksi butuh 282 dtk; peneliti di lab terkontrol dengan template butuh 136,90 dtk (**2,06× lebih cepat**). Jadi 136,90 dtk itu *optimistis untuk manual* = **konservatif untuk klaim portal**. Memperkuat §1.b.
+3. **Membenarkan keputusan desain golden image + cloud-init.** 18:30 menguantifikasi biaya tidak punya template; "set hostname + reset machine-ID" menguantifikasi biaya tidak punya cloud-init. ⚠️ Tapi ini perbandingan **rekayasa template**, bukan portal-vs-manual — jangan diklaim sebagai keunggulan portal (lihat catatan §1.d soal hostname/auto-extend).
+4. **Validitas eksternal di pembahasan (RM1).** Temuan tidak terkurung di Proxmox: provisioning manual lambat di env bank ber-VMware juga.
+
+**⚠️ Etika/kerahasiaan sebelum masuk naskah:** data berasal dari environment internal sebuah bank. Sebelum dikutip di Bab IV — pastikan ada **izin**, **anonimkan** nama bank/host/IP/spek, dan jangan lampirkan screenshot env-nya. Cukup tulis sebagai "environment VMware pada sebuah institusi perbankan" + tabel waktu.
+
 ---
 
 ## 2. KONSISTENSI KONFIGURASI  ·  (Hipotesis 2)
@@ -204,21 +397,55 @@ Protokol identik, variabel kontrol sama (§0). Aktor = **admin**.
 **Yang diukur:** % VM yang konfigurasinya **sesuai spec (tanpa *configuration drift*)**.
 **Indikator target (bab3):** kesesuaian 100%.
 
+### 2.0 SPEC ACUAN — tier Bronze (nilai PROD, terkonfirmasi user 2026-07-15)
+
+| Parameter | Nilai spec | Cara verifikasi |
+|---|---|---|
+| **CPU** | **1 vCPU** | Proxmox → VM → Hardware → Processors |
+| **RAM** | **2 GB (2048 MB)** | Proxmox → VM → Hardware → Memory |
+| **Disk** | **40 GB** | Proxmox → VM → Hardware → Hard Disk |
+| **Network** | vmbr0, **IP DHCP** | Hardware → Network Device + Summary (IP) |
+| **Hostname** | **= nama VM** | login/console: `hostname` |
+
+> ⚠️ **Jangan pakai angka seeder.** `backend/database/seeders/DatabaseSeeder.php:49` menulis default `['Bronze', 2, 4096, 40]` = 2 vCPU / 4096 MB. Itu **nilai awal instalasi**, dan tier bisa diedit admin (`TierForm.jsx`). **Prod sudah diubah ke 1 vCPU / 2048 MB / 40 GB** — itulah spec yang mengikat pengukuran ini. Kalau ragu, baca ulang dari Settings → Tier di prod, jangan dari repo.
+
 **Langkah:**
-1. *Provision* **K VM** (mis. 10) via portal dengan **spec identik**.
-2. Untuk tiap VM, periksa konfigurasi **aktual** (CPU, RAM, Disk, Network, status *hardening*) di **Proxmox** (tab Hardware) atau **detail Inventory**.
-3. Cocokkan ke **checklist spec**. Tandai Sesuai / Tidak per parameter.
+1. *Provision* **K VM** (mis. 10) via portal dengan **spec identik** (Bronze + RHEL).
+2. Untuk tiap VM, periksa konfigurasi **aktual** (CPU, RAM, Disk, Network/IP, Hostname) di **Proxmox** (tab Hardware) atau **detail Inventory**.
+3. Cocokkan ke **checklist spec §2.0**. Tandai Sesuai / Tidak per parameter.
 
-**Tabel checklist:**
+**Tabel checklist (isi untuk KEDUA kelompok — manual & portal):**
 
-| VM | CPU | RAM | Disk | Network | Hardening | Sesuai spec? |
-|----|:---:|:---:|:----:|:-------:|:---------:|:------------:|
-| UJI-01 | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+**Kelompok MANUAL — ✅ TERISI 2026-07-15** (Proxmox GUI, template RHEL, tier Bronze, VMID 101–110)
+
+| VM (VMID) | CPU (1) | RAM (2 GB) | Disk (40 GB) | Network/IP (DHCP) | Hostname (= nama VM) | Sesuai spec? |
+|----|:---:|:---:|:----:|:-------:|:---:|:------------:|
+| manual-1 (101) | ✓ | ✓ | ✓ | ✓ 192.168.200.82 | ✓ | ✅ |
+| manual-2 (102) | ✓ | ✓ | ✓ | ✓ 192.168.200.84 | ✓ | ✅ |
+| manual-3 (103) | ✓ | ✓ | ✓ | ✓ 192.168.200.85 | ✓ | ✅ |
+| manual-4 (104) | ✓ | ✓ | ✓ | ✓ 192.168.200.86 | ✓ | ✅ |
+| manual-5 (105) | ✓ | ✓ | ✓ | ✓ 192.168.200.87 | ✓ | ✅ |
+| manual-6 (106) | ✓ | ✓ | ✓ | ✓ 192.168.200.88 | ✓ | ✅ |
+| manual-7 (107) | ✓ | ✓ | ✓ | ✓ 192.168.200.89 | ✓ | ✅ |
+| manual-8 (108) | ✓ | ✓ | ✓ | ✓ 192.168.200.90 | ✓ | ✅ |
+| manual-9 (109) | ✓ | ✓ | ✓ | ✓ 192.168.200.91 | ✓ | ✅ |
+| manual-10 (110) | ✓ | ✓ | ✓ | ✓ 192.168.200.92 | ✓ | ✅ |
+| **% Sesuai** | **100%** | **100%** | **100%** | **100%** | **100%** | **100% (10/10)** |
+
+**Kelompok PORTAL — ⬜ belum diukur**
+
+| VM (VMID) | CPU (1) | RAM (2 GB) | Disk (40 GB) | Network/IP (DHCP) | Hostname (= nama VM) | Sesuai spec? |
+|----|:---:|:---:|:----:|:-------:|:---:|:------------:|
 | … | | | | | | |
 | **% Sesuai** | | | | | | |
 
+> 🚫 **Kolom "Hardening" DIHAPUS dari checklist H2 — ini akan jadi kesalahan faktual.** `backend/app/Jobs/ProvisionVmJob.php:97-99` menyatakan tegas: *"Hardening is no longer a provision-time choice (Stage 8): it's an on-demand, catalog-bound Inventory action. **A new VM starts un-hardened**"* → VM portal lahir dengan `hardening_status = 'Not Hardened'`. Jadi di titik ukur, **VM portal dan VM manual sama-sama belum di-harden**. Mengisi "portal ✓ / manual ✗" = **salah fakta** dan menggelembungkan H2 secara tidak sah. Hardening = aksi Inventory terpisah, di luar ruang lingkup H1 maupun H2. **Efek samping baiknya: `t3` tidak mengandung waktu hardening → perbandingan H1 tetap apple-to-apple.**
+
+> ⚠️ **Ekspektasi jujur untuk H2 — baca sebelum kecewa.** Karena variabel kontrol §0 mengharuskan **template RHEL sudah disetel ke spek Bronze**, arm manual **mewarisi** CPU/RAM/Network dari template tanpa satu pun langkah manual → baris CPU/RAM/Network hampir pasti **100% di KEDUA kelompok**. Satu-satunya parameter yang benar-benar bisa *drift* di manual adalah **Disk**, karena hanya di situ ada field yang diisi tangan (*increment*). Artinya H2 berpeluang menunjukkan **tidak ada beda signifikan** — dan itu **temuan yang sah, bukan kegagalan**. Konsekuensi ini lahir dari keputusan kontrol kita sendiri, jadi **deklarasikan di Bab IV**: permukaan kesalahan manual sudah dipersempit oleh desain eksperimen (template pre-Bronze), sehingga H2 mengukur sisa permukaan yang tinggal satu kolom. Argumen sesungguhnya ada di **§2b Lapis 3**, bukan di persentase H2.
+
 **Screenshot bukti:**
 - [ ] Konfigurasi aktual tiap VM (Proxmox Hardware / detail Inventory)
+- [ ] Settings → Tier (prod) memperlihatkan Bronze = 1 vCPU / 2 GB / 40 GB (bukti spec acuan)
 - [ ] Tabel checklist terisi
 - [ ] (Pembanding) contoh VM manual yang *drift* bila ada
 
@@ -238,10 +465,25 @@ Parameter yang dicek per trial: **CPU · RAM · Disk · Network/IP · Hostname �
 
 | Trial | Metode | Parameter menyimpang | Jml kesalahan | Terdeteksi otomatis? | Ketahuan lewat | Radius |
 |------:|--------|----------------------|--------------:|:--------------------:|----------------|--------|
-| Rocky #1 | Manual | Disk 50 GB (spec 40 GB) | 1 | ❌ tidak | pemeriksaan tab Hardware | 1 VM |
-| Rocky #2 | Manual | **Disk TEMPLATE** 10→40 GB (salah sasaran) | 1 | ❌ tidak | disadari sendiri | **semua VM turunan, permanen** |
-| … | | | | | | |
-| | | **Total / rata-rata** | | | | |
+| *Rocky #1* ⚠️ | Manual | Disk 50 GB (spec 40 GB) | 1 | ❌ tidak | pemeriksaan tab Hardware | 1 VM |
+| *Rocky #2* ⚠️ | Manual | **Disk TEMPLATE** 10→40 GB (salah sasaran) | 1 | ❌ tidak | disadari sendiri | **semua VM turunan, permanen** |
+| RHEL #1 (manual-1) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #2 (manual-2) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #3 (manual-3) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #4 (manual-4) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #5 (manual-5) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #6 (manual-6) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #7 (manual-7) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #8 (manual-8) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #9 (manual-9) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| RHEL #10 (manual-10) | Manual | — | **0** | — | verifikasi 5 parameter | — |
+| | | **Total seri RHEL (n=10)** | **0** | | 50/50 parameter sesuai | |
+
+> **Baca tabel ini dengan benar.** Dua baris *Rocky* (miring) berasal dari **seri yang dibatalkan** — insidennya nyata dan tetap dilaporkan sebagai **Lapis 1 (narasi)**, tetapi **tidak boleh dijumlahkan** ke dalam *error rate* seri RHEL, karena seri Rocky bukan bagian dari 10 trial yang diukur. Menggabungkannya = melaporkan 2 kesalahan dari "12 trial" yang tidak pernah ada.
+>
+> **Hasil terukur seri RHEL = 0 kesalahan dari 10 trial (50/50 parameter sesuai spec). Ditulis 0, sesuai Lapis 2.** Nol tetap temuan.
+>
+> ⚠️ **Bias yang WAJIB disebut sebagai keterbatasan** (Lapis 2 sudah mengamanatkannya): angka 0 ini diperoleh **setelah** peneliti mengalami Insiden #1 dan #2, sehingga ia sudah hafal persis letak jebakannya (kolom *increment*, dan bahaya salah sasaran template). Operator yang belum pernah tertipu tidak berada pada kondisi yang sama. **Jadi 0 di sini bukan bukti "manual itu aman"** — ia bukti "manual bisa aman **bila** operatornya sudah pernah gagal dan ingat pelajarannya". Kondisi itu tidak dapat diasumsikan berlaku di organisasi dengan 120 tiket / 2 bulan / 2 admin.
 
 ### Tiga lapis pelaporan (JANGAN dilanggar)
 

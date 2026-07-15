@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Audit;
 
+use App\Jobs\DestroyVmJob;
 use App\Models\ApprovalRequest;
 use App\Models\AuditLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\BuildsInfra;
@@ -150,6 +152,81 @@ class AuditTrailTest extends TestCase
 
         $row = AuditLog::where('action_type', 'APPROVE_REQUEST')->sole();
         $this->assertStringContainsString('capacity confirmed', $row->description);
+
+        // The line must name its subject: "PROVISION #16" alone forces the reader into another table.
+        $this->assertStringContainsString('test-vm', $row->description);
+        $this->assertStringContainsString("#{$id}", $row->description);
+
+        // Metadata keys mirror the ones AuditController filters on, so approvals are reachable by the
+        // same per-environment/per-resource filters as every other action.
+        $this->assertSame('test-vm', $row->metadata['vm_name']);
+        $this->assertSame($s['environment']->id, $row->metadata['environment_id']);
+        $this->assertSame('PROVISION', $row->metadata['request_type']);
+        $this->assertSame($id, $row->metadata['reference_id']);
+        $this->assertSame('Approve', $row->metadata['action']);
+        $this->assertSame('Approved', $row->metadata['outcome']);
+    }
+
+    /**
+     * The same naming applies to a live-asset request (RESIZE/DESTROY/RENEWAL/PERMANENT/ADD_DISK),
+     * where the subject comes from Inventory rather than ProvisionRequest.
+     */
+    public function test_lifecycle_approval_names_the_vm_and_carries_inventory_metadata(): void
+    {
+        $s = $this->seedScenario(['approval_required' => true]);
+        $owner = $this->regularUser();
+        $vm = $this->inventoryVm($owner, $s);
+
+        Sanctum::actingAs($owner);
+        $this->postJson("/api/inventory/{$vm->id}/resize", ['vm_name_confirmation' => $vm->vm_name, 'cpu' => 4])->assertStatus(202);
+        $approval = ApprovalRequest::where('request_type', 'RESIZE')->where('reference_id', $vm->id)->sole();
+
+        Sanctum::actingAs($this->manager());
+        $this->postJson("/api/approvals/{$approval->id}/approve", ['action_reason' => 'kapasitas cukup'])->assertOk();
+
+        $row = AuditLog::where('action_type', 'APPROVE_REQUEST')->sole();
+        $this->assertStringContainsString($vm->vm_name, $row->description);
+        $this->assertSame($vm->vm_name, $row->metadata['vm_name']);
+        $this->assertSame($vm->id, $row->metadata['inventory_id']);
+        $this->assertSame('RESIZE', $row->metadata['request_type']);
+    }
+
+    /**
+     * Provisioning is the reference: CREATE_VM is logged against $pr->requester. A lifecycle
+     * execution must follow it, or the same event lands on opposite people depending on the path.
+     */
+    public function test_approved_lifecycle_execution_is_attributed_to_the_requester_not_the_approver(): void
+    {
+        $s = $this->seedScenario(['approval_required' => true]);
+        $owner = $this->regularUser();
+        $vm = $this->inventoryVm($owner, $s);
+
+        Sanctum::actingAs($owner);
+        $this->postJson("/api/inventory/{$vm->id}/delete", ['vm_name_confirmation' => $vm->vm_name])->assertStatus(202);
+        $approval = ApprovalRequest::where('request_type', 'DESTROY')->where('reference_id', $vm->id)->sole();
+
+        $manager = $this->manager();
+        Sanctum::actingAs($manager);
+        $this->postJson("/api/approvals/{$approval->id}/approve", ['action_reason' => 'go'])->assertOk();
+
+        // The approver owns the decision entry...
+        $this->assertSame($manager->id, AuditLog::where('action_type', 'APPROVE_REQUEST')->sole()->user_id);
+        // ...but the destroy job must carry the requester.
+        Bus::assertDispatched(DestroyVmJob::class, fn ($job) => $job->actorId === $owner->id);
+    }
+
+    public function test_audit_created_at_serialises_with_a_timezone_so_the_ui_can_convert(): void
+    {
+        $s = $this->seedScenario(['approval_required' => false]);
+        Sanctum::actingAs($this->regularUser());
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s))->assertCreated();
+
+        $row = AuditLog::where('action_type', 'CREATE_PROVISION_REQUEST')->sole();
+
+        // Without the datetime cast this is a naive string and the frontend's new Date() reads it as
+        // browser-local, rendering stored digits as if they were WIB (the -7h prod audit bug).
+        $this->assertInstanceOf(Carbon::class, $row->created_at);
+        $this->assertMatchesRegularExpression('/(Z|[+-]\d{2}:?\d{2})$/', $row->toArray()['created_at']);
     }
 
     public function test_renewal_writes_vm_renewed_with_inventory_metadata(): void

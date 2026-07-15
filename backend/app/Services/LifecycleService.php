@@ -70,7 +70,12 @@ class LifecycleService
     {
         $vm = Inventory::find($a->reference_id);
         if ($vm) {
-            $this->applyChange($vm, $a->request_type, $a->payload ?? [], $a->approver ?? $a->requester);
+            // The execution is attributed to the REQUESTER, matching ProvisionVmJob (which logs
+            // CREATE_VM against $pr->requester). Crediting the approver here would have the same
+            // event attributed to opposite people depending on the path, and would read as "the
+            // manager destroyed a VM they never asked for". The approver's role is already recorded
+            // in full by the APPROVE_REQUEST entry, so nothing is lost.
+            $this->applyChange($vm, $a->request_type, $a->payload ?? [], $a->requester);
         }
     }
 

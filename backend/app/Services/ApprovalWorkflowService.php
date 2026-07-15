@@ -20,7 +20,12 @@ class ApprovalWorkflowService
 
     public function __construct(private AuditService $audit) {}
 
-    public function act(ApprovalRequest $approval, User $actor, string $action, ?string $reason): ApprovalRequest
+    /**
+     * @param  array<string,mixed>  $context  Subject details the caller already loaded (vm_name,
+     *                                        environment_id, inventory_id). Passed in rather than
+     *                                        looked up here so this service stays request-type agnostic.
+     */
+    public function act(ApprovalRequest $approval, User $actor, string $action, ?string $reason, array $context = []): ApprovalRequest
     {
         $reason = trim((string) $reason);
         if ($reason === '') {
@@ -44,7 +49,27 @@ class ApprovalWorkflowService
             'approver_id' => $actor->id,
         ]);
 
-        $this->audit->log($actor, strtoupper($action).'_REQUEST', "{$action} {$approval->request_type} #{$approval->reference_id}: {$reason}");
+        // reference_id alone ("PROVISION #16") is unreadable without opening another table, so name
+        // the subject when the caller knows it. Metadata keys mirror the ones AuditController already
+        // filters on (environment_id / inventory_id) — a new key would be invisible to those filters.
+        $subject = $context['vm_name'] ?? null;
+        $label = $subject
+            ? "{$approval->request_type} {$subject} (#{$approval->reference_id})"
+            : "{$approval->request_type} #{$approval->reference_id}";
+
+        $this->audit->log($actor, strtoupper($action).'_REQUEST', "{$action} {$label}: {$reason}", null,
+            array_filter([
+                'approval_id' => $approval->id,
+                'request_type' => $approval->request_type,
+                'reference_id' => $approval->reference_id,
+                'vm_name' => $subject,
+                'environment_id' => $context['environment_id'] ?? null,
+                'inventory_id' => $context['inventory_id'] ?? null,
+                'action' => $action,
+                'outcome' => self::OUTCOME[$action],
+                'requester_id' => $approval->requester_id,
+            ], fn ($v) => $v !== null),
+        );
 
         return $approval;
     }

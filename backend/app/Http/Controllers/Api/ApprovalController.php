@@ -110,7 +110,13 @@ class ApprovalController extends Controller
             }
         }
 
-        $this->workflow->act($approval, $request->user(), $action, $reason);
+        // $provision/$inventory are already loaded above — pass the subject through so the audit line
+        // names the VM instead of just "#{reference_id}".
+        $this->workflow->act($approval, $request->user(), $action, $reason, [
+            'vm_name' => $provision?->vm_name ?? $inventory?->vm_name,
+            'environment_id' => $provision?->environment_id ?? $inventory?->environment_id,
+            'inventory_id' => $inventory?->id,
+        ]);
 
         // Approving a request applies it: PROVISION → per-VM jobs (Stage 6); lifecycle → LifecycleService (Stage 7).
         if ($action === 'Approve') {

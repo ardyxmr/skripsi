@@ -44,12 +44,12 @@ class AuditController extends Controller
 
         return response()->streamDownload(function () use ($query) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['ID', 'Timestamp', 'User', 'Action', 'Description', 'IP Address', 'Metadata']);
+            fputcsv($out, ['ID', 'Timestamp', 'User', 'Action', 'Severity', 'Description', 'IP Address', 'Metadata']);
             foreach ($query->cursor() as $r) {
                 // created_at is a Carbon now (AuditLog cast) — pin it to WIB so the CSV matches what
                 // the UI shows, instead of dumping whatever zone the column was written in.
                 fputcsv($out, [$r->id, $r->created_at?->setTimezone('Asia/Jakarta')->format('Y-m-d H:i:s'),
-                    $r->user_name, $r->action_type, $r->description, $r->ip_address,
+                    $r->user_name, $r->action_type, $r->severity, $r->description, $r->ip_address,
                     $r->metadata ? json_encode($r->metadata) : '']);
             }
             fclose($out);

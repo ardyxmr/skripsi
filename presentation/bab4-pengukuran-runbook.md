@@ -120,7 +120,21 @@ Catat di Bab IV: pengguna biasa **tidak dapat sama sekali** melakukan *provision
 5. Ambil **t2** dari **timestamp Audit Trail**: `t2` = waktu baris **`APPROVE_REQUEST`** − waktu baris **`CREATE_PROVISION_REQUEST`**.
    - Action `APPROVE_REQUEST` dirakit dinamis di `ApprovalWorkflowService.php:47` (`strtoupper($action).'_REQUEST'`), karena itu tidak muncul saat mencari string literal `'APPROVE_REQUEST'` di kode. **Barisnya ADA** — terbukti pada log prod 2026-07-14: `20:35:01 budi CREATE_PROVISION_REQUEST` → `20:35:21 ani APPROVE_REQUEST` → `20:36:31 budi CREATE_VM`.
    - ⚠️ Log admin **tanpa** baris `APPROVE_REQUEST` bukan berarti fiturnya tidak ada: admin melewati approval (bypass). Pada arm portal, aktor = **User (Requestor)**, penyetuju = orang lain, jadi barisnya pasti terbit.
-6. **`t3` = (IP muncul di Proxmox Summary) − (timestamp `approved` dari Audit Trail).** Setelah klik Approve, pindah ke Proxmox, tunggu VM barunya muncul, buka **Summary**, hentikan stopwatch saat IP terbaca. **Prosedur dan layarnya sama persis dengan manual.**
+6. **`t3` = stopwatch dari klik Approve sampai IP muncul di Proxmox Summary.** Setelah klik Approve, pindah ke Proxmox, tunggu VM barunya muncul, buka **Summary**, hentikan stopwatch saat IP terbaca. **Prosedur dan layarnya sama persis dengan manual.**
+   - **Pakai stopwatch, JANGAN mengurangkan timestamp audit.** Versi sebelumnya menulis `t3` = (IP muncul) − (timestamp `APPROVE_REQUEST`), yang memaksa pencatatan **jam dinding** saat IP muncul — merepotkan bila diulang 10×. Selisih antara klik Approve dan baris audit hanya latensi jaringan (milidetik), tidak berarti. **Bonusnya: `t3` jadi diukur dengan alat yang sama seperti `t_manual`** — stopwatch dan mata — bukan campuran stopwatch dan timestamp server.
+   - Audit tetap dipakai untuk **`t2`**, dan itu tepat: `t2` murni waktu tunggu manusia dan toh dikeluarkan dari uji beda.
+
+**📺 Pembagian layar (arm portal memakai DUA layar — ini disengaja):**
+
+| Segmen | Diukur di | Cara |
+|---|---|---|
+| `t1` | **ExoVirt** saja | stopwatch: klik kartu katalog → klik Submit |
+| `t2` | **Audit Trail ExoVirt** | `APPROVE_REQUEST` − `CREATE_PROVISION_REQUEST` |
+| `t3` | mulai ExoVirt, **berhenti di Proxmox** | stopwatch: klik Approve → IP muncul di Proxmox Summary |
+
+Proxmox dipakai **hanya untuk titik berhentinya**, justru supaya identik dengan kelompok manual (yang juga berhenti saat IP muncul di layar Proxmox). Layar sama, mekanisme guest-agent sama, lag sama.
+
+> 🚫 **DUA sumber waktu portal yang DITOLAK, keduanya bias tapi berlawanan arah:** (a) status **`Active` di Inventory ExoVirt** — menyala saat `terraform apply` selesai padahal guest masih boot → berhenti terlalu awal, **menguntungkan portal**; (b) **IP yang tampil di Inventory ExoVirt** — memuat tunda 5 dtk buatan + hingga 6 percobaan `SyncVmFactsJob` + polling UI 10 dtk + kemungkinan sapuan 30 dtk → **menghukum portal** dengan latensi pembukuan murni. Titik berhenti yang sah hanya **Proxmox Summary**, sama seperti manual.
 7. Hitung **t1 + t3**. Angka inilah yang masuk uji beda.
 8. Catat juga **selisih `Active` → IP muncul** per trial (deskriptif, lihat kotak di bawah).
 

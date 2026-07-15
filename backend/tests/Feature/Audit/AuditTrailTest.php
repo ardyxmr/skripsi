@@ -5,6 +5,7 @@ namespace Tests\Feature\Audit;
 use App\Jobs\DestroyVmJob;
 use App\Models\ApprovalRequest;
 use App\Models\AuditLog;
+use App\Services\AuditSeverity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
@@ -213,6 +214,74 @@ class AuditTrailTest extends TestCase
         $this->assertSame($manager->id, AuditLog::where('action_type', 'APPROVE_REQUEST')->sole()->user_id);
         // ...but the destroy job must carry the requester.
         Bus::assertDispatched(DestroyVmJob::class, fn ($job) => $job->actorId === $owner->id);
+    }
+
+    public function test_batch_approval_states_how_many_machines_it_commits_to(): void
+    {
+        $s = $this->seedScenario(['approval_required' => true]);
+        Sanctum::actingAs($this->regularUser());
+        $id = $this->postJson('/api/provision-requests', $this->provisionPayload($s, ['instance_count' => 3]))->json('id');
+        $approval = ApprovalRequest::where('reference_id', $id)->where('request_type', 'PROVISION')->sole();
+
+        Sanctum::actingAs($this->manager());
+        $this->postJson("/api/approvals/{$approval->id}/approve", ['action_reason' => 'go'])->assertOk();
+
+        $row = AuditLog::where('action_type', 'APPROVE_REQUEST')->sole();
+        $this->assertStringContainsString('3× test-vm', $row->description);
+        $this->assertSame(3, $row->metadata['instance_count']);
+        // vm_name stays the bare name so the metadata filters still match on it.
+        $this->assertSame('test-vm', $row->metadata['vm_name']);
+    }
+
+    /**
+     * Severity spans two axes: an operation is SUCCESS/FAILED, an observed health state is
+     * HEALTHY/WARNING/CRITICAL. Calling a downed provider "FAILED" claims an operation broke when
+     * nothing was attempted; calling a threshold "SUCCESS" hides it entirely.
+     */
+    public function test_severity_separates_operations_from_health_states(): void
+    {
+        $cases = [
+            // The verb says CREATE_VM either way — only metadata knows which one failed.
+            'failed provision must not read green' => ['CREATE_VM', ['result' => 'failed'], AuditSeverity::FAILED],
+            'successful provision' => ['CREATE_VM', ['result' => 'success'], AuditSeverity::SUCCESS],
+            'destroy failure' => ['DELETE_VM', ['result' => 'failed'], AuditSeverity::FAILED],
+
+            // Health states, not operations.
+            'disconnected provider is critical, not failed' => ['PROVIDER_DISCONNECTED', [], AuditSeverity::CRITICAL],
+            'reconnected provider is healthy' => ['PROVIDER_RECONNECTED', [], AuditSeverity::HEALTHY],
+            'missing vm is critical' => ['VM_MISSING', [], AuditSeverity::CRITICAL],
+            'expiring vm warns' => ['VM_EXPIRED', [], AuditSeverity::WARNING],
+            'grace period warns' => ['VM_GRACE_PERIOD', [], AuditSeverity::WARNING],
+
+            // The breach already records which band it crossed — read it, don't guess.
+            'capacity warning band' => ['NODE_CAPACITY_BREACH', ['band' => 'warning'], AuditSeverity::WARNING],
+            'capacity critical band' => ['NODE_CAPACITY_BREACH', ['band' => 'critical'], AuditSeverity::CRITICAL],
+            'capacity recovered' => ['NODE_CAPACITY_RECOVERED', ['band' => 'ok'], AuditSeverity::HEALTHY],
+
+            // Attempted operations that did not complete.
+            'login failure' => ['LOGIN_FAILED', [], AuditSeverity::FAILED],
+            'blocked approve' => ['PROVISION_BLOCKED', [], AuditSeverity::FAILED],
+            'discovery failure' => ['DISCOVERY_FAILED', [], AuditSeverity::FAILED],
+
+            // Neither axis: the portal never initiated it and cannot judge it.
+            'out-of-band shutdown' => ['POWER_OFF', [], AuditSeverity::UNKNOWN],
+
+            'plain operation' => ['LOGIN', [], AuditSeverity::SUCCESS],
+        ];
+
+        foreach ($cases as $label => [$action, $metadata, $expected]) {
+            $this->assertSame($expected, AuditSeverity::for($action, $metadata), $label);
+        }
+    }
+
+    public function test_severity_is_exposed_on_the_api_payload(): void
+    {
+        $s = $this->seedScenario(['approval_required' => false]);
+        Sanctum::actingAs($this->regularUser());
+        $this->postJson('/api/provision-requests', $this->provisionPayload($s))->assertCreated();
+
+        $row = AuditLog::where('action_type', 'CREATE_PROVISION_REQUEST')->sole();
+        $this->assertSame(AuditSeverity::SUCCESS, $row->toArray()['severity']);
     }
 
     public function test_audit_created_at_serialises_with_a_timezone_so_the_ui_can_convert(): void

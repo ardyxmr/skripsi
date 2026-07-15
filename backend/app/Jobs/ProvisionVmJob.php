@@ -111,7 +111,10 @@ class ProvisionVmJob implements ShouldQueue
                 'status' => 'Failed',
                 'error_message' => Str::limit("[{$result['step']}] ".$result['output'], 2000),
             ]);
-            $audit->log($pr->requester, 'CREATE_VM', "Provision FAILED {$this->vmName} (step {$result['step']}, workspace: {$work['path']})");
+            // metadata.result is what tells the trail this CREATE_VM row is a failure — the action
+            // verb alone reads as a success. Without it the row renders green (see AuditSeverity).
+            $audit->log($pr->requester, 'CREATE_VM', "Provision FAILED {$this->vmName} (step {$result['step']}, workspace: {$work['path']})",
+                null, $inv->auditMeta(['result' => 'failed', 'step' => $result['step']]));
 
             return;
         }
@@ -147,6 +150,7 @@ class ProvisionVmJob implements ShouldQueue
             }
         }
 
-        $audit->log($pr->requester, 'CREATE_VM', "Provisioned {$this->vmName} (vmid {$vmid}, workspace: {$work['path']})");
+        $audit->log($pr->requester, 'CREATE_VM', "Provisioned {$this->vmName} (vmid {$vmid}, workspace: {$work['path']})",
+            null, $inv->fresh()->auditMeta(['result' => 'success']));
     }
 }

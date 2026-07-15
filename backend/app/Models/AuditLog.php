@@ -2,12 +2,17 @@
 
 namespace App\Models;
 
+use App\Services\AuditSeverity;
 use Illuminate\Database\Eloquent\Model;
 
 class AuditLog extends Model
 {
     // Append-only: only created_at (set explicitly by AuditService in app tz), no updated_at.
     public $timestamps = false;
+
+    // Resolved on read (see AuditSeverity) rather than stored, so old rows get the right badge
+    // without a backfill — which an append-only trail must never have.
+    protected $appends = ['severity'];
 
     protected $fillable = [
         'user_id', 'user_name', 'action_type', 'description', 'ip_address', 'metadata', 'created_at',
@@ -24,4 +29,9 @@ class AuditLog extends Model
         'metadata' => 'array',
         'created_at' => 'datetime',
     ];
+
+    public function getSeverityAttribute(): string
+    {
+        return AuditSeverity::for($this->action_type, $this->metadata ?? []);
+    }
 }

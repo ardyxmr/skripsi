@@ -52,7 +52,11 @@ class ApprovalWorkflowService
         // reference_id alone ("PROVISION #16") is unreadable without opening another table, so name
         // the subject when the caller knows it. Metadata keys mirror the ones AuditController already
         // filters on (environment_id / inventory_id) — a new key would be invisible to those filters.
+        // A batch approval commits the approver to N machines, so say N — mirroring the requester's
+        // own line ("Requested 2× RES in …", ProvisionRequestService). Singular stays unprefixed.
         $subject = $context['vm_name'] ?? null;
+        $count = (int) ($context['instance_count'] ?? 1);
+        $subject = $subject !== null && $count > 1 ? "{$count}× {$subject}" : $subject;
         $label = $subject
             ? "{$approval->request_type} {$subject} (#{$approval->reference_id})"
             : "{$approval->request_type} #{$approval->reference_id}";
@@ -62,7 +66,8 @@ class ApprovalWorkflowService
                 'approval_id' => $approval->id,
                 'request_type' => $approval->request_type,
                 'reference_id' => $approval->reference_id,
-                'vm_name' => $subject,
+                'vm_name' => $context['vm_name'] ?? null,
+                'instance_count' => $context['instance_count'] ?? null,
                 'environment_id' => $context['environment_id'] ?? null,
                 'inventory_id' => $context['inventory_id'] ?? null,
                 'action' => $action,

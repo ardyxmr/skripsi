@@ -114,6 +114,7 @@ class ApprovalController extends Controller
         // names the VM instead of just "#{reference_id}".
         $this->workflow->act($approval, $request->user(), $action, $reason, [
             'vm_name' => $provision?->vm_name ?? $inventory?->vm_name,
+            'instance_count' => $provision?->instance_count,
             'environment_id' => $provision?->environment_id ?? $inventory?->environment_id,
             'inventory_id' => $inventory?->id,
         ]);

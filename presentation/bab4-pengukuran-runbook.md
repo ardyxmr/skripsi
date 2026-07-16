@@ -82,9 +82,18 @@ H1 di `bab2.md` membandingkan **antarmuka aplikasi vs antarmuka Proxmox VE bawaa
 | Arm | Aktor | Alasan |
 |---|---|---|
 | **Portal** | **User (Requestor)** biasa, admin hanya meng-*approve* | sesuai klaim *self-service*; ini pengguna paling awam |
-| **Manual** | **Admin** ber-hak-akses penuh di Proxmox GUI | di alur manual **hanya** admin yang bisa; ini skenario **terbaik** manual |
+| **Manual** | **Admin** ber-hak-akses penuh di Proxmox GUI | di praktik organisasi, alur manual **hanya dijalankan** admin; ini skenario **terbaik** manual |
 
-Catat di Bab IV: pengguna biasa **tidak dapat sama sekali** melakukan *provisioning* manual karena tidak punya hak akses Proxmox, sehingga waktunya bukan lambat melainkan **tak terhingga**. Portal membuat tugas itu menjadi mungkin. Mengadu portal-pengguna-awam melawan manual-admin-ahli berarti pengujian sudah dicondongkan ke pihak manual, dan itu memperkuat kesimpulan.
+Catat di Bab IV: dalam praktik organisasi, pengguna biasa **tidak diberi** hak akses Proxmox sehingga tidak dapat melakukan *provisioning* manual — ia mengajukan tiket dan menunggu (`bab1.md:33,43`). Portal membuat tugas itu dapat dikerjakan sendiri. Mengadu portal-pengguna-awam melawan manual-admin-ahli berarti pengujian sudah dicondongkan ke pihak manual, dan itu memperkuat kesimpulan.
+
+> 🔧 **KOREKSI PENTING 2026-07-16 — kalimat lama di sini SALAH dan bertabrakan dengan setup H3.**
+> Versi sebelumnya menulis pengguna biasa *"**tidak dapat sama sekali** melakukan provisioning manual"* dan waktunya *"**tak terhingga**"*. **Itu klaim ketidakmungkinan TEKNIS, dan itu tidak benar.** Terbukti dari setup SUS: untuk H3, ketiga *regular user* **diberi akun Proxmox berhak create/edit/view VM** (tanpa hak *reconfig cluster*) dan **berhasil** provisioning manual. Penguji yang membaca §1.b lalu membaca metode H3 akan langsung melihat kontradiksinya, dan §1.b runtuh tanpa perlu diserang.
+> **Klaim yang benar = KEBIJAKAN, bukan kemampuan:** pengguna biasa *tidak diberi* hak Proxmox — itu keputusan organisasi yang terdokumentasi di `bab1.md`, bukan batasan perangkat lunak. Argumen §1.b tetap utuh dengan kata "tidak diberi", dan sekarang **kebal** terhadap pertanyaan *"memangnya kenapa kalau usernya dikasih hak?"*.
+
+> ✅ **DAN JAWABAN ATAS PERTANYAAN ITU ADALAH TESIS INI SENDIRI — pakai di 4.6 (RM2).**
+> Setup H3 memperagakannya secara langsung: untuk memberi pengguna layanan mandiri di **Proxmox mentah**, hak yang harus diserahkan adalah **create + edit + view VM secara langsung** — karena **Proxmox tidak punya lapisan persetujuan**. Tidak ada jalan tengah di sana: pilihannya hanya "tidak bisa apa-apa" atau "bisa membuat, mengubah, dan menghapus VM-nya sendiri tanpa satu pun pagar" — tanpa approval, tanpa kebijakan environment, tanpa kuota, tanpa jejak audit yang menyebut siapa menyetujui apa.
+> **Portal justru jalan tengah itu:** layanan mandiri yang tetap berpagar. Jadi setup H3 bukan sekadar mengukur kebergunaan — ia **membuktikan RM2 secara konstruktif**. Ini lebih kuat daripada versi §1.b yang lama, karena berdiri di atas peragaan nyata, bukan klaim.
+> **Konsekuensi lanjutan yang jujur:** karena regular user H3 diberi hak create langsung, **kelompok SUS Proxmox tidak menanggung beban approval sama sekali** → mereka menilai Proxmox pada kondisi **paling nyaman**. Sama polanya dengan §1.a (mengeluarkan `t2`) dan §1.b: sekali lagi **konservatif untuk portal**. Sebutkan — pola ini konsisten di ketiga hipotesis dan itulah yang membuat keseluruhannya meyakinkan.
 
 **Ukuran sampel:** ulang **≥ 10 percobaan** untuk kondisi yang sama (1 VM) di portal, dan **≥ 10** untuk manual. Sepuluh angka per kelompok cukup untuk uji Shapiro-Wilk → T-Test/Wilcoxon.
 **(Opsional, memperkuat H1 "O(1) vs O(N)"):** ukur juga batch **N = 1, 5, 10** → tunjukkan jumlah langkah pengguna portal ~tetap saat N naik, sedangkan manual naik linear.

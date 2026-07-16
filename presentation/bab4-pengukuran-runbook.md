@@ -157,6 +157,185 @@ Proxmox dipakai **hanya untuk titik berhentinya**, justru supaya identik dengan 
 > Portal memang punya **batch mode** — kolom `instance_count` pada tabel `provision_requests` (default 1, komentar `// batch size`), dibatasi **60** oleh `ProvisionRequestController.php:21` agar sufiks `-0N` muat dalam batas 63 karakter hostname. Manual **tidak punya padanannya**.
 > **Tetap 1-per-1 di H1, alasannya statistik dan mengunci:** Mann-Whitney U menuntut dua sampel independen. Arm manual memberi **10 pengukuran**; satu batch berisi 10 VM hanya menghasilkan **1 peristiwa = 1 pengukuran**. Uji 10 lawan 1 tidak dapat dijalankan. Untuk memperoleh 10 pengukuran portal via batch dibutuhkan **10 batch × 10 VM = 100 VM ≈ 4 TB** — tidak mungkin. Tambahan: satuan `t_manual` = waktu membuat **satu** VM, dan `bab2.md:177` berbunyi *"dalam proses provisioning mesin virtual"* (satuannya proses per VM).
 
+### 1.c-ter Lembar hitung langkah — PORTAL (diturunkan dari KODE 2026-07-16)
+
+> ⚠️ **Angka di bawah dibaca dari kode, bukan dari layar. Verifikasi di trial #1, lalu kunci.** Bila layarmu beda, koreksi tabel ini **sebelum** trial #2 — jangan mengubah hitungan di tengah seri (§1.c).
+
+**Variabel terkunci (dikonfirmasi user 2026-07-15/16):** environment **`development`** · provider **Jakarta** (→ node `pve`, template `rhel10-cloud` VMID 9003 — **identik dengan arm manual**) · katalog **RHEL** · tier **Bronze** (1 vCPU · 2048 MB · 40 GB) · pemohon **`budi`** (User/Requestor) · penyetuju **`ani`**.
+
+| # | Aksi | Langkah |
+|---|---|:---:|
+| — | *Login portal sebagai `budi`* | **0** (tidak dihitung, §1.e) |
+| — | *Buka menu **Catalog*** | **0** (di luar jendela ukur — setara mencari template di sidebar Proxmox) |
+| 1 | Pilih **Bronze** pada dropdown tier di kartu **RHEL** ⏱️ **stopwatch `t1` MULAI** → wizard terbuka | 1 |
+| 2 | Pilih **Environment** = `development` | 1 |
+| — | Provider `jakarta` · Node `pve` · Catalog RHEL · Tier Bronze **terisi otomatis** → **verifikasi di layar**, jangan diasumsikan | **0** |
+| 3 | Klik **Next Step →** | 1 |
+| 4 | Isi **Nama VM** (ganti bawaan `APP` → `portal-1`) | 1 |
+| 5 | Isi **Jumlah** = **1** (field datang **KOSONG**, wajib diketik) | 1 |
+| 6 | Pilih **Network** | 1 |
+| 7 | Pilih **Datastore** | 1 |
+| 8 | Klik **Review Request →** | 1 |
+| 9 | Klik **Submit Provision Request** | 1 |
+| 10 | Klik **Submit** pada modal konfirmasi | 1 |
+| — | ⏱️ **stopwatch `t1` STOP** | 0 |
+| | | **= 10** |
+
+**Empat hal yang dibaca dari kode — semuanya mengubah hitungan, dan tidak satupun bisa ditebak dari asumsi:**
+
+1. **Titik masuk bukan "klik kartu", melainkan "pilih tier di dropdown kartu".** `Catalog.jsx:200` memasang `onChange` pada dropdown tier tiap kartu, dan `handleSelect` (`Catalog.jsx:92-93`) baru menavigasi bila **`catalogId` DAN `tierId`** terisi. Satu aksi ini sekaligus membawa katalog + tier — **padanan struktural yang rapi dengan "klik kanan template → Clone"** pada manual (satu aksi yang menentukan image sekaligus).
+2. **Field `Jumlah` datang KOSONG, bukan berisi 1.** `VmRequest.jsx:46` → `useState(location.state?.vmCount ?? '')`, dan `step2Valid` (baris 227) mewajibkan `vmCount` terisi. ⚠️ Jangan tertukar dengan **default DB** `instance_count = 1` pada `provision_requests` — itu default kolom, bukan default form. Mengisi `1` = **1 langkah sah**, bukan nol.
+3. **Submit = DUA klik.** `VmRequest.jsx:730` membuka modal konfirmasi, `VmRequest.jsx:759` (`executeSubmit`) yang benar-benar mengirim. Keduanya aksi wajib → dua langkah.
+4. **Nama VM sudah terisi `APP`** (`VmRequest.jsx:45`) → tetap **1 langkah**, karena mengganti isian wajib tetap satu aksi masukan (§1.e: ketik satu field = 1).
+
+**Struktur wizard = 3 tahap** (`VmRequest.jsx:35,312`): tahap 1 Environment + Provider · tahap 2 node/catalog/nama/jumlah/tier/network/datastore · tahap 3 Review → Submit.
+
+**➡️ Hasil: portal 10 langkah lawan manual 23 langkah.** ⚠️ Angka **10 menggantikan estimasi lama "≈8"** di [[bab4-measurement-plan]] dan §5 — estimasi itu meleset karena tidak menghitung modal konfirmasi dan mengira `Jumlah` sudah berisi 1. **Perbandingan tetap telak (10 vs 23), dan sekarang angkanya berdiri di atas kode.**
+
+**Langkah admin (`ani`) — hitung saat trial #1, JANGAN ditebak.** Belum diturunkan dari kode. Dicatat **terpisah**, tidak pernah dijumlahkan ke langkah pengguna (§1.c butir 3): pada manual, satu orang mengerjakan semuanya; pada portal, kerja itu terbagi dua peran. Menjumlahkannya = mengarang tugas gabungan yang tidak dialami siapa pun.
+
+### 1.c-quater Hasil arm PORTAL — ✅ SELESAI 10/10 (2026-07-16)
+
+**Titik ukur terverifikasi DUA KALI:** (1) user mengonfirmasi `t3` dihentikan saat **IP muncul di Proxmox Summary**; (2) **dibuktikan silang oleh Audit Trail prod** — lihat kotak di bawah. → identik dengan arm manual → **seri SAH**.
+**Variabel:** env **`Development/UAT Environtment`** · provider **Jakarta** (node `pve`, template `rhel10-cloud` 9003) · katalog RHEL · tier Bronze · pemohon **`budi`** · penyetuju **`ani`**. Nama VM = **`PROVE-1`..`PROVE-10`** (huruf besar), **VMID 100–109**.
+**Instance:** ExoVirt **produksi** (`/home/app/exovirt`). ⚠️ Bukan instance dev — dev tidak punya satu pun baris tertanggal 2026-07-16.
+
+| Trial | VM | VMID | `t1` | `t3` | **`t1+t3`** | Terraform | Δ `Active`→IP | Aksi `ani` | Langkah user | Langkah `ani` | Disk |
+|:---:|---|:---:|---:|---:|---:|---:|---:|---:|:---:|:---:|:---:|
+| 1 | `PROVE-1` | 100 | 13 | 97 | **110** | 90 | +7 | 4 | 10 | 4 | ⬜ |
+| 2 | `PROVE-2` | 101 | 12 | 85 | **97** | 75 | +10 | 5 | 10 | 4 | ⬜ |
+| 3 | `PROVE-3` | 102 | 11 | 83 | **94** | 79 | +4 | 4 | 10 | 4 | ⬜ |
+| 4 | `PROVE-4` | 103 | 10 | 87 | **97** | 81 | +6 | 4 | 10 | 4 | ⬜ |
+| 5 | `PROVE-5` | 104 | 12 | 83 | **95** | 77 | +6 | 4 | 10 | 4 | ⬜ |
+| 6 | `PROVE-6` | 105 | 11 | 84 | **95** | 79 | +5 | 4 | 10 | 4 | ⬜ |
+| 7 | `PROVE-7` | 106 | 11 | 99 | **110** | 92 | +7 | 4 | 10 | 4 | ⬜ |
+| 8 | `PROVE-8` | 107 | 10 | 87 | **97** | 85 | +2 | 4 | 10 | 4 | ⬜ |
+| 9 | `PROVE-9` | 108 | 11 | 84 | **95** | 80 | +4 | 4 | 10 | 4 | ⬜ |
+| 10 | `PROVE-10` | 109 | 11 | 87 | **98** | 80 | +7 | 4 | 10 | 4 | ⬜ |
+
+*Terraform = `CREATE_VM` − `APPROVE_REQUEST` (Audit Trail). Δ `Active`→IP = `t3` − Terraform.*
+
+> ✅ **BUKTI SILANG STOPWATCH × AUDIT TRAIL — titik ukur terbukti benar, bukan sekadar diakui.**
+> Di **kesepuluh** trial, `t3` (stopwatch) **selalu lebih besar** dari durasi Terraform (audit server), selisih **+2 s.d. +10 dtk**, tanpa kecuali.
+> **Kenapa ini membuktikan sesuatu:** `CREATE_VM` terbit tepat saat `terraform apply` kembali — momen yang sama dengan status `Active` (`ProvisionVmJob.php:122-126,153`). Kalau stopwatch dihentikan di `Active`, `t3` akan ≈ durasi Terraform atau **di bawahnya**. Yang terjadi justru **selalu di atasnya, dengan selisih kecil yang wajar untuk guest selesai boot**. Dua alat yang tidak saling mengetahui — stopwatch di tangan peneliti dan `created_at` di server — saling mengunci.
+> **Identitas terpenuhi:** mean `t3` 87,60 = mean Terraform 81,80 + mean Δ 5,80. ✔️
+
+> 📊 **TEMUAN BAB V SEKARANG BERANGKA: Δ `Active`→IP = mean 5,80 dtk** (median 6,0 · SD 2,20 · rentang **2–10**).
+> Portal menyalakan `Active` rata-rata **5,8 detik sebelum VM benar-benar dapat dimasuki**. Pengguna yang melihat `Active` lalu langsung SSH akan gagal. **Nyata, tapi kecil** — dugaan lama (5–30 dtk, dari tunda `SyncVmFactsJob`) **terlalu besar**; laporkan 5,80, jangan dibesarkan. Penyempurnaan Bab V = tunda `Active` sampai IP terkonfirmasi (`VM_READY`).
+> **Durasi Terraform** = mean **81,80** dtk (median 80 · SD 5,51 · rentang 75–92) — konsisten sepanjang seri, tanpa gejala antrean.
+
+> 🚫 **`t2` TIDAK DILAPORKAN SEBAGAI METRIK TATA KELOLA — angkanya artefak prosedur, bukan perilaku sistem.**
+> Terukur: mean **1081 dtk (18 menit)** · rentang **44–1638 dtk**. Sebabnya terbaca di Audit Trail: kesepuluh permintaan **dikirim lebih dulu** (10:29:00–10:35:28), **baru disetujui satu per satu** (10:42:45–11:02:46). Jadi `t2` di sini mengukur *berapa lama peneliti sempat membuka menu Approvals*, bukan latensi persetujuan. PROVE-10 menunggu 27 menit semata-mata karena ia terakhir dalam antrean.
+> **Tidak merusak apa pun yang diuji:** `t2` sudah **di luar uji beda sejak 2026-07-14** (§1.a), jadi `t1+t3` = 98,80 tidak tersentuh. Yang wajib dilakukan hanya **tidak mengklaimnya sebagai angka tata kelola**. Menulis "rata-rata persetujuan 18 menit" akan runtuh begitu penguji melihat pola submit-nya.
+> **Untuk RM2 pakai ini sebagai gantinya:** keberadaan + keterbacaan jejaknya (baris `APPROVE_REQUEST` menyebut nama VM, aktor, alasan, dan waktu), **bukan durasinya**. Bila angka latensi tetap diinginkan, ia harus diukur ulang dengan protokol submit→approve satu per satu — **dan itu bukan prasyarat H1**.
+> ⚠️ Kolom **"Aksi `ani`" (4–5 dtk) juga BUKAN `t2`** — itu durasi `ani` mengerjakan 4 langkah approve.
+
+> ℹ️ **Urutan submit-lalu-approve tidak merusak `t1` maupun `t3`.** Permintaan yang menunggu persetujuan tidak memicu Terraform, dan jeda antar-approve (≈2 menit) selalu lebih besar dari durasi apply (75–92 dtk) → **tidak pernah ada dua apply bersamaan**, tidak ada rebutan antrean. Terbukti dari durasi Terraform yang stabil tanpa *drift* sepanjang 10 trial.
+
+> 📌 **PERCOBAAN PENDAHULUAN — WAJIB DISEBUT DI BAB IV (jangan didiamkan).**
+> Sebelum seri dimulai, ada tiga hal di Audit Trail yang **bukan** bagian dari 10 trial: **`APPROVE-1`** (10:19–10:23, uji alur approve) · **`AUTO-1`** (10:26–10:28, diminta `ani` dan ter-provision **tanpa baris approve** = uji jalur *admin bypass*) · serta **run pendahuluan `PROVE-6` dan `PROVE-1`** (10:36:39–10:40:17) yang VM-nya **dihapus**, lalu seri sesungguhnya dimulai bersih dari `PROVE-1` pada **10:42:45**.
+> **Kenapa harus disebut:** Audit Trail adalah bukti yang penguji baca sendiri. Di sana `PROVE-6` tampak disetujui sebelum `PROVE-1` dan dua VM lenyap. Naskah yang diam soal ini tidak terbaca "tidak ada apa-apa", melainkan "ada yang tidak diceritakan". Satu kalimat sudah cukup.
+> **✅ Dan fakta angkanya berpihak pada peneliti — ini justru senjata:** run pendahuluan yang **dibuang** ternyata **lebih cepat** (Terraform **74** dan **82** dtk) daripada run yang **dipakai** (**90** dan **79** dtk). Bila ada niat mempercantik data, yang 74 dan 82 detik itu justru disimpan. **Membuang data yang menguntungkan diri sendiri adalah bukti itikad baik yang tak terbantah** — tapi hanya bisa dipakai kalau percobaan pendahuluannya disebutkan. Didiamkan, senjata ini hilang.
+> **Kalimat harus presisi:** yang diulang dari awal adalah **urutan approve (`t3`)**. Permintaan `PROVE-2`..`PROVE-5` dan `PROVE-7`..`PROVE-10` tetap berasal dari sesi wizard **10:31–10:35**, jadi `t1` kedelapan VM itu dari sesi tersebut. Sah — alur wizard-nya identik — tapi jangan ditulis "seluruh trial diulang".
+> ⬜ **Catatan presisi kecil:** `PROVE-1` dan `PROVE-6` punya **dua** sesi wizard (10:29:00/10:33:40 dan 10:42:01/10:42:17). `t1` yang dilaporkan (13 dan 11 dtk) belum dipastikan milik sesi yang mana. Dampaknya **nihil bagi H1** — `t1` hanya 11% dari `t1+t3`, rentangnya cuma 10–13 dtk, sedangkan jarak portal (maks 110) ke manual (min 121) 11 detik penuh. Cukup ditulis sebagai keterbatasan satu kalimat.
+
+> ✅ **`AUTO-1` = bukti black-box gratis untuk jalur *admin bypass*.** `ani` (admin) mengirim permintaan 10:26:45 dan VM ter-provision 10:28:16 **tanpa baris `APPROVE_REQUEST`** — persis perilaku yang diharapkan (admin melewati approval, §1.c butir 5). Catat sebagai skenario di **§4 bagian C**, bukan di efisiensi.
+
+**Rekap:**
+
+| Statistik | `t1` | `t3` | **`t1+t3`** | *(manual)* |
+|---|---:|---:|---:|---:|
+| Mean | 11,20 | 87,60 | **98,80** | *136,90* |
+| Median | 11,00 | 86,00 | **97,00** | *129,50* |
+| SD | 0,92 | 5,72 | **6,03** | *16,35* |
+| CV (%) | 8,20 | 6,53 | **6,11** | *11,94* |
+| Min–Max | 10–13 | 83–99 | **94–110** | *121–175* |
+
+**Langkah = 10 konstan** (SD 0), sama sifatnya dengan manual 23 konstan: **deterministik, bukan hasil ukur** → tidak diuji statistik, dilaporkan sebagai tabel hitungan (§5, §1.c-ter).
+
+#### Hasil uji H1
+
+| Uji | Hasil | Putusan |
+|---|---|---|
+| Shapiro-Wilk `t1+t3` portal | W = 0,6871 · **p = 0,0006** | **TIDAK normal** |
+| Shapiro-Wilk `t_manual` | W = 0,8370 · **p = 0,0407** | **TIDAK normal** |
+| → uji yang dipakai | **Mann-Whitney U** (= Wilcoxon *rank-sum*) | **kedua** kelompok tak normal → non-parametrik makin kokoh |
+| **Mann-Whitney U** | U = **0** · **p = 1,08 × 10⁻⁵** (eksak, 2 sisi) | **H0 DITOLAK · H1 DITERIMA** |
+
+**U = 0 karena kedua kelompok TIDAK BERIRISAN sama sekali:** portal maksimum **110** dtk, manual minimum **121** dtk. Tidak ada satu pun trial portal yang lebih lambat dari trial manual mana pun. `p` eksak = **2/184756** (C(20,10) susunan; satu-satunya susunan yang memberi U = 0). Angka ini pratinjau (Python stdlib, Royston AS R94 + distribusi null eksak); **bukti Bab IV tetap screenshot SPSS/Jamovi**.
+
+> ✅ **Kedua kelompok tidak normal** → tidak ada lagi celah *"kenapa tidak pakai Independent T-Test?"*. Alur keputusan `bab3.md` §3.3.5d terpenuhi apa adanya, tanpa pembenaran pasca-fakta. ⚠️ Tetap tulis **Mann-Whitney U**, jangan "Wilcoxon" telanjang — dua kelompok **independen**, bukan berpasangan (§1.a).
+
+#### Indikator keberhasilan ≥50% — TERBELAH, tulis apa adanya
+
+`bab3.md` §3.3.5c: *"penurunan waktu provisioning minimal 50% **disertai** berkurangnya jumlah langkah"*.
+
+| Metrik | Manual | Portal | Penurunan | Indikator |
+|---|---:|---:|---:|:---:|
+| Waktu (mean) | 136,90 | 98,80 | **27,83%** | ❌ **tidak tercapai** |
+| Waktu (median) | 129,50 | 97,00 | **25,10%** | ❌ **tidak tercapai** |
+| **Jumlah langkah** | **23** | **10** | **56,52%** | ✅ **tercapai** |
+
+> 🔑 **Bedakan dua hal yang sering dikira satu — ini inti pembahasan 4.3.**
+> **H1** (`bab2.md`) berbunyi *"terdapat **perbedaan** efisiensi yang **signifikan**"* — **tidak menyebut angka 50%**. Diuji Mann-Whitney → **DITERIMA**, telak (p = 1,08 × 10⁻⁵, nol irisan).
+> **Indikator keberhasilan ≥50%** (`bab3.md`) adalah **kriteria perancangan yang ditetapkan peneliti sendiri**, bukan hipotesis. Pada waktu: **meleset** (27,83%). Pada langkah: **tercapai** (56,52%).
+> **Jangan gabungkan keduanya jadi "H1 gagal".** H1 diterima; satu dari dua paruh indikator tidak tercapai. Menulis "H1 gagal" = menyerahkan kemenangan yang sah.
+
+#### Dua temuan pendukung (deskriptif — JANGAN dijadikan metrik H1)
+
+**1. Portal tidak punya kurva belajar; manual punya, dan besar.**
+
+| | Spearman ρ (urutan vs waktu) | p | Mean trial 1–5 | Mean trial 6–10 |
+|---|---:|---:|---:|---:|
+| **Portal** | **+0,0062** | 0,8405 | 98,60 | **99,00** (rata) |
+| **Manual** | **−0,8571** | 0,0015 | 147,80 | **126,00** (−14,7%) |
+
+Sebabnya struktural: **88,7% waktu portal adalah waktu mesin** (`t3` 87,60 dari 98,80 dtk), dan mesin tidak bertambah mahir. → **136,90 dtk manual = capaian admin penuh-hak yang sudah berlatih 10×; 98,80 dtk portal = capaian siapa pun sejak percobaan pertama.** Memperkuat §1.b.
+
+**2. Perhatian manusia: 11,20 dtk lawan 136,90 dtk (−91,8%).**
+Manual menuntut **136,90 detik perhatian terus-menerus**; portal menuntut **11,20 detik**, sisanya operator bebas mengerjakan hal lain.
+
+> 🚫 **JANGAN pakai `t1` saja sebagai metrik H1.** Definisi `t1+t3` dikunci **2026-07-14**, jauh sebelum angka ini ada. Menggantinya sekarang — setelah tahu ≥50% meleset — adalah **redesign pasca-fakta**, sekategori dengan menukar pembanding ke VMware (§1.f). Sudah diperingatkan di [[bab4-measurement-plan]] sebelum arm portal diukur, dan peringatan itu berlaku justru sekarang.
+> ✅ **Tempat yang sah:** 4.6 Pembahasan, sebagai **dekomposisi** `t1+t3` — bukan pengganti. Kalimatnya: *"Dari 98,80 detik, hanya 11,20 detik menuntut perhatian pengguna; 87,60 detik sisanya adalah eksekusi mesin yang berjalan tanpa pengawasan."* Itu sudah telak tanpa perlu mengubah metrik apa pun.
+
+#### Kenapa waktu tidak turun 50% — bahan jujur untuk 4.3/4.6
+
+Portal **menukar beberapa puluh detik orkestrasi mesin** (Terraform: init → plan → apply → *full clone* → boot) **demi tata kelola, jejak audit, dan permukaan-kesalahan nol**. Manual melewatkan seluruh lapisan itu dan langsung menyuruh Proxmox meng-clone. Yang ditawar bukan kecepatan lawan kelambanan, melainkan **kecepatan lawan jaminan** — dan `t3` adalah harganya.
+Perlu dicatat: `t3` tetap **lebih cepat** dari seluruh proses manual, jadi portal menang di waktu **dan** menang di langkah — hanya saja marginnya (27,83%) tidak sampai separuh.
+⚠️ **Jangan mengaku "≥50% tercapai" dengan alasan apa pun.** Indikator itu ditulis peneliti sendiri di `bab3.md`; melesetnya = temuan, bukan aib. Bab V mencatatnya sebagai arah perbaikan (*queue scaling*, *link clone* untuk tier tertentu, `Active` yang menunggu IP).
+
+#### ⬜ Sisa yang harus dipanen (tidak mengubah H1)
+
+| Item | Sumber | Status |
+|---|---|---|
+| ~~`t2` ×10~~ | Audit Trail prod | ✅ **dipanen 2026-07-16** → **artefak prosedur, tidak dilaporkan** (lihat kotak `t2` di atas) |
+| ~~Durasi Terraform ×10~~ | Audit Trail: `CREATE_VM` − `APPROVE_REQUEST` | ✅ **dipanen** — mean 81,80 dtk |
+| ~~Δ `Active`→IP ×10~~ | `t3` − durasi Terraform | ✅ **dihitung** — mean 5,80 dtk (bahan Bab V) |
+| **Disk aktual** ×10 | tab Hardware tiap VM `PROVE-1..10` (**VMID 100–109**) | ⬜ bukti **H2** (§2) — harus 40 GB |
+| **Konfigurasi** ×10 | Hardware + Cloud-Init tiap VM | ⬜ checklist H2 (§2) |
+| `df -h` + `lsblk` + `hostname` | console **`PROVE-9` (108)** & **`PROVE-10` (109)** | ⬜ padanan bukti auto-extend arm manual (§1.d) |
+| Screenshot Audit Trail | satu trial, 3 baris berurutan | ⬜ bukti visual **RM2** (angka sudah ada, bukti layar belum) |
+
+> ⚠️ **JANGAN hapus `PROVE-1..10` (VMID 100–109) sebelum sisa di atas dipanen** — pelajaran yang sama dengan arm manual: sekali VM hilang, bukti H2 hanya bisa dipulihkan dengan mengulang 10 trial.
+> ✅ **Audit sudah aman permanen** — tersimpan *append-only* di DB prod, tidak ikut hilang bila VM dihapus.
+
+**Pembanding terkunci (arm manual, seri RHEL, ditutup 2026-07-15):** mean **136,90** · median **129,50** · SD 16,35 · CV 11,94% · min–max 121–175 · **23 langkah konstan**.
+
+**Cara mengisi tiap kolom:**
+
+| Kolom | Sumber | Catatan |
+|---|---|---|
+| `t1` | **stopwatch** di ExoVirt | pilih Bronze di kartu RHEL → klik Submit di modal |
+| `t2` | **Audit Trail** ExoVirt | `APPROVE_REQUEST` − `CREATE_PROVISION_REQUEST`; **di luar uji beda**, deskriptif (§1.a) |
+| `t3` | **stopwatch**, berhenti di **Proxmox Summary** | klik Approve → IP terbaca di Summary. 🚫 **bukan** status `Active`, 🚫 **bukan** IP di Inventory ExoVirt (§1.c) |
+| `t1+t3` | hitung sendiri | **inilah satu-satunya angka yang masuk Mann-Whitney U** |
+| Langkah user | hitung di layar | acuan lembar §1.c-ter = 10 |
+| Langkah admin | hitung di layar | **terpisah**, jangan dijumlahkan |
+| Disk aktual | tab **Hardware** VM | harus **40 GB** (bukti H2 + §2b) |
+| Δ `Active`→IP | selisih dua peristiwa | portal menyala `Active` saat Terraform selesai padahal guest masih boot → **bahan Bab V** (§1.c) |
+
+⚠️ **Kolom `t2` jangan dikosongkan meski di luar uji beda** — ia menjawab RM2 (*governance*) secara deskriptif, dan tanpa angka itu pembahasan approval kehilangan dasar.
+
 ### 1.c-bis BATCH MODE — temuan deskriptif TERPISAH, 🚫 di luar uji beda H1
 
 **Diputuskan 2026-07-15, SEBELUM hasil H1 diketahui.** Pencatatan tanggal ini penting: bila batch baru dimunculkan **setelah** H1-waktu ketahuan gagal, ia terbaca sebagai penyelamatan pasca-fakta dan masuk kategori yang sama dengan menukar pembanding ke VMware (§1.f).
@@ -446,12 +625,45 @@ Proses pembuatan VM manual **tidak direkam** saat 10 trial berlangsung; yang ter
 | manual-10 (110) | ✓ | ✓ | ✓ | ✓ 192.168.200.92 | ✓ | ✅ |
 | **% Sesuai** | **100%** | **100%** | **100%** | **100%** | **100%** | **100% (10/10)** |
 
-**Kelompok PORTAL — ⬜ belum diukur**
+**Kelompok PORTAL — ✅ TERISI 2026-07-16** (sumber = **`qm config` di host `pve`**, bukan inventory ExoVirt — lihat catatan di bawah; template RHEL, tier Bronze, VMID 100–109)
 
 | VM (VMID) | CPU (1) | RAM (2 GB) | Disk (40 GB) | Network/IP (DHCP) | Hostname (= nama VM) | Sesuai spec? |
 |----|:---:|:---:|:----:|:-------:|:---:|:------------:|
-| … | | | | | | |
-| **% Sesuai** | | | | | | |
+| PROVE-1 (100) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-2 (101) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-3 (102) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-4 (103) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-5 (104) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-6 (105) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-7 (106) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-8 (107) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-9 (108) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| PROVE-10 (109) | ✓ | ✓ | ✓ | ✓ | ✓ | ✅ |
+| **% Sesuai** | **100%** | **100%** | **100%** | **100%** | **100%** | **100% (10/10)** |
+
+**Asal tiap centang — bedakan yang diverifikasi langsung dan yang dilaporkan dari capture:**
+
+| Parameter | Bukti | Kekuatan |
+|---|---|---|
+| CPU | `vcpus: 1` di 10/10 (`qm config`), **dikuatkan `lscpu` dari dalam `PROVE-10`** → `CPU(s): 1` · `On-line CPU(s) list: 0` | 🟢 terverifikasi langsung |
+| RAM | `memory: 2048` di 10/10 | 🟢 terverifikasi langsung |
+| Disk | `size=40G` di 10/10 (`scsi0: vmdata:vm-1NN-disk-0`) | 🟢 terverifikasi langsung |
+| Network/IP | `ipconfig0: ip=dhcp` di 10/10 · **tiap VM terbukti MEMPEROLEH IP** — `t3` justru diukur pada saat IP muncul di Proxmox Summary, jadi 10 angka `t3` itu sendiri buktinya | 🟢 terverifikasi langsung |
+| Hostname | **dilaporkan user dari capture (2026-07-16)** · `PROVE-10` terkuatkan langsung oleh prompt `[sysadmin@PROVE-10 ~]$` | 🟡 1/10 terverifikasi di sini, 9/10 dari capture user |
+
+> ℹ️ **Alamat IP tidak ditranskripsikan** (arm manual mencatatnya: `.82`–`.92`). Tidak mengubah putusan H2 — parameternya *"DHCP dan memperoleh IP"*, dan keduanya terbukti. Bila Bab IV ingin menampilkan alamatnya, baca dari capture Summary `PROVE-1..10`.
+
+> 🔑 **Kenapa sumbernya `qm config` di host, BUKAN inventory ExoVirt.** Inventory adalah **portal melaporkan dirinya sendiri** — penguji berhak bertanya *"bagaimana kalau portal salah lapor?"*. `qm config` datang dari **hypervisor**, sumber yang **sekelas dengan tab Hardware** yang dipakai arm manual. Simetris, dan pertanyaan itu tertutup sebelum diajukan.
+
+> ✅ **`cores: 8` BUKAN drift — jangan panik saat membacanya** (sempat disalahpahami 2026-07-16). `qm config` VM portal menampilkan `cores: 8` sementara Bronze = 1 vCPU. Itu **disengaja**: `ResourceResolutionService.php:32-34` menulis `cores` = **plafon topologi** (`max(config('provisioning.max_cpu_cores'), tier->cpu)`, default **8** via `VM_MAX_CPU_CORES`, `config/provisioning.php:36`) dan `vcpus` = **jumlah yang ONLINE** = `tier->cpu` = **1**. Plafon itu syarat *hotplug* CPU tanpa reboot (`main.tf:25`). Yang mengikat H2 adalah **`vcpus`**, dan `lscpu` di dalam guest membuktikannya: **1 CPU**.
+> **Template `rhel10-cloud` (9003) = `cores: 16` · `sockets: 1` · **`vcpus: 1`** · `memory: 2048` · `scsi0 size=10G`.** → **VM manual mewarisi `vcpus: 1`** dari clone, jadi **arm manual juga 1 vCPU** dan tabel manual di atas **tidak perlu direvisi**. Diperiksa 2026-07-16, bukan diasumsikan.
+> **Catatan kaki jujur:** VM portal berplafon **8** (Terraform menurunkannya dari 16), VM manual mewarisi plafon **16**. Keduanya menyalakan **1 vCPU** → **H2 tidak terpengaruh**, plafon bukan parameter tier. Ini contoh kecil portal menyeragamkan yang manual biarkan lewat — **cukup jadi catatan kaki, JANGAN diklaim sebagai keunggulan efisiensi**; tier tidak pernah mensyaratkan plafon.
+
+**➡️ HASIL H2: portal 50/50 = 100% · manual 50/50 = 100% → tidak ada perbedaan → H0 TIDAK DITOLAK, H2 GAGAL.**
+
+> ⚠️ **H2 NULL — sudah diramalkan 2026-07-15, SEBELUM arm portal diukur. Itu yang membuatnya temuan, bukan kekalahan.** Sebabnya struktural dan sudah dideklarasikan di kotak "Ekspektasi jujur" di bawah: variabel kontrol §0 mengharuskan **template sudah spek Bronze**, jadi kedua metode **mewarisi** CPU/RAM/Network tanpa langkah tangan. Satu-satunya kolom yang bisa *drift* adalah **Disk**, dan operator sudah hafal jebakannya setelah 2 insiden. **Desain ini memang tidak mampu mendeteksi beda konsistensi.**
+> **JANGAN redesign supaya H2 lolos.** Laporkan null + jelaskan sebabnya. Argumen sesungguhnya ada di **§2b Lapis 3** (permukaan kesalahan, arsitektural, tidak butuh *n*): pengguna portal **tidak bisa** salah isi *increment* disk — bukan karena hati-hati, tapi karena **kolomnya tidak ada**. Itu berdiri di atas kode, kebal terhadap *"berapa n Anda?"*.
+> **Statistik:** kedua kelompok konstan (SD = 0, 100% vs 100%) → **tidak ada variansi untuk diuji** → tidak ada uji beda yang bisa dijalankan. Laporkan sebagai **tabel + persentase**, bukan Mann-Whitney. Menjalankan uji beda pada dua konstanta identik = kesalahan statistik.
 
 > 🚫 **Kolom "Hardening" DIHAPUS dari checklist H2 — ini akan jadi kesalahan faktual.** `backend/app/Jobs/ProvisionVmJob.php:97-99` menyatakan tegas: *"Hardening is no longer a provision-time choice (Stage 8): it's an on-demand, catalog-bound Inventory action. **A new VM starts un-hardened**"* → VM portal lahir dengan `hardening_status = 'Not Hardened'`. Jadi di titik ukur, **VM portal dan VM manual sama-sama belum di-harden**. Mengisi "portal ✓ / manual ✗" = **salah fakta** dan menggelembungkan H2 secara tidak sah. Hardening = aksi Inventory terpisah, di luar ruang lingkup H1 maupun H2. **Efek samping baiknya: `t3` tidak mengandung waktu hardening → perbandingan H1 tetap apple-to-apple.**
 

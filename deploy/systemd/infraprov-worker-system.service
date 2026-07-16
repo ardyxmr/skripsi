@@ -1,0 +1,39 @@
+# InfraProv queue worker — SYSTEM queue (satu instance sudah cukup).
+#
+# KENAPA UNIT TERPISAH: SyncVmFactsJob menaruh dirinya di antrean 'system'
+# (app/Jobs/SyncVmFactsJob.php:49), sedangkan template `infraprov-worker@` hanya
+# mengonsumsi --queue=default. Tanpa unit ini job tersebut TIDAK punya konsumen:
+# ProvisionVmJob kerap menyimpan ip_address = null (guest belum selesai boot saat
+# `terraform apply` kembali — lihat komentar ProvisionVmJob.php:142-144), dan yang
+# seharusnya menambalnya adalah SyncVmFactsJob. Tanpa konsumen, IP itu null selamanya
+# di Inventory.
+#
+# Beban kerjanya ringan (baca fakta VM dari provider), bukan terraform → satu instance
+# cukup dan --timeout jauh lebih pendek daripada worker default.
+#
+# ⚠️ Unit ini ter-hardcode User=appd + WorkingDirectory=/home/app/exovirt.
+# Kalau user/path deploy-mu beda, sesuaikan — kalau tidak → gagal "status=217/USER".
+
+[Unit]
+Description=InfraProv system-queue worker (VM facts sync)
+After=network-online.target redis-queue.service postgresql.service
+Wants=network-online.target
+Requires=redis-queue.service
+
+[Service]
+Type=simple
+User=appd
+Group=appd
+WorkingDirectory=/home/app/exovirt/backend
+# --sleep=1 supaya job tertunda (SyncVmFactsJob di-dispatch dengan delay 5 dtk)
+# cepat dipindahkan dari sorted-set 'queues:system:delayed' ke list utama.
+# --timeout pendek: ini pembacaan ringan ke provider, bukan terraform apply.
+ExecStart=/usr/bin/php artisan queue:work redis --queue=system --sleep=1 --tries=1 --timeout=120 --max-time=3600
+Restart=always
+RestartSec=2
+# Harus melebihi --timeout supaya job in-flight selesai sebelum SIGKILL.
+TimeoutStopSec=130
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

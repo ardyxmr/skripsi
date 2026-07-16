@@ -353,6 +353,13 @@ Perlu dicatat: `t3` tetap **lebih cepat** dari seluruh proses manual, jadi porta
 
 **Protokol:** jalankan **SATU** batch **setelah** 10 trial pokok selesai (jangan sebelum — bisa mencemari kapasitas node dan antrean). Ukuran batch menyesuaikan sisa kapasitas (5 atau 10 VM).
 
+> ⚠️ **WAJIB DIUNGKAP DI BAB IV — batch berjalan pada konfigurasi worker yang BERBEDA dari 10 trial pokok (2026-07-16).**
+> Saat 10 trial (10:19–11:04), prod ternyata jalan **3 worker `default` + 0 worker `system`** — *drift* dari desainnya sendiri (`worker@4` **disabled**, unit `system` tidak pernah ada). Ditemukan malam itu saat menyiapkan batch, lalu diperbaiki ke **4+1** (~23:04–23:09) sebelum batch dijalankan.
+> **10 trial TIDAK terpengaruh, dan alasannya kuat:** tiap trial hanya 1 VM → hanya **satu `terraform apply` pada satu waktu** → jumlah worker tak pernah masuk hitungan (terbukti: Terraform mean **81,80 dtk**, sejalan dengan benchmark 4-worker ~1m15s/apply yang juga mengukur satu apply sendirian). Dan **seluruh pengukuran diambil dari Proxmox Summary + Audit Trail, tidak pernah dari Inventory** → celah `SyncVmFactsJob` tak menyentuh satu angka pun.
+> **✅ Keputusan menolak Inventory sebagai sumber ukur (§1.c, diambil demi alasan bias) ternyata mengisolasi seluruh seri dari bug ini.** Kalau kemarin IP Inventory dipakai, seri hangus.
+> **Batch berbeda:** 10 VM dibagi ke worker → jumlah worker menentukan gelombang (3 worker = 4 gelombang; **4 worker = 3 gelombang**). Karena batch **deskriptif dan tidak pernah diadu statistik** dengan 10 trial, perbedaan config ini **sah** — tapi **harus ditulis**, jangan didiamkan.
+> 📊 **4 worker = angka terukur, bukan tebakan** (benchmark 2026-06-23): 12 VM/~4m10s, ~1m15s/apply, ~2,9 VM/mnt ≈ 3× throughput vs 2 worker; node Proxmox saat 4 clone berbarengan → IO delay ~1,06%, CPU puncak ~31%, *memory pressure negligible* [[provisioning-queue-concurrency]].
+
 | Yang dicatat | Portal (1 batch berisi N VM) | Manual (padanan N VM) |
 |---|---|---|
 | Jumlah langkah | dari wizard terbuka → Submit | **23 × N** |
@@ -362,7 +369,95 @@ Perlu dicatat: `t3` tetap **lebih cepat** dari seluruh proses manual, jadi porta
 
 **Perkiraan hasil pada N = 10:** langkah manual **230** lawan portal **≈12**. Perbandingan ini sah karena keluarannya sama-sama 10 VM. ⚠️ Untuk kolom waktu manual, **jangan mengaku mengukur** 10 VM manual berturut-turut kalau yang dilakukan hanya mengalikan 136,90 × 10 — tulis tegas "ekstrapolasi dari rata-rata 10 trial".
 
+---
+
+#### ✅ HASIL BATCH — DIJALANKAN 2026-07-16, N=10, 10/10 BERHASIL
+
+**VM:** `BULK-01`..`BULK-10`, **VMID 100–109**, env `Development/UAT Environtment`, RHEL 10 (Jakarta), tier Bronze. Satu permintaan (`Jumlah = 10`), satu persetujuan.
+
+| Yang dicatat | Portal (1 batch, 10 VM) | Manual (10 VM) |
+|---|---:|---:|
+| **Jumlah langkah pengguna** | **10** | **230** *(23 × 10, **eksak** — hitungan deterministik)* |
+| Langkah penyetuju (`ani`) | 4 | — *(tidak ada approval di manual)* |
+| `t1` (stopwatch) | **12 dtk** | — |
+| `t2` (Submit→Approve, audit) | **26 dtk** | — |
+| Terraform total (audit) | **315 dtk** | — |
+| **Total ≈ `t1` + TF + ~6 dtk IP** | **≈ 333 dtk (5,6 mnt)** | **1369 dtk (22,8 mnt)** ⚠️ **EKSTRAPOLASI** 136,90 × 10 |
+| Selisih waktu | **−75,68%** | — |
+
+**Gelombang (bukti empiris 4 worker):**
+
+| Gelombang | VM | Durasi |
+|---|---|---:|
+| 1 | BULK-02, 03, 01, 04 | **114 dtk** |
+| 2 | BULK-05, 07, 06, 08 | **107 dtk** |
+| 3 | BULK-09, 10 | **94 dtk** |
+
+**Per-apply efektif = 31,5 dtk/VM** lawan **81,80 dtk** saat satu VM sendirian → **2,6× lebih cepat per VM**. Portal tidak mempercepat satu *clone*; ia menjalankan **empat sekaligus**. Terraform per-VM justru **melambat** saat berbarengan (~110 dtk vs 81,80 dtk solo = kontensi di node), tapi keluarannya 4× → *throughput* menang telak. **Itu mekanismenya, tulis begitu.**
+
+#### 🏆 TEMUAN UTAMA BATCH — O(1) lawan O(N), dan ini yang paling kuat
+
+| Skala | Langkah **portal** | Langkah **manual** | Selisih |
+|---|---:|---:|---:|
+| **1 VM** | **10** | 23 | −56,52% |
+| **10 VM** | **10** ← *tidak berubah* | **230** | **−95,65%** |
+
+**Jumlah langkah portal KONSTAN; manual TUMBUH LINEAR.** Membuat 10 VM di portal butuh langkah yang **sama persis** dengan membuat 1 VM — yang berubah hanya angka yang diketik di kolom `Jumlah`. Di Proxmox, tiap VM menuntut 23 langkahnya sendiri, karena **fitur batch tidak ada di sana**.
+
+Ini memenuhi catatan opsional §1.b (*"tunjukkan jumlah langkah pengguna portal ~tetap saat N naik, sedangkan manual naik linear"*) — dan sekarang **ada dua titik terukur pada kurvanya**: N=1 → 10 langkah, N=10 → 10 langkah.
+
+> ⚠️ **INI BUKAN KLAIM EFISIENSI — INI KLAIM KEMAMPUAN, dan justru di situ kekuatannya.** Proxmox VE dan VMware **tidak menyediakan batch provisioning sama sekali**. Portal tidak sedang "lebih cepat"; ia mengerjakan sesuatu yang **tidak ada jalannya** di alat pembanding. Klaim kategorikal seperti ini **tidak butuh nilai p** dan tidak dapat dibantah dengan *"itu kan cuma paralelisasi"*.
+> 🚫 **JANGAN pakai −75,68% untuk mengklaim indikator ≥50% tercapai.** Indikator (`bab1-new.md:54` + `bab3` §3.3.5c) menilai *provisioning mesin virtual* pada satuan **per-VM**, dan di sana angkanya tetap **−27,83% ❌**. Batch dilaporkan **berdampingan**, bukan menggantikan — mengikuti preseden `bab1-new.md:12` yang mengutip Fadhudin dengan **dua skala** (70,4% satu server · 97,6% untuk 14 server paralel). Keputusan ini diambil **2026-07-15, sebelum H1 diketahui** — itu yang membuatnya sah.
+
+#### Temuan pendukung
+
+**✅ `t2` = 26 dtk — LATENSI PERSETUJUAN YANG ASLI.** Berbeda dari 10 trial pokok yang `t2`-nya **artefak prosedur** (mean 1081 dtk, karena kesepuluh permintaan diantre lebih dulu). Di batch: satu permintaan, disetujui 26 detik kemudian. **Ini angka `t2` yang sah dan dapat dilaporkan untuk RM2** — menambal apa yang tadinya dianggap hilang. **Dan satu persetujuan itu menanggung sepuluh mesin sekaligus, seluruhnya terekam audit** → tata kelola ikut menskala, sementara manual membuat 10 VM tanpa satu pun persetujuan formal maupun jejak.
+
+**✅ Deployment 100% bertahan** — 10/10 berhasil, nol kegagalan. Kekhawatiran RAM tidak terbukti: 10 × 2 GB = 20 GB *assigned* di host 16 GB **berjalan mulus**, karena KVM mengalokasikan memori secara malas dan puncaknya hanya selama tiap gelombang boot (penalaran user, terverifikasi).
+
+**✅ Konsistensi 50/50 lagi** (`qm config`, VMID 100–109): `vcpus: 1` · `memory: 2048` · `scsi0 size=40G` · `ipconfig0: ip=dhcp` · hostname = nama VM. **10/10 IP diperoleh** — terbaca di Inventory: `.123 .121 .124 .122 .125 .126 .127 .244 .245 .246`.
+
+**✅ Worker `system` terbukti bekerja.** Kesepuluh IP **terisi di Inventory portal** — pertama kalinya jalur `SyncVmFactsJob` punya konsumen di prod (unit dipasang 23:04, lihat kotak di atas). Sebelum ini kolom IP berisiko null selamanya. ⬜ Black-box kini aman untuk skenario yang memeriksa IP di Inventory.
+
+> ⚠️ **`t3` stopwatch batch TIDAK dipakai.** User mencatat 310 dtk, sedangkan audit menunjukkan Terraform baru selesai di **315 dtk** → stopwatch berhenti **sebelum** VM terakhir jadi (kebalikan dari 10 trial pokok, yang `t3`-nya selalu **di atas** durasi Terraform). Untuk temuan deskriptif ini dipakai **angka audit yang presisi**; stopwatch batch dibuang. **Jangan campur dua instrumen dalam satu angka.**
+
+📌 **Throughput 1,90 VM/mnt**, lebih rendah dari benchmark 2026-06-23 (~2,9 VM/mnt pada 12 VM/4m10s). Sebabnya belum diselidiki — kemungkinan beda template/beban node. **Sebutkan apa adanya bila benchmark lama dikutip di Bab V; jangan diam-diam pakai angka yang lebih bagus.**
+
+#### 📸 Bukti batch — ✅ LENGKAP 2026-07-16 (sengaja lebih ringan dari arm 1-by-1)
+
+**Beban bukti mengikuti klaimnya.** Batch hanya mengklaim *kemampuan* + *jumlah langkah* + *10/10 jadi* — bukan H1/H2. Bukti H2 sudah lengkap dari `PROVE-1..10` (50/50); batch tidak menanggungnya.
+
+| Bukti | Sumber | Cakupan |
+|---|---|---|
+| 1 permintaan → 10 VM | output query **Audit Trail** (1 `CREATE_PROVISION_REQUEST` → 10 `CREATE_VM`) | **10/10** |
+| 10/10 berhasil + IP diperoleh | **screenshot Inventory** (10 Running + kolom IP terisi) | **10/10** |
+| VM benar-benar ada di hypervisor | **screenshot sidebar Proxmox** `BULK-01`..`BULK-10` | **10/10** |
+| Konfigurasi sesuai spec | **`qm config` VMID 100–109** | **10/10** |
+| VM jalan + IP terbaca | screenshot **Summary `BULK-01`** | **1 sampel** |
+| Auto-extend + hostname | console **`BULK-01`**: `df -h` · `lsblk` · `hostname` | **1 sampel** |
+| Tab Hardware | screenshot **`BULK-01`** | **1 sampel** |
+
+> ⚠️ **ATURAN CAPTION — jangan menggeneralisasi dari satu sampel.**
+> Klaim **"10/10 sesuai spec"** bersandar pada **`qm config` VMID 100–109**, BUKAN pada screenshot `BULK-01`. Klaim **"auto-extend + hostname terverifikasi"** bersandar pada **`BULK-01` saja — satu sampel**.
+> ✅ Tulis: *"Verifikasi dari dalam guest dilakukan pada satu VM sampel (`BULK-01`); kesesuaian konfigurasi kesepuluh VM diverifikasi melalui `qm config` pada VMID 100–109."*
+> 🚫 JANGAN tulis: *"seluruh VM batch terverifikasi auto-extend"* — itu tidak diperiksa, dan satu kalimat berlebih merusak kredibilitas seluruh bab.
+> ℹ️ Pembanding: arm manual memakai **2 sampel** (`manual-9`, `manual-10`), arm portal 1-by-1 memakai `PROVE-9`+`PROVE-10`. Satu sampel di batch **cukup** karena batch tidak menanggung H2 — tapi **sebutkan jumlah sampelnya**, jangan dikaburkan.
+
+> ℹ️ **Screenshot wizard dengan `Jumlah = 10` = bukti ANTARMUKA (§1.g)** — properti perangkat lunak, sama kapan pun difoto → **boleh diambil belakangan, bahkan setelah `BULK-01..10` dihapus**. Tidak mendesak.
+
+**➡️ Setelah ini `BULK-01..10` (VMID 100–109) BOLEH DIHAPUS.** Audit tersimpan permanen (append-only di DB prod).
+
 **Tempat pelaporan:** (1) **§4 black-box bagian C** (Provisioning & Inventaris) — tambahkan skenario "ajukan permintaan batch N VM → N VM ter-provision dengan sufiks `-01`..`-0N`"; (2) **4.6 Pembahasan** sebagai temuan deskriptif menjawab RM1; (3) bahan Bab V *queue scaling* [[next-session-future-work-narrative]].
+
+> 🔒 **ATURAN DITULIS 2026-07-16, SEBELUM BATCH DIJALANKAN — user akan mencoba N=10 di host 16 vCPU / 16 GB.**
+> **Batas lingkungan ≠ kegagalan sistem.** Tier Bronze = 2 GB → **N=10 berarti 20 GB dialokasikan pada host 16 GB**, dan `main.tf:20` mematikan **ballooning**. Jadi kalau batch N=10 mentok, sebabnya **kapasitas lingkungan uji prototipe**, bukan cacat portal.
+> **➡️ Aturan pelaporan (ditetapkan SEKARANG, bukan setelah melihat hasil):**
+> 1. **Indikator "keberhasilan deployment 100%"** (`bab1-new.md:54`) mengacu pada **10 trial pokok** yang dijalankan **di dalam kapasitas** — statusnya ✅ 10/10 dan **tidak diubah oleh hasil batch**.
+> 2. Kalau N=10 gagal sebagian karena RAM: dicatat sebagai **batas kapasitas lingkungan**, bahan **Bab V (*queue/capacity scaling*)** — **bukan** kegagalan deployment portal, dan **bukan** angka yang masuk indikator.
+> 3. **Percobaan N=10 WAJIB DILAPORKAN apa adanya walau kemudian diturunkan ke 5/8.** Audit Trail merekamnya permanen (`ProvisionVmJob.php:116` menulis baris `CREATE_VM` "Provision FAILED"), jadi menghilangkannya dari naskah = ada yang tidak diceritakan. Kalimatnya cukup: *"N=10 dicoba, mentok pada batas RAM host, diturunkan ke N=5"* — itu **temuan**, bukan aib.
+> 4. **Jangan diam-diam mundur ke 5 lalu berpura-pura 10 tak pernah terjadi.** Pelajaran yang sama dengan percobaan pendahuluan PROVE-1/PROVE-6 (§1.c-quater): yang diungkap jadi bukti itikad baik, yang didiamkan jadi temuan penguji.
+> ⚠️ **Kemungkinan lain yang justru BAGUS:** penjaga kapasitas node ([[node-capacity-warning]]: warn 90 / crit 95 + `block_on_critical`) bisa **memblokir approval** sebelum Terraform jalan. Kalau itu terjadi, **itu fitur bekerja sebagaimana dirancang** — portal menolak *over-commit*. Catat sebagai temuan **§4 black-box** + RM2, bukan sebagai kegagalan.
+> ℹ️ **Disk kemungkinan aman:** 10 × 40 GB = 400 GB *assigned*, tetapi pemakaian riil ≈ 2,4 GB/VM (terbukti `df -h` di `manual-9`) → *thin provisioning* menanggungnya. **RAM yang jadi kendala, bukan disk.**
 
 ### 1.d Langkah per percobaan — MANUAL (Proxmox VE GUI)
 
@@ -764,22 +859,148 @@ Akibatnya seri pengukuran Rocky dibatalkan dan pengukuran diulang memakai templa
 ## 3. KEBERGUNAAN — SUS  ·  (Hipotesis 3)
 
 **Yang diukur:** skor **System Usability Scale** 0–100.
-**Indikator target (bab3):** SUS ≥ 68 (kategori *acceptable*). **n ≥ 5 responden** (idealnya pengguna non-teknis, sesuai klaim *self-service*).
+**Indikator target:** SUS ≥ 68 (*acceptable*) — `bab3.md` §3.3.5c **dan** `bab1-new.md:55` Tujuan Khusus #4.
+
+> 🚨 **H3 = KONFLIK TIGA ARAH DI NASKAH (ditemukan 2026-07-16, cacat lama — bukan akibat data).**
+>
+> | Sumber | Bunyinya | Bentuk |
+> |---|---|---|
+> | `bab1-new.md` RM4 | *"evaluasi tingkat kebergunaan ... **berdasarkan SUS**"* | satu kelompok |
+> | `bab1-new.md:55` Tujuan #4 | *"skor SUS **minimal 68**"* | **ambang** |
+> | `bab2.md:187` **H3** | *"terdapat **perbedaan** ... antara aplikasi dan **antarmuka Proxmox VE bawaan**"* | **perbandingan** |
+>
+> **Dua lawan satu** — bab1 & bab3 bicara ambang; hanya `bab2.md` yang menuntut pembanding. H3 versi bab2 adalah **outlier**, bukan mayoritas.
+> **✅ TIDAK PERLU MEMILIH — user punya KEDUA dataset** (SUS portal **dan** SUS Proxmox, dikonfirmasi 2026-07-16). **Laporkan dua-duanya:** (a) SUS portal lawan ambang 68 → memenuhi bab1 + bab3; (b) SUS portal lawan Proxmox → memenuhi H3 bab2. Lebih kuat daripada mana pun sendirian, dan konflik selesai **tanpa membuang apa pun**.
+
+> 🔒 **KEPUTUSAN TERKUNCI 2026-07-16 — `n = 8`, DIAMBIL SEBELUM SATU PUN SKOR SUS DIHITUNG.**
+> **Stempel waktu inilah yang membuatnya sah.** Menghitung dulu → melihat p = 0,0625 → baru menambah responden = **p-hacking**. Diputuskan mumpung p-nya belum diketahui siapa pun = bersih, sekategori dengan keputusan batch §1.c-bis.
+>
+> **Dasar aritmetika (distribusi null EKSAK Wilcoxon signed-rank, 2 sisi):**
+>
+> | n | p terkecil yang mungkin | Bisa < 0,05? | Toleransi pembelot |
+> |:--:|---:|:--:|---|
+> | **5** | **0,0625** | ❌ **MUSTAHIL** | — |
+> | 6 | 0,03125 | ✅ | **nol** — keenamnya wajib searah |
+> | **7** | 0,01562 | ✅ | tahan **1** pembalikan kecil |
+> | **8** ← dipakai | **0,00781** | ✅ | tahan **3** |
+> | 10 | 0,00195 | ✅ | tahan 8 |
+>
+> **n=5 secara aritmetika TIDAK BISA mencapai p < 0,05** — 2⁵ = 32 susunan tanda, hasil paling ekstrem pun memberi 2/32 = 0,0625. Berapa pun bagusnya skor portal, H3 versi perbandingan **pasti gagal** di n=5. **Ini batas ujinya, bukan soal kualitas data.**
+> **Kenapa bukan n=6** (yang sudah "bisa"): toleransinya **nol**. Satu responden membelot — **bahkan dengan selisih paling tipis** — p melompat ke 0,0625 dan H3 mati. **Risikonya nyata di sini: 2 responden = IT admin**, justru orang yang paling fasih Proxmox dan sangat masuk akal menilainya setara atau lebih tinggi. Di n=6 satu orang seperti itu mematikan H3; di n=8 masih aman.
+> **⚠️ `n ≥ 5` di `bab3.md` itu syarat INSTRUMEN SUS, bukan syarat UJI BEDA.** Naskah tidak pernah menyambungkan keduanya — celah yang harus ditutup saat revisi bab3.
+> ℹ️ **Untuk klaim ambang ≥68 saja, n=5 SUDAH SAH.** Penambahan ke 8 **hanya** dibutuhkan uji perbandingan H3 versi bab2.
+
+> 🔒 **KOMPOSISI RESPONDEN JUGA DIKUNCI SEKARANG — target `5 regular user + 3 IT admin`** (dari 3+2 yang sudah ada, tambah **2 regular + 1 IT admin**).
+> **Kenapa ini wajib dikunci bersamaan dengan n:** kalau hanya n yang ditetapkan lalu komposisinya dipilih belakangan, lubangnya cuma **pindah tempat**. Menambah 3 *regular user* (jadi 6+2) setelah tahu kelompok mana yang lebih memihak portal = **menumpuk sampel**, sepupu dekat p-hacking. Rasio 5:3 mempertahankan proporsi 3:2 (≈60/40) yang sudah ada — jadi ia **melanjutkan** komposisi awal, bukan mengarangnya ulang.
+> **Bonus:** subkelompok admin naik ke n=3, cukup untuk disebut deskriptif. ⚠️ **Tetap JANGAN diuji beda** — 5 lawan 3 masih terlalu kecil; regular vs admin **deskriptif saja**.
 
 **Langkah:**
-1. Tiap responden diminta menyelesaikan **satu tugas nyata** (mis. *provision* 1 VM lewat portal).
-2. Isi **kuesioner SUS** 10 butir, skala Likert 1–5.
+1. Tiap responden diminta menyelesaikan **satu tugas nyata** (mis. *provision* 1 VM lewat portal), **lalu tugas setara di Proxmox GUI**.
+2. Isi **kuesioner SUS** 10 butir, skala Likert 1–5, **untuk masing-masing sistem**.
 3. Hitung skor per responden dengan **rumus baku**: butir **ganjil** → (nilai − 1); butir **genap** → (5 − nilai); jumlahkan lalu **× 2,5** → skor 0–100.
-4. Rata-ratakan seluruh responden → skor SUS akhir + kategori.
-5. *(Opsional H3 pembanding)*: minta responden juga coba **Proxmox GUI** + isi SUS-nya → bandingkan.
+4. Rata-ratakan seluruh responden → skor SUS akhir + kategori (**per sistem**).
+5. **Uji H3** = **Wilcoxon signed-rank** (BERPASANGAN — responden sama menilai dua sistem). ⚠️ **BUKAN Mann-Whitney** — itu untuk H1/H2 yang kelompoknya independen. `bab3.md` §3.3.5d hanya menulis *"uji Wilcoxon"* telanjang → **wajib dipertegas saat revisi**, kalau tidak jadi umpan penguji.
+6. Shapiro-Wilk diterapkan pada **SELISIH** tiap pasangan (bukan pada tiap kelompok). ⚠️ Kalau tidak menolak normalitas, alur `bab3.md` mengarah ke **paired t-test** — **jangan bersandar ke situ di n kecil**: Shapiro-Wilk gagal menolak karena datanya sedikit, bukan karena normal.
 
-**Tabel jawaban & skor:**
+> 📌 **Akses Proxmox untuk responden (dikonfirmasi user 2026-07-16):** ketiga *regular user* diberi akun Proxmox berhak **create/edit/view VM**, **tanpa** hak *reconfig cluster* — supaya mereka benar-benar dapat mengerjakan tugasnya (**adil ke Proxmox**, tidak ada celah *"Proxmox sengaja dijebak"*).
+> **Ini memicu koreksi §1.b** (lihat kotak di sana): klaim lama *"non-admin tidak BISA provisioning manual"* terbantah oleh setup ini sendiri; yang benar = *"tidak DIBERI"* (kebijakan organisasi, `bab1-new.md:19`).
+> **✅ Dan ini justru memperagakan RM2:** di Proxmox mentah **tidak ada jalan tengah** — untuk memberi layanan mandiri, hak yang terpaksa diserahkan adalah create/edit/view langsung, **karena Proxmox tidak punya lapisan persetujuan**. Portal = jalan tengah itu. Pakai di **4.6**.
+> **Konsekuensi jujur:** kelompok SUS Proxmox **tidak menanggung beban approval** → menilai Proxmox pada kondisi **ternyamannya** → **konservatif untuk portal**. Pola yang sama dengan §1.a (`t2` dikeluarkan) dan §1.b. **Sebutkan** — konsistensi pola ini di ketiga hipotesis adalah kekuatan utama naskah.
 
-| Responden | Q1 | Q2 | … | Q10 | Skor SUS |
-|-----------|:--:|:--:|:-:|:---:|---------:|
-| R1 | | | | | |
-| … | | | | | |
-| **Rata-rata** | | | | | |
+### 3.a HASIL — ✅ SELESAI 2026-07-16 (n=8, sesuai keputusan terkunci)
+
+**Komposisi terealisasi = `5 regular + 3 IT admin`, persis target yang dikunci sebelum data dihitung.**
+
+| Responden | Peran | **PORTAL** | **PROXMOX** | Selisih |
+|---|---|---:|---:|---:|
+| R1 | regular | 77,5 | 17,5 | **+60,0** |
+| R2 | regular | 87,5 | 25,0 | **+62,5** |
+| R3 | regular | 85,0 | 17,5 | **+67,5** |
+| R4 | regular | 92,5 | 15,0 | **+77,5** |
+| R5 | regular | 97,5 | 17,5 | **+80,0** |
+| R6 | IT admin | 100,0 | 67,5 | **+32,5** |
+| R7 | IT admin | 97,5 | 72,5 | **+25,0** |
+| R8 | IT admin | 100,0 | 70,0 | **+30,0** |
+
+| | Mean | Median | SD | Min–Max | Kategori |
+|---|---:|---:|---:|---:|---|
+| **PORTAL** | **92,19** | 95,00 | 8,18 | 77,5–100 | **Excellent (A)** |
+| **PROXMOX** | **37,81** | 21,25 | 26,84 | 15,0–72,5 | **Poor (F)** |
+
+#### Uji H3 — DITERIMA, dan kokoh di kedua jalur
+
+| Langkah | Hasil |
+|---|---|
+| Shapiro-Wilk pada **SELISIH** | W = 0,8767 · **p = 0,1753** → normalitas **tidak ditolak** |
+| → alur `bab3.md` mengarah ke | **paired t-test** (bukan *Independent* T-Test — lihat cacat #1 §3.b) |
+| **Paired t-test** | **t(7) = 6,982 · p = 0,000215** · Cohen *d* = **2,468** |
+| **Wilcoxon signed-rank** (konfirmasi) | W = **0** · **p = 0,0078125** (eksak, 2 sisi) · **8/8 searah** |
+| **➡️ Putusan** | **H0 DITOLAK · H3 DITERIMA** |
+
+> ✅ **Dua jalur uji, satu kesimpulan.** Selisihnya **bimodal secara struktural** (regular +60..+80 vs admin +25..+32,5 — dua kelompok peran, bukan satu populasi), jadi "normal" versi Shapiro-Wilk di n=8 itu **gagal menolak karena datanya sedikit**, bukan bukti normal — persis jebakan yang sudah diperingatkan di langkah 6. **Karena itu keduanya dilaporkan:** t-test sebagai jalur yang diminta `bab3.md`, Wilcoxon signed-rank sebagai konfirmasi yang kebal bimodalitas. Keduanya p < 0,01 → **kesimpulan tidak bergantung pada pilihan uji**. Ini bukan hedging, ini menutup satu-satunya celah yang tersisa.
+
+> 🎯 **KEPUTUSAN n=8 TERBUKTI TEPAT — dan justru bikin uji lebih SULIT, bukan lebih mudah.**
+> Di n=5, Wilcoxon signed-rank **mustahil** mencapai p<0,05 (p min 0,0625). Di n=8 → **p = 0,0078**. ✅
+> **Dan ramalan 2026-07-16 kena telak:** ketiga **IT admin** memberi selisih **TERKECIL** (mean **+29,17**) dibanding regular user (mean **+69,50**) — mereka fasih Proxmox, jadi menilainya jauh lebih murah hati. **Menambah justru admin = memasukkan responden yang paling tidak menguntungkan portal.** Kalau kedelapannya regular user, efeknya akan lebih seragam dan p lebih kecil lagi. **Komposisi 5:3 = pilihan konservatif**, dan itu dapat dibuktikan dari tabel selisih di atas. Pola yang sama dengan §1.a/§1.b/§2: **semua keputusan miring ke arah yang merugikan hipotesis sendiri.**
+
+#### Indikator ambang ≥ 68 — TERCAPAI
+
+| | |
+|---|---|
+| Portal mean **92,19** ≥ 68 | ✅ **TERCAPAI** (`bab1-new.md:55` Tujuan #4 + `bab3.md` §3.3.5c) |
+| Responden portal ≥ 68 | **8/8** — tidak ada satu pun di bawah ambang |
+
+> ✅ **Konflik H3 tiga arah SELESAI tanpa membuang apa pun** (lihat kotak konflik di atas): **hipotesis diuji** (perbandingan, versi `bab2.md:105` → diterima) **dan indikator dilaporkan** (ambang ≥68, versi `bab1-new.md:55` + bab3 → tercapai). Pola yang sama dengan H1: hipotesis ≠ indikator, dua-duanya punya tempat.
+
+#### 🏆 TEMUAN UTAMA — lebih berharga daripada skor totalnya
+
+| Kelompok | PORTAL | PROXMOX |
+|---|---:|---:|
+| **Regular user (n=5)** | **88,00** — Excellent (A) | **18,50** — **Poor (F)** |
+| **IT admin (n=3)** | **99,17** — Excellent (A) | **70,00** — **Good/Acceptable (B–C)** |
+
+**Proxmox VE tidak "buruk". Proxmox VE buruk *bagi orang yang bukan admin*.**
+Bagi IT admin, Proxmox **lolos ambang 68** (70,00 = *acceptable*) — mereka memang fasih, dan angka itu jujur mengakuinya. Bagi *regular user*, Proxmox jatuh ke **18,50** — kategori terburuk pada skala SUS. **Selisih 51,5 poin pada sistem yang sama, hanya karena siapa yang memakainya.**
+Portal menghapus jurang itu: **88,00 vs 99,17**, dua-duanya *Excellent*, selisih antar-peran tinggal **11,17 poin**.
+
+➡️ **Inilah tesis penelitian ini, terbukti secara empiris, dalam satu tabel.** Portal tidak mengklaim Proxmox jelek — ia menunjukkan Proxmox **hanya dapat digunakan oleh pakar**, dan bahwa lapisan abstraksi memindahkan kemampuan itu ke tangan pengguna non-pakar. Persis bunyi **RM1** (`bab1-new.md`) dan tujuan *"mudah digunakan oleh pengguna non pakar"*.
+⚠️ **Deskriptif saja — JANGAN diuji beda.** 5 lawan 3 terlalu kecil. Kekuatannya ada pada **besar selisihnya (51,5 poin)** dan pada **arah yang konsisten**, bukan pada nilai p.
+
+**Bukti disimpan:** `presentation/bukti/sus/` — screenshot formulir, rekap jawaban mentah 1–5, perhitungan skor.
+
+### 3.b Jawaban mentah (arsip — untuk verifikasi ulang)
+
+Skoring baku: butir **ganjil** → (nilai − 1); butir **genap** → (5 − nilai); jumlah × 2,5.
+
+**PORTAL**
+
+| R | Peran | Q1 | Q2 | Q3 | Q4 | Q5 | Q6 | Q7 | Q8 | Q9 | Q10 | Skor |
+|---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---:|
+| R1 | regular | 4 | 2 | 4 | 3 | 5 | 1 | 3 | 1 | 4 | 2 | 77,5 |
+| R2 | regular | 5 | 2 | 5 | 1 | 4 | 1 | 4 | 1 | 4 | 2 | 87,5 |
+| R3 | regular | 4 | 1 | 5 | 2 | 4 | 1 | 4 | 1 | 5 | 3 | 85,0 |
+| R4 | regular | 5 | 1 | 4 | 2 | 5 | 1 | 5 | 1 | 4 | 1 | 92,5 |
+| R5 | regular | 5 | 2 | 5 | 1 | 5 | 1 | 5 | 1 | 5 | 1 | 97,5 |
+| R6 | IT admin | 5 | 1 | 5 | 1 | 5 | 1 | 5 | 1 | 5 | 1 | 100,0 |
+| R7 | IT admin | 5 | 1 | 5 | 1 | 5 | 1 | 4 | 1 | 5 | 1 | 97,5 |
+| R8 | IT admin | 5 | 1 | 5 | 1 | 5 | 1 | 5 | 1 | 5 | 1 | 100,0 |
+| | | | | | | | | | | | **Mean** | **92,19** |
+
+**PROXMOX**
+
+| R | Peran | Q1 | Q2 | Q3 | Q4 | Q5 | Q6 | Q7 | Q8 | Q9 | Q10 | Skor |
+|---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---:|
+| R1 | regular | 1 | 4 | 2 | 5 | 3 | 3 | 1 | 4 | 1 | 5 | 17,5 |
+| R2 | regular | 2 | 5 | 2 | 5 | 3 | 3 | 2 | 3 | 2 | 5 | 25,0 |
+| R3 | regular | 1 | 4 | 1 | 5 | 3 | 3 | 2 | 4 | 1 | 5 | 17,5 |
+| R4 | regular | 1 | 4 | 1 | 5 | 3 | 3 | 1 | 5 | 2 | 5 | 15,0 |
+| R5 | regular | 2 | 5 | 2 | 5 | 3 | 3 | 1 | 5 | 2 | 5 | 17,5 |
+| R6 | IT admin | 4 | 2 | 3 | 2 | 5 | 1 | 2 | 3 | 4 | 3 | 67,5 |
+| R7 | IT admin | 4 | 2 | 4 | 2 | 5 | 1 | 2 | 2 | 4 | 3 | 72,5 |
+| R8 | IT admin | 4 | 2 | 4 | 2 | 5 | 1 | 1 | 2 | 4 | 3 | 70,0 |
+| | | | | | | | | | | | **Mean** | **37,81** |
+
+> ℹ️ Angka di atas pratinjau (Python stdlib: Royston AS R94 + distribusi null signed-rank eksak). **Bukti Bab IV tetap screenshot SPSS/Jamovi.**
 
 **Screenshot bukti:**
 - [ ] Formulir kuesioner (mis. Google Form)

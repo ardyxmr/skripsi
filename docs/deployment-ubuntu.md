@@ -357,12 +357,27 @@ sudo sed -i \
 
 sudo systemctl daemon-reload
 
-sudo systemctl enable --now infraprov-worker@1 infraprov-worker@2 infraprov-worker@3  # 3 worker paralel
+sudo systemctl enable --now infraprov-worker@1 infraprov-worker@2 infraprov-worker@3 infraprov-worker@4  # 4 worker provisioning (antrean `default`)
+sudo systemctl enable --now infraprov-worker-system   # ⚠️ WAJIB — antrean `system`, lihat catatan di bawah
 sudo systemctl enable --now infraprov-reverb          # 1 per node
 sudo systemctl enable --now infraprov-scheduler       # ⚠️ TEPAT SATU fleet-wide (discovery/expiry)
 ```
 
-Cek: `systemctl status infraprov-reverb`, `journalctl -u infraprov-worker@1 -f`.
+> 📊 **Kenapa 4 worker `default`, bukan 3 — ini angka terukur, bukan tebakan (benchmark 2026-06-23).**
+> 2 worker (sebelum *split*): 6 VM dalam ~6m13s, ~2 mnt/apply, ~0,96 VM/mnt. **4 worker + queue-split: 12 VM dalam ~4m10s, in-flight=4 terkonfirmasi, ~1m15s/apply, ~2,9 VM/mnt ≈ 3× throughput.** Tekanan node Proxmox saat 4 clone berbarengan: IO delay ~1,06%, CPU puncak ~31%, PSI 8–10% — jauh di bawah rentang kontensi. **Disk bukan kendala; CPU yang pertama terasa.** Verdict: 4 = *sweet spot* yang nyaman dan berdasar data.
+> ⚠️ Versi lama dokumen ini menulis **3** worker + tanpa worker `system` — **tertinggal dari setup prod yang sebenarnya**. Dibetulkan 2026-07-16.
+
+> 🚨 **`infraprov-worker-system` WAJIB — jangan dilewat (celah ini ditemukan di prod 2026-07-16).**
+> `infraprov-worker@` **hanya** mengonsumsi `--queue=default`. Sementara `SyncVmFactsJob` menaruh dirinya di antrean **`system`** (`app/Jobs/SyncVmFactsJob.php:49`), dan ia yang bertugas menarik **IP + spek VM** dari provider ke Inventory.
+> **Tanpa unit ini, job itu tidak punya konsumen.** Akibatnya senyap: `ProvisionVmJob` menyimpan `ip_address = $out['default_ipv4'] ?? null`, dan komentarnya sendiri mengakui *"a fresh clone reports its IP only after it finishes booting, so the sync above **often gets vmid/specs but no IP**"* (`ProvisionVmJob.php:142-144`). Yang seharusnya menambal itu adalah `SyncVmFactsJob` → **IP null akan null selamanya di Inventory**, tanpa satu pun pesan kesalahan.
+> Cukup **satu instance** (beban ringan, bukan terraform). ℹ️ `scripts/backend.sh` (dev) sudah punya padanannya sejak lama (`worker_sys`) — jalur systemd/prod yang tertinggal, bukan aplikasinya.
+
+Cek: `systemctl status infraprov-reverb`, `journalctl -u infraprov-worker@1 -f`, `journalctl -u infraprov-worker-system -f`.
+Verifikasi antrean `system` benar-benar dikonsumsi:
+```bash
+redis-cli -p 6380 KEYS 'queues:system*'      # setelah provisioning: key muncul lalu KOSONG lagi
+systemctl is-active infraprov-worker-system  # harus: active
+```
 
 ---
 

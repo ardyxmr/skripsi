@@ -103,7 +103,7 @@ Peneliti menjalankan seluruh 40 skenario pada lingkungan produksi. Hasil lengkap
 | A4 | Logout | Sesi berakhir, kembali ke halaman login | *(isi)* | *(isi)* |
 | A5 | Ganti password | Password berubah, bisa login dengan yang baru | *(isi)* | *(isi)* |
 
-> **[TEMPEL GAMBAR — Gambar 4.4]**
+> **[TEMPEL GAMBAR 4.4]**
 > **Ambil dari:** halaman "Create Administrator" saat instalasi awal (skenario A1), atau halaman login yang menolak password salah (skenario A3).
 > **Harus memperlihatkan:** formulir pembuatan akun administrator pertama. Fitur ini mengunci dirinya sendiri setelah satu pengguna terbentuk, sehingga tangkapan layarnya membuktikan sistem tidak dapat dipasang dua kali.
 > **Caption:** **Gambar 4.4** Halaman instalasi awal pembuatan akun administrator
@@ -122,7 +122,7 @@ Peneliti menjalankan seluruh 40 skenario pada lingkungan produksi. Hasil lengkap
 | B8 | Kembalikan permintaan | Permintaan kembali ke pemohon | *(isi)* | *(isi)* |
 | B9 | Node kapasitas kritis | Node diblokir pada wizard dan halaman persetujuan | *(isi)* | *(isi)* |
 
-> **[TEMPEL GAMBAR — Gambar 4.5]**
+> **[TEMPEL GAMBAR 4.5]**
 > **Ambil dari:** wizard permintaan saat menolak nama mesin virtual yang sudah dipakai (skenario B3).
 > **Harus memperlihatkan:** pesan penolakan beserta nama yang bentrok. Ini salah satu dari dua gambar jalur-ditolak pada subbab ini, dan membuktikan sistem menahan masukan yang tidak sah alih-alih membuat mesin virtual bernama ganda.
 > **Caption:** **Gambar 4.5** Penolakan permintaan dengan nama mesin virtual yang sudah dipakai
@@ -138,7 +138,7 @@ Peneliti menjalankan seluruh 40 skenario pada lingkungan produksi. Hasil lengkap
 | C5 | Ulangi mesin virtual gagal | *Provisioning* diulang | *(isi)* | *(isi)* |
 | C6 | Sinkronisasi inventaris | Status disegarkan dari Proxmox | *(isi)* | *(isi)* |
 
-> **[TEMPEL GAMBAR — Gambar 4.6]**
+> **[TEMPEL GAMBAR 4.6]**
 > **Ambil dari:** halaman detail satu mesin virtual pada Inventory (skenario C3).
 > **Harus memperlihatkan:** status *Active*, alamat IP, dan spesifikasi konfigurasinya dalam satu layar. Gambar ini menjadi bukti bahwa Terraform selesai dan hasilnya tercatat di portal.
 > **Caption:** **Gambar 4.6** Detail mesin virtual hasil *provisioning* pada Inventory
@@ -156,7 +156,7 @@ Peneliti menjalankan seluruh 40 skenario pada lingkungan produksi. Hasil lengkap
 | D7 | Hapus mesin virtual | Mesin virtual dihancurkan di Proxmox, status *Deleted* | *(isi)* | *(isi)* |
 | D8 | Kedaluwarsa otomatis | Masuk masa tenggang, lalu dihancurkan otomatis dan tercatat | *(isi)* | *(isi)* |
 
-> **[TEMPEL GAMBAR — Gambar 4.7]**
+> **[TEMPEL GAMBAR 4.7]**
 > **Ambil dari:** halaman Inventory setelah *hardening* selesai (skenario D6).
 > **Harus memperlihatkan:** status *hardening* beserta versi *playbook* yang dipakai. Gambar ini membuktikan Ansible mengambil alih setelah Terraform, sesuai pembagian peran pada subbab 4.1.3, dan menutup bagian "Ansible" pada Rumusan Masalah 1.
 > **Caption:** **Gambar 4.7** Status *hardening* mesin virtual setelah eksekusi *playbook* Ansible
@@ -170,7 +170,7 @@ Peneliti menjalankan seluruh 40 skenario pada lingkungan produksi. Hasil lengkap
 | E3 | Penyedia terputus | Katalog dan jaringannya menjadi abu dan hilang dari wizard | *(isi)* | *(isi)* |
 | E4 | Publikasi sumber daya | Tersimpan dan muncul di wizard | *(isi)* | *(isi)* |
 
-> **[TEMPEL GAMBAR — Gambar 4.8]**
+> **[TEMPEL GAMBAR 4.8]**
 > **Ambil dari:** hasil Run Discovery pada satu penyedia (skenario E2).
 > **Harus memperlihatkan:** daftar node, template, jaringan, dan datastore yang sistem temukan sendiri dari Proxmox. Gambar ini membuktikan administrator tidak mengetik ulang inventaris infrastruktur secara manual.
 > **Caption:** **Gambar 4.8** Hasil *discovery* sumber daya dari penyedia Proxmox VE
@@ -185,7 +185,7 @@ Peneliti menjalankan seluruh 40 skenario pada lingkungan produksi. Hasil lengkap
 | F4 | Proteksi penghapusan | Ditolak disertai alasan | *(isi)* | *(isi)* |
 | F5 | Batasan environment | Hanya sumber daya yang diizinkan muncul | *(isi)* | *(isi)* |
 
-> **[TEMPEL GAMBAR — Gambar 4.9]**
+> **[TEMPEL GAMBAR 4.9]**
 > **Ambil dari:** penolakan penghapusan pengguna yang masih menjabat manajer grup (skenario F4).
 > **Harus memperlihatkan:** pesan penolakan beserta alasannya. Ini gambar jalur-ditolak kedua, dan membuktikan sistem menjaga keutuhan relasi data alih-alih menghapus pengguna yang masih dirujuk grup.
 > **Caption:** **Gambar 4.9** Penolakan penghapusan pengguna yang masih menjabat manajer grup
@@ -198,7 +198,7 @@ Peneliti menjalankan seluruh 40 skenario pada lingkungan produksi. Hasil lengkap
 | G2 | Filter audit | Hasil sesuai filter | *(isi)* | *(isi)* |
 | G3 | Ekspor CSV | Berkas CSV terunduh beserta kolom metadata | *(isi)* | *(isi)* |
 
-> **[TEMPEL GAMBAR — Gambar 4.10]**
+> **[TEMPEL GAMBAR 4.10]**
 > **Ambil dari:** menu Audit dengan filter aktif pada satu `vmid` atau satu environment (skenario G2).
 > **Harus memperlihatkan:** kolom pelaku, aksi, dan waktu, dengan hasil yang menyempit sesuai filter. Filter yang bekerja membuktikan jejak audit dapat ditelusuri, bukan sekadar tertimbun. Gambar ini menopang Rumusan Masalah 2 dan berbeda dari Gambar 4.30 yang menampilkan tiga baris audit satu proses *provisioning* secara utuh.
 > **Caption:** **Gambar 4.10** Penelusuran jejak audit menggunakan filter
@@ -399,21 +399,45 @@ Sepuluh percobaan berjalan berurutan pada tiap kelompok dengan operator yang sam
 
 | Percobaan | Mesin virtual (VMID) | Langkah pengguna | `t1` (detik) | `t3` (detik) | `t1+t3` (detik) |
 |---:|---|---:|---:|---:|---:|
-| 1 | PROVE-1 (100) | 10 | *(isi)* | *(isi)* | 110 |
-| 2 | PROVE-2 (101) | 10 | *(isi)* | *(isi)* | 97 |
-| 3 | PROVE-3 (102) | 10 | *(isi)* | *(isi)* | 94 |
-| 4 | PROVE-4 (103) | 10 | *(isi)* | *(isi)* | 97 |
-| 5 | PROVE-5 (104) | 10 | *(isi)* | *(isi)* | 95 |
-| 6 | PROVE-6 (105) | 10 | *(isi)* | *(isi)* | 95 |
-| 7 | PROVE-7 (106) | 10 | *(isi)* | *(isi)* | 110 |
-| 8 | PROVE-8 (107) | 10 | *(isi)* | *(isi)* | 97 |
-| 9 | PROVE-9 (108) | 10 | *(isi)* | *(isi)* | 95 |
-| 10 | PROVE-10 (109) | 10 | *(isi)* | *(isi)* | 98 |
+| 1 | PROVE-1 (100) | 10 | 13 | 97 | **110** |
+| 2 | PROVE-2 (101) | 10 | 12 | 85 | **97** |
+| 3 | PROVE-3 (102) | 10 | 11 | 83 | **94** |
+| 4 | PROVE-4 (103) | 10 | 10 | 87 | **97** |
+| 5 | PROVE-5 (104) | 10 | 12 | 83 | **95** |
+| 6 | PROVE-6 (105) | 10 | 11 | 84 | **95** |
+| 7 | PROVE-7 (106) | 10 | 11 | 99 | **110** |
+| 8 | PROVE-8 (107) | 10 | 10 | 87 | **97** |
+| 9 | PROVE-9 (108) | 10 | 11 | 84 | **95** |
+| 10 | PROVE-10 (109) | 10 | 11 | 87 | **98** |
 | **Rata-rata** | | **10** | **11,20** | **87,60** | **98,80** |
 
-> Kolom `t1` dan `t3` per percobaan disalin dari runbook §1.c-quater.
+Segmen `t1` menyumbang 11,20 detik dari total 98,80 detik, atau 11,3 %. Sisanya sebesar 88,7 % merupakan `t3`, yaitu waktu Terraform bekerja dan sistem operasi tamu melakukan boot. Pembagian ini dibahas kembali pada subbab 4.8.5.
 
-**Tabel 4.13 Statistik deskriptif waktu *provisioning***
+**Tabel 4.13 Bukti silang stopwatch terhadap Audit Trail**
+
+| Percobaan | `t3` stopwatch (detik) | Durasi Terraform dari audit (detik) | Selisih Δ `Active` → IP (detik) |
+|---:|---:|---:|---:|
+| 1 | 97 | 90 | +7 |
+| 2 | 85 | 75 | +10 |
+| 3 | 83 | 79 | +4 |
+| 4 | 87 | 81 | +6 |
+| 5 | 83 | 77 | +6 |
+| 6 | 84 | 79 | +5 |
+| 7 | 99 | 92 | +7 |
+| 8 | 87 | 85 | +2 |
+| 9 | 84 | 80 | +4 |
+| 10 | 87 | 80 | +7 |
+| **Rata-rata** | **87,60** | **81,80** | **+5,80** |
+
+*Durasi Terraform dihitung dari selisih timestamp `CREATE_VM` dan `APPROVE_REQUEST` pada Audit Trail.*
+
+Tabel 4.14 membuktikan bahwa titik berhenti pengukuran memang berada setelah status *Active*, bukan pada status *Active*. Pada kesepuluh percobaan, nilai `t3` selalu melampaui durasi Terraform dengan selisih 2 sampai 10 detik. Baris audit `CREATE_VM` terbit tepat saat `terraform apply` kembali, yaitu momen yang sama dengan penetapan status *Active*. Seandainya peneliti menghentikan stopwatch pada status *Active*, nilai `t3` akan setara atau berada di bawah durasi Terraform. Dua alat yang tidak saling mengetahui, yaitu stopwatch di tangan peneliti dan `created_at` di basis data server, saling mengunci.
+
+Selisih rata-rata 5,80 detik antara status *Active* dan kemunculan alamat IP merupakan temuan tersendiri. Portal menyalakan status *Active* rata-rata 5,80 detik sebelum mesin virtual benar-benar dapat dimasuki, sehingga pengguna yang langsung melakukan SSH setelah melihat status tersebut akan gagal. Bab V membahas penyempurnaannya.
+
+Durasi Terraform bernilai rata-rata 81,80 detik dengan simpangan baku 5,51 detik dan rentang 75 sampai 92 detik. Kestabilan ini menunjukkan tidak ada dua *apply* yang berjalan bersamaan sepanjang seri.
+
+**Tabel 4.14 Statistik deskriptif waktu *provisioning***
 
 | Statistik | Kelompok portal (`t1+t3`) | Kelompok manual (`t_manual`) |
 |---|---:|---:|
@@ -434,7 +458,7 @@ Koefisien variasi kelompok portal sebesar 6,11 % berbanding 11,94 % pada kelompo
 
 ### 4.3.8 Uji Normalitas
 
-**Tabel 4.14 Hasil uji normalitas Shapiro-Wilk**
+**Tabel 4.15 Hasil uji normalitas Shapiro-Wilk**
 
 | Kelompok | W | p | Kesimpulan |
 |---|---:|---:|---|
@@ -451,7 +475,7 @@ Uji non-parametrik yang berlaku di sini adalah **uji Mann-Whitney U**, yang juga
 
 ### 4.3.9 Uji Beda Mann-Whitney U
 
-**Tabel 4.15 Hasil uji Mann-Whitney U**
+**Tabel 4.16 Hasil uji Mann-Whitney U**
 
 | Ukuran | Nilai |
 |---|---:|
@@ -472,7 +496,7 @@ Nilai U sebesar 0 muncul karena kedua kelompok tidak memiliki satu pun nilai yan
 
 Jumlah langkah bernilai tetap pada seluruh percobaan di kedua kelompok, yaitu 23 pada kelompok manual dan 10 pada kelompok portal. Simpangan bakunya nol pada kedua kelompok. Angka ini merupakan hitungan prosedur yang bersifat deterministik, sehingga penelitian ini melaporkannya sebagai tabel perbandingan dan tidak menguji bedanya secara statistik.
 
-**Tabel 4.16 Perbandingan jumlah langkah**
+**Tabel 4.17 Perbandingan jumlah langkah**
 
 | Kelompok | Langkah pengguna | Langkah penyetuju | Simpangan baku | Penurunan |
 |---|---:|---:|---:|---:|
@@ -485,7 +509,7 @@ Penurunan jumlah langkah sebesar 56,52 % memenuhi indikator keberhasilan pada su
 
 Portal menyediakan kolom Jumlah yang memungkinkan satu permintaan menghasilkan beberapa mesin virtual sekaligus. Proxmox VE tidak menyediakan fungsi setara. Penelitian ini menjalankan satu percobaan batch dengan N = 10 setelah sepuluh percobaan pokok selesai.
 
-**Tabel 4.17 Hasil percobaan *provisioning* batch**
+**Tabel 4.18 Hasil percobaan *provisioning* batch**
 
 | Ukuran | Portal | Manual |
 |---|---:|---:|
@@ -513,7 +537,7 @@ Terraform menyelesaikan sepuluh *apply* dalam tiga gelombang berpola 4, 4, dan 2
 
 Waktu percobaan pada kelompok manual menurun seiring pengulangan, sedangkan waktu kelompok portal mendatar.
 
-**Tabel 4.18 Perbandingan efek belajar antar kelompok**
+**Tabel 4.19 Perbandingan efek belajar antar kelompok**
 
 | Ukuran | Kelompok manual | Kelompok portal |
 |---|---:|---:|
@@ -539,7 +563,7 @@ Status *hardening* tidak masuk sebagai parameter. Berkas `ProvisionVmJob.php` me
 
 ### 4.4.2 Hasil Kelompok Manual
 
-**Tabel 4.19 Kesesuaian konfigurasi mesin virtual kelompok manual**
+**Tabel 4.20 Kesesuaian konfigurasi mesin virtual kelompok manual**
 
 | Mesin virtual (VMID) | CPU | RAM | Disk | IP | Hostname | Sesuai |
 |---|:---:|:---:|:---:|---|:---:|:---:|
@@ -572,7 +596,7 @@ Pemeriksaan ini perlu karena tab Hardware hanya membuktikan ukuran disk virtual.
 
 Sumber data kelompok portal adalah keluaran perintah `qm config` pada node `pve`, bukan tampilan Inventory portal. Inventory merupakan laporan sistem tentang dirinya sendiri, sedangkan `qm config` membaca konfigurasi dari hypervisor. Pemilihan sumber ini menyetarakan bukti kelompok portal dengan tab Hardware pada kelompok manual.
 
-**Tabel 4.20 Kesesuaian konfigurasi mesin virtual kelompok portal**
+**Tabel 4.21 Kesesuaian konfigurasi mesin virtual kelompok portal**
 
 | Mesin virtual (VMID) | `vcpus` | `memory` | `scsi0` | `ipconfig0` | Hostname | Sesuai |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -597,7 +621,7 @@ Keluaran `qm config` menampilkan `cores: 8` pada mesin virtual buatan portal. An
 
 ### 4.4.4 Keputusan Hipotesis
 
-**Tabel 4.21 Perbandingan konsistensi konfigurasi**
+**Tabel 4.22 Perbandingan konsistensi konfigurasi**
 
 | Kelompok | Parameter diperiksa | Sesuai | Kesesuaian | Simpangan baku |
 |---|---:|---:|---:|---:|
@@ -634,14 +658,14 @@ Definisi ini memisahkan dua hal yang kerap tertukar. Operasi gagal berarti prose
 
 ### 4.5.2 Hasil Pengukuran
 
-**Tabel 4.22 Jumlah kesalahan konfigurasi**
+**Tabel 4.23 Jumlah kesalahan konfigurasi**
 
 | Kelompok | Percobaan | Kesalahan | Tingkat kesalahan |
 |---|---:|---:|---:|
 | Manual (Proxmox VE GUI) | 10 | 0 | 0 % |
 | Portal (ExoVirt) | 10 | 0 | 0 % |
 
-Kedua kelompok tidak menghasilkan penyimpangan. Seluruh 50 parameter pada tiap kelompok sesuai spesifikasi, sebagaimana Tabel 4.19 dan Tabel 4.20.
+Kedua kelompok tidak menghasilkan penyimpangan. Seluruh 50 parameter pada tiap kelompok sesuai spesifikasi, sebagaimana Tabel 4.20 dan Tabel 4.21.
 
 Angka nol pada kelompok manual menuntut satu catatan keterbatasan. Kesepuluh percobaan berjalan setelah peneliti mengalami dua insiden yang diuraikan di bawah, sehingga peneliti sudah mengetahui persis letak jebakannya. Operator yang belum pernah mengalami kesalahan serupa tidak berada pada kondisi yang sama. Angka nol karena itu tidak membuktikan bahwa prosedur manual aman, melainkan menunjukkan bahwa prosedur manual dapat berjalan aman apabila operatornya sudah pernah gagal dan mengingat pelajarannya. Kondisi tersebut tidak dapat diasumsikan berlaku pada organisasi dengan beban 120 tiket dalam dua bulan yang ditangani dua administrator.
 
@@ -674,7 +698,7 @@ Prosedur manual menyediakan kolom yang dapat terisi salah. Operator menghitung s
 
 Insiden kedua memperlihatkan lapisan berikutnya. Pengguna portal tidak mungkin melakukan kesalahan tersebut, bukan karena lebih berhati-hati, melainkan karena portal tidak menyediakan jalan menuju template. Antarmuka layanan mandiri hanya memaparkan pilihan tier, sedangkan template dikelola administrator dan tidak pernah tersentuh alur permintaan.
 
-**Tabel 4.23 Perbandingan permukaan kesalahan**
+**Tabel 4.24 Perbandingan permukaan kesalahan**
 
 | Aspek | Manual (Proxmox VE GUI) | Portal (ExoVirt) |
 |---|---|---|
@@ -701,23 +725,23 @@ Kelima pengguna biasa memperoleh akun Proxmox VE berhak membuat, mengubah, dan m
 
 ### 4.6.2 Hasil Skor SUS
 
-**Tabel 4.24 Skor SUS per responden**
+**Tabel 4.25 Skor SUS per responden**
 
 | Responden | Peran | Portal ExoVirt | Proxmox VE | Selisih |
 |---|---|---:|---:|---:|
-| R1 | Pengguna biasa | *(isi)* | *(isi)* | +60,0 |
-| R2 | Pengguna biasa | *(isi)* | *(isi)* | +62,5 |
-| R3 | Pengguna biasa | *(isi)* | *(isi)* | +67,5 |
-| R4 | Pengguna biasa | *(isi)* | *(isi)* | +77,5 |
-| R5 | Pengguna biasa | *(isi)* | *(isi)* | +80,0 |
-| R6 | Administrator TI | *(isi)* | *(isi)* | +32,5 |
-| R7 | Administrator TI | *(isi)* | *(isi)* | +25,0 |
-| R8 | Administrator TI | *(isi)* | *(isi)* | +30,0 |
+| R1 | Pengguna biasa | 77,5 | 17,5 | **+60,0** |
+| R2 | Pengguna biasa | 87,5 | 25,0 | **+62,5** |
+| R3 | Pengguna biasa | 85,0 | 17,5 | **+67,5** |
+| R4 | Pengguna biasa | 92,5 | 15,0 | **+77,5** |
+| R5 | Pengguna biasa | 97,5 | 17,5 | **+80,0** |
+| R6 | Administrator TI | 100,0 | 67,5 | **+32,5** |
+| R7 | Administrator TI | 97,5 | 72,5 | **+25,0** |
+| R8 | Administrator TI | 100,0 | 70,0 | **+30,0** |
 | **Rata-rata** | | **92,19** | **37,81** | **+54,38** |
 
-> Kolom skor per responden disalin dari runbook §3.a. Skoring baku SUS: butir ganjil bernilai (jawaban − 1), butir genap bernilai (5 − jawaban), jumlah dikali 2,5.
+Skoring mengikuti prosedur baku SUS: butir ganjil bernilai jawaban dikurangi 1, butir genap bernilai 5 dikurangi jawaban, lalu jumlah seluruh butir dikali 2,5 sehingga menghasilkan rentang 0 sampai 100. Responden yang sama menilai kedua sistem, sehingga R1 pada kolom portal dan R1 pada kolom Proxmox VE merupakan orang yang sama. Pemasangan inilah yang menjadi dasar uji berpasangan pada subbab 4.6.4.
 
-**Tabel 4.25 Statistik deskriptif skor SUS**
+**Tabel 4.26 Statistik deskriptif skor SUS**
 
 | Statistik | Portal ExoVirt | Proxmox VE |
 |---|---:|---:|
@@ -735,7 +759,7 @@ Skor rata-rata portal sebesar 92,19 melampaui ambang 68 pada subbab 3.3.5c, dan 
 
 ### 4.6.3 Uji Normalitas
 
-**Tabel 4.26 Uji normalitas Shapiro-Wilk pada selisih skor**
+**Tabel 4.27 Uji normalitas Shapiro-Wilk pada selisih skor**
 
 | Data | W | p | Kesimpulan |
 |---|---:|---:|---|
@@ -747,7 +771,7 @@ Uji Shapiro-Wilk berjalan pada selisih skor, bukan pada masing-masing kelompok, 
 
 Penelitian ini melaporkan dua uji sekaligus.
 
-**Tabel 4.27 Hasil uji beda skor SUS**
+**Tabel 4.28 Hasil uji beda skor SUS**
 
 | Uji | Statistik | p | Keterangan |
 |---|---:|---:|---|
@@ -766,7 +790,7 @@ Penelitian ini melaporkan kedua uji karena sebaran selisih bersifat bimodal, men
 
 Pemecahan skor menurut peran responden menghasilkan temuan yang lebih tajam daripada skor totalnya.
 
-**Tabel 4.28 Skor SUS menurut peran responden**
+**Tabel 4.29 Skor SUS menurut peran responden**
 
 | Peran | n | Portal ExoVirt | Proxmox VE | Jurang |
 |---|---:|---:|---:|---:|
@@ -790,10 +814,26 @@ Subbab ini menjawab Rumusan Masalah 2 dan bersifat deskriptif tanpa hipotesis.
 
 ### 4.7.1 Kontrol Akses Berbasis Peran
 
-*(Narasi: paparkan peran yang tersedia, matriks hak akses, dan bukti bahwa pengguna biasa tidak dapat mengakses menu administratif. Rujuk hasil skenario black box area F.)*
+Sistem menyediakan tiga peran, yaitu Administrator, Manager, dan User. Pembagian ini terpasang sejak instalasi awal.
 
-> **[TEMPEL GAMBAR]** Halaman User Management memperlihatkan peran dan hak akses.
-> Caption: **Gambar 4.28** Kontrol akses berbasis peran pada portal
+**Tabel 4.30 Peran dan kewenangan pada portal ExoVirt**
+
+| Peran | Kewenangan | Cakupan data |
+|---|---|---|
+| Administrator | Akses penuh, termasuk penyedia, katalog, tier, environment, dan manajemen pengguna | Seluruh mesin virtual |
+| Manager | Menyetujui, menolak, dan mengembalikan permintaan | Mesin virtual grup yang dikelolanya |
+| User | Mengajukan dan mengelola mesin virtual miliknya | Mesin virtual miliknya sendiri |
+
+Cakupan data pada Tabel 4.30 berlaku di lapisan kueri basis data, bukan sekadar penyembunyian menu. Manager melihat mesin virtual grup yang dikelolanya, sedangkan User melihat miliknya sendiri.
+
+Administrator melewati alur persetujuan. Perilaku ini terbukti pada percobaan pendahuluan `AUTO-1`, yang ter-*provisioning* tanpa satu pun baris `APPROVE_REQUEST` pada Audit Trail.
+
+Pembatasan environment melengkapi pembagian peran tersebut. Wizard hanya menampilkan penyedia, node, jaringan, dan datastore yang kebijakan environment izinkan, sehingga pengguna tidak dapat mengajukan permintaan ke sumber daya di luar haknya. Skenario F5 pada subbab 4.2 menguji perilaku ini.
+
+> **[TEMPEL GAMBAR 4.28]**
+> **Ambil dari:** menu pengaturan peran atau User Management yang menampilkan ketiga peran beserta hak aksesnya.
+> **Harus memperlihatkan:** daftar peran Administrator, Manager, dan User. Bila memungkinkan, sandingkan dengan tangkapan layar sidebar milik akun User yang menunya lebih sedikit daripada sidebar akun Administrator. Perbandingan dua sidebar membuktikan pembatasan itu terasa oleh pengguna, sedangkan satu daftar peran hanya membuktikan pengaturannya ada.
+> **Caption:** **Gambar 4.28** Peran dan kewenangan pada portal ExoVirt
 
 ### 4.7.2 Mekanisme Persetujuan
 
@@ -810,7 +850,7 @@ Percobaan batch menghasilkan `t2` yang sah sebesar **26 detik**, terukur dari sa
 
 Sistem mencatat pembuatan permintaan, persetujuan, dan pembuatan mesin virtual sebagai baris audit yang bersifat *append-only*.
 
-**Tabel 4.29 Baris audit satu permintaan *provisioning***
+**Tabel 4.31 Baris audit satu permintaan *provisioning***
 
 | Urutan | Aksi | Pelaku |
 |---:|---|---|
@@ -825,7 +865,24 @@ Sistem mencatat pembuatan permintaan, persetujuan, dan pembuatan mesin virtual s
 
 ### 4.7.4 Pengelolaan Siklus Hidup
 
-*(Narasi: paparkan aksi Inventory yang tersedia seperti perpanjangan, resize, penambahan disk, dan penghapusan, beserta gerbang persetujuannya. Rujuk hasil skenario black box area E.)*
+Mesin virtual yang sudah berjalan tetap berada di bawah alur persetujuan yang sama. Portal menyediakan enam jenis permintaan, dan kelimanya di luar `PROVISION` menyasar aset yang hidup.
+
+**Tabel 4.32 Jenis permintaan bergerbang persetujuan**
+
+| Jenis permintaan | Sasaran | Keluaran setelah disetujui |
+|---|---|---|
+| `PROVISION` | Mesin virtual baru | Mesin virtual terbangun dan masuk Inventory |
+| `RENEWAL` | Mesin virtual hidup | Tanggal kedaluwarsa mundur |
+| `PERMANENT` | Mesin virtual hidup | Kedaluwarsa dicabut |
+| `RESIZE` | Mesin virtual hidup | CPU atau RAM berubah |
+| `ADD_DISK` | Mesin virtual hidup | Disk tambahan terpasang |
+| `DESTROY` | Mesin virtual hidup | Mesin virtual dihancurkan |
+
+Satu perbedaan perlakuan berlaku di antara keenamnya. Aksi Revert hanya berlaku bagi `PROVISION`, karena permintaan mesin virtual baru masih berupa rancangan yang dapat dikembalikan kepada pemohon untuk diperbaiki. Perubahan terhadap mesin virtual yang sudah hidup tidak memiliki rancangan untuk dikembalikan, sehingga penyetuju memakai Reject.
+
+Mesin virtual yang melewati masa berlaku masuk ke masa tenggang, lalu sistem menghancurkannya secara otomatis dan mencatatnya pada audit. Skenario D1 sampai D8 pada subbab 4.2 menguji kedelapan perilaku tersebut.
+
+Tidak satu pun perilaku ini tersedia pada antarmuka Proxmox VE bawaan. Administrator dengan hak penuh dapat memperbesar disk, mengubah CPU, atau menghapus mesin virtual kapan saja tanpa permintaan, tanpa persetujuan, dan tanpa jejak yang mengaitkan tindakan itu dengan alasannya.
 
 ---
 
@@ -833,23 +890,53 @@ Sistem mencatat pembuatan permintaan, persetujuan, dan pembuatan mesin virtual s
 
 ### 4.8.1 Jawaban Rumusan Masalah 1
 
-*(Narasi: kaitkan subbab 4.1 dan 4.2 sebagai bukti sistem berhasil dibangun dan berfungsi, lalu kaitkan Tabel 4.28 sebagai bukti empiris bahwa pengguna non-pakar mampu memakainya. Sebutkan penurunan langkah 56,52 % dan sifat O(1) pada batch sebagai bukti abstraksi berhasil.)*
+Rumusan Masalah 1 menanyakan cara merancang aplikasi web *self-service* yang mengabstraksikan kompleksitas Terraform dan Ansible menjadi proses penyediaan mesin virtual yang mudah dipakai pengguna non-pakar.
+
+Sistem terbangun dan berjalan pada lingkungan produksi, melayani dua pusat data dengan lima *golden image* per pusat data, sebagaimana subbab 4.1. Pengujian *black box* pada subbab 4.2 memperlihatkan tingkat keberhasilan fungsional sebesar *(isi persentase dari Tabel 4.5)*.
+
+Abstraksi bekerja pada tiga lapis. Pengguna tidak pernah menulis sintaks Terraform, karena portal menerjemahkan pilihan tier menjadi berkas `terraform.tfvars` sementara `main.tf` tidak berubah antar permintaan. Pengguna tidak pernah menyusun *playbook*, karena Ansible berjalan sebagai aksi Inventory tersendiri memakai kunci SSH yang Terraform suntikkan. Pengguna juga tidak pernah membuka antarmuka Proxmox VE.
+
+Ukuran keberhasilan abstraksi terbaca pada jumlah langkah. Prosedur manual menuntut 23 langkah, portal menuntut 10, sehingga turun 56,52 %. Pada permintaan sepuluh mesin virtual sekaligus, langkah portal tetap 10 sementara langkah manual tumbuh menjadi 230. Portal memangkas beban sampai 95,65 % pada titik tersebut.
+
+Frasa "mudah digunakan oleh pengguna non pakar" memperoleh bukti empirisnya pada Tabel 4.29. Lima pengguna biasa memberi portal skor SUS 88,00 yang masuk kategori Excellent, sedangkan sistem yang sama mereka bandingkan, yaitu Proxmox VE, hanya memperoleh 18,50 dan masuk kategori Poor. Selisih 69,50 poin tersebut berasal dari orang-orang yang justru menjadi sasaran perancangan sistem ini.
 
 ### 4.8.2 Jawaban Rumusan Masalah 2
 
-*(Narasi: rangkum subbab 4.7. Tekankan bahwa Proxmox VE tidak menyediakan jalan tengah antara tanpa akses dan akses penuh tanpa pagar, dan portal mengisi celah itu.)*
+Rumusan Masalah 2 menanyakan cara menerapkan tata kelola yang meliputi kontrol akses berbasis peran, mekanisme persetujuan, pengelolaan siklus hidup, dan audit trail.
+
+Subbab 4.7 memaparkan keempatnya sebagai satu kesatuan. Tiga peran membatasi kewenangan sekaligus cakupan data. Setiap permintaan dari pengguna biasa menunggu persetujuan sebelum Terraform berjalan. Enam jenis permintaan menempatkan perubahan terhadap mesin virtual hidup di bawah gerbang yang sama dengan pembuatan mesin virtual baru. Setiap peristiwa masuk ke jejak audit yang bersifat *append-only*.
+
+Nilai sesungguhnya terletak pada celah yang portal isi. Proxmox VE tidak menyediakan jalan tengah. Organisasi hanya punya dua pilihan: tidak memberi akses sama sekali, atau memberi hak membuat, mengubah, dan menghapus mesin virtual tanpa persetujuan, tanpa kuota, dan tanpa jejak yang mengaitkan tindakan dengan alasannya. Subbab 4.6.1 memperlihatkan kedua pilihan itu bekerja: pengguna biasa yang diberi hak Proxmox VE memang berhasil melakukan *provisioning*, dan justru itulah masalahnya. Mereka berhasil tanpa satu pun pagar.
+
+Percobaan batch memperlihatkan tata kelola ikut menskala. Satu persetujuan berdurasi 26 detik menanggung sepuluh mesin virtual, dan sistem merekam kesepuluhnya. Prosedur manual membangun sepuluh mesin virtual tanpa satu pun catatan persetujuan.
 
 ### 4.8.3 Jawaban Rumusan Masalah 3
 
-*(Narasi: rangkum H1 diterima, H2 null, dan kesalahan manusia nol pada kedua kelompok. Jelaskan mengapa H2 null bersumber dari rancangan, dan alihkan argumen ke permukaan kesalahan pada subbab 4.5.6.)*
+Rumusan Masalah 3 menanyakan hasil evaluasi efisiensi operasional, konsistensi konfigurasi, dan tingkat kesalahan manusia dibanding proses manual.
+
+**Efisiensi.** Uji Mann-Whitney U menghasilkan U = 0 dengan p = 1,08 × 10⁻⁵, sehingga Hipotesis 1 diterima. Waktu portal 98,80 detik berbanding manual 136,90 detik, turun 27,83 %. Jumlah langkah 10 berbanding 23, turun 56,52 %. Kedua kelompok tidak beririsan sama sekali.
+
+Indikator penurunan waktu sebesar 50 % tidak tercapai, dan subbab 4.8.5 memaparkan sebabnya beserta pembedaan antara hipotesis dan indikator.
+
+**Konsistensi.** Kedua kelompok mencapai 100 % tanpa *configuration drift*, sehingga H0 tidak ditolak dan Hipotesis 2 menghasilkan temuan null. Hasil ini bersumber dari rancangan pengujian, bukan dari kebetulan. Penyamaan template ke spesifikasi Bronze membuat kelompok manual mewarisi CPU, RAM, dan jaringan tanpa langkah pengisian tangan, sehingga hanya parameter disk yang tersisa terbuka terhadap kesalahan. Peneliti meramalkan hasil null ini sebelum mengukur kelompok portal, dan mencatat ramalannya pada rencana pengukuran.
+
+**Kesalahan manusia.** Kedua kelompok mencatat nol kesalahan dari sepuluh percobaan. Angka nol pada kelompok manual muncul setelah peneliti mengalami dua insiden dan hafal letak jebakannya, sehingga angka tersebut tidak membuktikan prosedur manual aman.
+
+Jawaban yang sesungguhnya atas ketiga variabel ini terletak pada subbab 4.5.6. Prosedur manual menyediakan kolom *increment* disk yang operator hitung sendiri dan Proxmox VE tidak validasi terhadap standar organisasi mana pun. Portal tidak menyediakan kolom tersebut. Argumen ini berdiri di atas rancangan antarmuka, sehingga tidak bergantung pada jumlah sampel maupun keberuntungan operator.
 
 ### 4.8.4 Jawaban Rumusan Masalah 4
 
-*(Narasi: rangkum H3 diterima dengan skor 92,19 kategori Excellent, dan angkat temuan antar-peran sebagai jawaban utama.)*
+Rumusan Masalah 4 menanyakan hasil evaluasi kebergunaan berdasarkan System Usability Scale.
+
+Portal memperoleh skor 92,19 yang masuk kategori Excellent, sedangkan Proxmox VE memperoleh 37,81 yang masuk kategori Poor. *Paired sample t-test* menghasilkan t(7) = 6,982 dengan p = 0,000215, dan uji konfirmasi *Wilcoxon signed-rank* menghasilkan W = 0 dengan p = 0,0078. Kedelapan responden memberi skor lebih tinggi kepada portal tanpa satu pun pembalikan arah. Hipotesis 3 diterima. Skor 92,19 juga melampaui ambang 68 pada subbab 3.3.5c, dan kedelapan responden secara individual berada di atas ambang tersebut.
+
+Jawaban yang lebih tajam muncul saat skor dipecah menurut peran responden. Proxmox VE tidak buruk secara umum. Administrator TI memberinya 70,00, angka yang melampaui ambang 68. Pengguna biasa memberi sistem yang sama 18,50. Jurang 51,50 poin itu muncul hanya karena siapa yang memakainya.
+
+Portal menutup jurang tersebut sampai tersisa 11,17 poin, dan kedua kelompok peran sama-sama menempatkannya pada kategori Excellent. Temuan ini menjawab Rumusan Masalah 4 sekaligus menutup bagian "mudah digunakan oleh pengguna non pakar" pada Rumusan Masalah 1. Masalah yang penelitian ini angkat memang bukan kelemahan Proxmox VE sebagai hypervisor, melainkan ketidakcocokannya sebagai antarmuka layanan mandiri bagi pengguna non-pakar.
 
 ### 4.8.5 Capaian Indikator Keberhasilan
 
-**Tabel 4.30 Capaian indikator keberhasilan**
+**Tabel 4.33 Capaian indikator keberhasilan**
 
 | No | Indikator | Target | Capaian | Status |
 |---:|---|---|---|:---:|
@@ -872,15 +959,19 @@ Portal menukar puluhan detik orkestrasi dengan persetujuan, jejak audit, dan per
 
 ### 4.8.6 Keterbatasan Penelitian
 
-*(Narasi: susun dari poin berikut.)*
+Penelitian ini memiliki sejumlah keterbatasan yang perlu dinyatakan agar pembaca dapat menimbang hasilnya secara adil.
 
-- Operator kedua kelompok adalah peneliti sendiri, yang juga merupakan pengembang sistem.
-- Angka kesalahan nol pada kelompok manual diperoleh setelah peneliti mengalami dua insiden dan hafal jebakannya.
-- Rancangan pengujian mempersempit ruang munculnya perbedaan konsistensi sampai ke satu parameter, sehingga hasil null pada H2 tidak dapat digeneralisasi.
-- Jumlah responden SUS sebanyak 8 memadai untuk uji berpasangan, namun pemecahan menurut peran (5 berbanding 3) hanya bersifat deskriptif.
-- Percobaan batch berjumlah satu, sehingga angkanya deskriptif dan waktu manualnya merupakan ekstrapolasi.
-- Dua mesin virtual, yaitu `PROVE-1` dan `PROVE-6`, memiliki dua sesi wizard akibat percobaan pendahuluan, sehingga asal `t1` keduanya tidak dapat dipastikan. Dampaknya terhadap H1 dapat diabaikan karena `t1` hanya menyumbang 11 % dari total dan jarak antar kelompok mencapai 11 detik penuh.
-- Data pembanding dari lingkungan VMware dan dari jurnal Terraform CLI hanya masuk sebagai pembanding deskriptif, karena hypervisor, operator, dan perangkat kerasnya berbeda.
+Peneliti sendiri menjalankan kedua kelompok pengukuran, dan peneliti juga merupakan pengembang sistem yang diuji. Kondisi ini menguntungkan kelompok manual pada variabel waktu, karena operatornya menguasai Proxmox VE, namun sekaligus membuat angka kesalahan nol pada kelompok manual sulit digeneralisasi. Angka tersebut lahir setelah peneliti mengalami dua insiden dan hafal letak jebakannya, sehingga tidak mewakili operator yang belum pernah gagal.
+
+Rancangan pengujian konsistensi mempersempit ruang munculnya perbedaan sampai ke satu parameter, yaitu disk. Hasil null pada Hipotesis 2 karena itu berlaku untuk rancangan ini dan tidak dapat digeneralisasi menjadi pernyataan bahwa prosedur manual sama konsistennya dengan portal pada kondisi lapangan.
+
+Jumlah responden SUS sebanyak 8 memadai untuk uji berpasangan, namun pemecahan menurut peran dengan komposisi 5 berbanding 3 terlalu kecil untuk diuji beda. Temuan antar-peran pada subbab 4.6.5 karena itu bersifat deskriptif, dan kekuatannya bersandar pada besar selisih beserta arahnya yang konsisten.
+
+Percobaan batch berjumlah satu, sehingga angkanya deskriptif. Waktu manual pada perbandingan batch merupakan ekstrapolasi dari 136,90 detik dikali sepuluh, bukan hasil pengukuran sepuluh percobaan berturut-turut.
+
+Dua mesin virtual, yaitu `PROVE-1` dan `PROVE-6`, memiliki dua sesi wizard akibat percobaan pendahuluan, sehingga peneliti tidak dapat memastikan sesi mana yang menghasilkan `t1` keduanya. Dampaknya terhadap Hipotesis 1 dapat diabaikan, karena `t1` hanya menyumbang 11,3 % dari total dan jarak antar kelompok mencapai 11 detik penuh.
+
+Data pembanding dari lingkungan VMware pada sebuah institusi perbankan dan dari jurnal mengenai Terraform CLI hanya masuk sebagai pembanding deskriptif. Hypervisor, operator, dan perangkat kerasnya berbeda, sehingga keduanya tidak pernah masuk ke dalam uji statistik. Hipotesis pada subbab 2.4 mengunci pembandingnya pada antarmuka Proxmox VE bawaan.
 
 ---
 

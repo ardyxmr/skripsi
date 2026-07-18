@@ -463,7 +463,7 @@ Koefisien variasi kelompok portal sebesar 6,11 % berbanding 11,94 % pada kelompo
 | Kelompok | W | p | Kesimpulan |
 |---|---:|---:|---|
 | Portal (`t1+t3`) | 0,6871 | 0,0006 | Tidak normal |
-| Manual (`t_manual`) | 0,8370 | 0,0410 | Tidak normal |
+| Manual (`t_manual`) | 0,8370 | 0,0407 | Tidak normal |
 
 Kedua kelompok menghasilkan p di bawah 0,05 sehingga sebarannya menyimpang dari normal. Uji beda Hipotesis 1 karena itu memakai jalur non-parametrik sebagaimana disiapkan pada subbab 3.3.5d.
 

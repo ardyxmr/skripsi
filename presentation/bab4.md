@@ -4,6 +4,28 @@ Bab ini memuat hasil tahap Demonstrasi dan tahap Evaluasi sebagaimana dirancang 
 
 Seluruh angka pada bab ini berasal dari pengukuran langsung pada lingkungan penelitian. Data yang bersumber dari luar lingkungan tersebut dipakai sebagai pembanding deskriptif dan tidak pernah masuk ke dalam uji statistik.
 
+Bab ini memakai sejumlah notasi dan singkatan yang berulang pada seluruh pengujian. Tabel berikut merangkumnya agar pembaca dapat merujuk sewaktu-waktu.
+
+**Notasi dan Simbol**
+
+| Simbol | Arti |
+|---|---|
+| `t1` | Waktu interaksi pengguna, dari katalog dibuka sampai Submit |
+| `t2` | Waktu tunggu persetujuan, dari Submit sampai Approve; **dikeluarkan** dari uji Hipotesis 1 |
+| `t3` | Waktu eksekusi otomatis, dari Approve sampai alamat IP muncul |
+| `t1 + t3` | Total waktu *provisioning* portal yang diuji pada Hipotesis 1 |
+| `t_manual` | Total waktu *provisioning* manual melalui Proxmox VE GUI |
+| `N` | Jumlah mesin virtual dalam satu permintaan *batch* |
+| `n` | Ukuran sampel, yaitu jumlah percobaan atau responden |
+| `W` | Statistik uji Shapiro-Wilk pada uji normalitas; simbol yang sama juga menandai statistik uji Wilcoxon *signed-rank*, dibedakan oleh konteks subbab |
+| `U` | Statistik uji Mann-Whitney U |
+| `t` | Statistik uji t berpasangan; `t(df)` menyertakan derajat bebas, misalnya `t(7)` |
+| `p` | Nilai signifikansi, dibandingkan dengan taraf 0,05 |
+| `d` | Cohen's d, ukuran efek |
+| `SD` | Simpangan baku |
+| `CV` | Koefisien variasi |
+| `SUS` | *System Usability Scale*, skor 0 sampai 100 |
+
 ---
 
 ## 4.1 Hasil Implementasi Sistem

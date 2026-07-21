@@ -34,7 +34,9 @@ Jumlah responden SUS sebanyak 8 memadai untuk uji berpasangan, namun pemecahan m
 
 Percobaan batch berjumlah satu, sehingga angkanya deskriptif. Waktu manual pada perbandingan batch merupakan ekstrapolasi dari 136,90 detik dikali sepuluh, bukan hasil pengukuran sepuluh percobaan berturut-turut. Selain itu, dua mesin virtual memiliki dua sesi wizard akibat percobaan pendahuluan, sehingga peneliti tidak dapat memastikan sesi mana yang menghasilkan nilai `t1` keduanya, meskipun dampaknya terhadap Hipotesis 1 dapat diabaikan.
 
-Data pembanding dari lingkungan VMware pada sebuah institusi dan dari jurnal mengenai Terraform hanya masuk sebagai pembanding deskriptif. Hypervisor, operator, dan perangkat kerasnya berbeda, sehingga keduanya tidak pernah masuk ke dalam uji statistik. Hipotesis pada subbab 2.4 mengunci pembandingnya pada antarmuka Proxmox VE bawaan.
+Data pembanding dari lingkungan VMware berdasarkan pengalaman kerja seorang praktisi dan dari jurnal mengenai Terraform hanya masuk sebagai pembanding deskriptif. Hypervisor, operator, dan perangkat kerasnya berbeda, sehingga keduanya tidak pernah masuk ke dalam uji statistik. Hipotesis pada subbab 2.4 mengunci pembandingnya pada antarmuka Proxmox VE bawaan.
+
+Garis dasar prosedur manual pada penelitian ini merupakan kondisi paling menguntungkan bagi prosedur manual. Kedua kelompok berangkat dari template yang sama, sedangkan banyak organisasi masih membangun mesin virtual dari *base image* tanpa standarisasi, sebagaimana subbab 4.8.5 uraikan. Penurunan waktu sebesar 27,83 % karena itu terukur terhadap prosedur manual tercepat, dan selisih pada kondisi lapangan berpeluang lebih besar. Penelitian ini tidak mengklaim selisih yang lebih besar itu, karena pengukurannya berada di luar variabel kontrol yang ditetapkan.
 
 ---
 

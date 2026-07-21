@@ -72,9 +72,75 @@ Pengguna memilih layanan pada katalog, mengisi formulir permintaan, lalu mengiri
 > **[TEMPEL GAMBAR]** Tangkapan layar halaman Inventory.
 > Caption: **Gambar 4.3** Daftar inventaris mesin virtual
 
+Satu permintaan dapat menghasilkan beberapa mesin virtual sekaligus. Sistem memecah permintaan itu menjadi satu pekerjaan `ProvisionVmJob` per mesin virtual, dan setiap pekerjaan berjalan mandiri pada antrean, sebagaimana Kode 4.1. Kegagalan satu mesin virtual karena itu tidak menyeret mesin virtual lain dalam permintaan yang sama.
+
+**Kode 4.1 Pemecahan satu permintaan menjadi satu pekerjaan per mesin virtual (`ProvisionRequestService.php`)**
+
+```php
+public function dispatchProvisioning(ProvisionRequest $pr): void
+{
+    foreach ($this->targetNames($pr->vm_name, (int) $pr->instance_count) as $name) {
+        ProvisionVmJob::dispatch($pr->id, $name);
+    }
+}
+```
+
 ### 4.1.3 Abstraksi Infrastructure as Code
 
 Portal menyembunyikan seluruh sintaks Terraform dari pengguna. Pengguna memilih tier, dan sistem menuliskan nilai tersebut ke berkas `terraform.tfvars`. Berkas `main.tf` tidak berubah antar permintaan.
+
+Kode 4.2 memperlihatkan seluruh nilai pada `main.tf` mengambil bentuk `var.*`, sehingga berkas ini tetap sama untuk setiap permintaan.
+
+**Kode 4.2 Definisi mesin virtual pada `main.tf` yang tetap antar permintaan (dipersingkat)**
+
+```hcl
+resource "proxmox_vm_qemu" "vm" {
+  name        = var.vm_name
+  target_node = var.proxmox_node
+  vmid        = var.vmid
+  clone       = var.template_name
+
+  cpu {
+    cores   = var.cpu_cores
+    sockets = 1
+  }
+  memory = var.ram_mb
+
+  disk {
+    slot    = "scsi0"
+    size    = var.disk_size
+    type    = "disk"
+    storage = var.storage_id
+  }
+
+  network {
+    id     = 0
+    model  = "virtio"
+    bridge = var.network_bridge
+  }
+
+  ipconfig0 = "ip=dhcp"
+}
+```
+
+Yang berubah hanya berkas `terraform.tfvars`. Sistem menuliskan nilai hasil pemilihan pengguna menjadi pasangan kunci dan nilai HCL, sebagaimana Kode 4.3.
+
+**Kode 4.3 Penulisan `terraform.tfvars` dari nilai hasil pemilihan (`TerraformRenderer.php`)**
+
+```php
+public function tfvars(array $values): string
+{
+    $lines = [];
+    foreach ($values as $key => $value) {
+        if ($value === null) {
+            continue;
+        }
+        $lines[] = "{$key} = ".$this->hcl($value);
+    }
+
+    return implode("\n", $lines)."\n";
+}
+```
 
 Setiap mesin virtual menempati satu *workspace* Terraform tersendiri sehingga satu kegagalan tidak menyandera permintaan lain. Ansible mengambil alih setelah Terraform selesai, terhubung memakai kunci SSH, lalu menjalankan tugas *hardening* yang bersifat idempoten.
 
@@ -83,6 +149,28 @@ Pembagian peran kedua alat tersebut menjawab bagian pertama Rumusan Masalah 1: T
 ### 4.1.4 Mekanisme Tata Kelola
 
 Sistem menerapkan kontrol akses berbasis peran, alur persetujuan, pengelolaan siklus hidup, dan pencatatan audit. Bukti pengujian keempat mekanisme tersebut dipaparkan pada subbab 4.7.
+
+Cakupan data pada kontrol akses berlaku di lapisan kueri basis data, bukan sekadar penyembunyian menu. Kode 4.4 memperlihatkan penentuan pemilik data yang boleh dilihat: Administrator melihat seluruh data, Manager melihat anggota grup yang dikelolanya beserta dirinya, dan User hanya melihat miliknya sendiri.
+
+**Kode 4.4 Pembatasan cakupan data menurut peran pada lapisan kueri (`User.php`)**
+
+```php
+public function visibleOwnerIds(): ?array
+{
+    $role = $this->role?->role_name;
+    if ($role === 'Administrator') {
+        return null;
+    }
+    if ($role === 'Manager') {
+        $managedGroupIds = Group::where('manager_user_id', $this->id)->pluck('id');
+        $memberIds = self::whereIn('group_id', $managedGroupIds)->pluck('id')->all();
+
+        return array_values(array_unique([...$memberIds, $this->id]));
+    }
+
+    return [$this->id];
+}
+```
 
 ---
 
@@ -433,7 +521,7 @@ Sepuluh percobaan berjalan berurutan pada tiap kelompok dengan operator yang sam
 | 10 | PROVE-10 (109) | 10 | 11 | 87 | **98** |
 | **Rata-rata** | | **10** | **11,20** | **87,60** | **98,80** |
 
-Segmen `t1` menyumbang 11,20 detik dari total 98,80 detik, atau 11,3 %. Sisanya sebesar 88,7 % merupakan `t3`, yaitu waktu Terraform bekerja dan sistem operasi tamu melakukan boot. Pembagian ini dibahas kembali pada subbab 4.8.5.
+Segmen `t1` menyumbang 11,20 detik dari total 98,80 detik, atau 11,3 %. Sisanya sebesar 88,7 % merupakan `t3`, yaitu waktu Terraform bekerja dan sistem operasi tamu melakukan boot. Pembagian ini dibahas kembali pada subbab 4.8.6.
 
 **Tabel 4.13 Bukti silang stopwatch terhadap Audit Trail**
 
@@ -938,7 +1026,7 @@ Rumusan Masalah 3 menanyakan hasil evaluasi efisiensi operasional, konsistensi k
 
 **Efisiensi.** Uji Mann-Whitney U menghasilkan U = 0 dengan p = 1,08 × 10⁻⁵, sehingga Hipotesis 1 diterima. Waktu portal 98,80 detik berbanding manual 136,90 detik, turun 27,83 %. Jumlah langkah 10 berbanding 23, turun 56,52 %. Kedua kelompok tidak beririsan sama sekali.
 
-Indikator penurunan waktu sebesar 50 % tidak tercapai, dan subbab 4.8.5 memaparkan sebabnya beserta pembedaan antara hipotesis dan indikator.
+Indikator penurunan waktu sebesar 50 % tidak tercapai, dan subbab 4.8.6 memaparkan sebabnya beserta pembedaan antara hipotesis dan indikator.
 
 **Konsistensi.** Kedua kelompok mencapai 100 % tanpa *configuration drift*, sehingga H0 tidak ditolak dan Hipotesis 2 menghasilkan temuan null. Hasil ini bersumber dari rancangan pengujian, bukan dari kebetulan. Penyamaan template ke spesifikasi Bronze membuat kelompok manual mewarisi CPU, RAM, dan jaringan tanpa langkah pengisian tangan, sehingga hanya parameter disk yang tersisa terbuka terhadap kesalahan. Peneliti meramalkan hasil null ini sebelum mengukur kelompok portal, dan mencatat ramalannya pada rencana pengukuran.
 
@@ -956,7 +1044,28 @@ Jawaban yang lebih tajam muncul saat skor dipecah menurut peran responden. Proxm
 
 Portal menutup jurang tersebut sampai tersisa 11,17 poin, dan kedua kelompok peran sama-sama menempatkannya pada kategori Excellent. Temuan ini menjawab Rumusan Masalah 4 sekaligus menutup bagian "mudah digunakan oleh pengguna non pakar" pada Rumusan Masalah 1. Masalah yang penelitian ini angkat memang bukan kelemahan Proxmox VE sebagai hypervisor, melainkan ketidakcocokannya sebagai antarmuka layanan mandiri bagi pengguna non-pakar.
 
-### 4.8.5 Capaian Indikator Keberhasilan
+### 4.8.5 Konteks Lapangan dan Peran Standarisasi Template
+
+Penelitian ini mengunci template `rhel10-cloud` berspesifikasi Bronze sebagai variabel kontrol pada kedua kelompok, sebagaimana subbab 4.3.2. Kelompok manual dan kelompok portal sama-sama berangkat dari *golden image* yang identik. Keputusan ini menyingkirkan satu pembaur, yaitu perbedaan antara membangun mesin virtual dari template dan membangunnya dari awal, sehingga perbandingan waktu murni mengukur lapisan antarmuka. Akibatnya angka yang penelitian ini laporkan berdiri di atas kondisi yang paling menguntungkan prosedur manual.
+
+Praktik di lapangan jarang seragam demikian. Banyak organisasi belum menstandarkan template, dan setiap permintaan mesin virtual baru berangkat dari *base image* yang dikonfigurasi dari awal. Gambaran pembandingnya datang dari pengalaman kerja seorang praktisi yang menangani penyediaan mesin virtual pada lingkungan VMware di sebuah perusahaan. Praktisi tersebut mencatat sepuluh percobaan pembuatan mesin virtual tanpa template dari pekerjaannya sehari-hari, dan hasilnya terangkum di bawah. Data ini berasal dari pengalaman kerja praktisi, bukan dari pengukuran yang penelitian ini rancang di lingkungan tersebut, sehingga penelitian ini memperlakukannya sebagai pembanding deskriptif semata dan tidak menyebut identitas perusahaannya.
+
+**Waktu pembuatan mesin virtual tanpa template pada lingkungan VMware berdasarkan pengalaman kerja praktisi (pembanding deskriptif)**
+
+| Operasi | Jumlah percobaan | Rata-rata (detik) | Rentang (detik) |
+|---|---:|---:|---:|
+| Pembangunan *image* awal (instalasi *native*) | 1 | 1.110 | - |
+| Kloning per mesin virtual | 9 | 282,56 | 241–403 |
+
+Pembangunan *image* awal menempuh 1.110 detik atau 18,5 menit, karena praktisi tersebut memasang sistem operasi dari awal sebelum menjadikannya acuan kloning. Kloning berikutnya menempuh rata-rata 282,56 detik dengan median 278 detik, dan tiap kloning masih menuntut pengisian nama host serta penyetelan ulang *machine-ID* secara manual. Kedua angka berdekatan dengan rentang lima sampai dua puluh menit yang subbab 1.1 catat dari observasi tiket lapangan, sehingga catatan pengalaman ini menopang klaim beban pada Bab I. Pembaruan sistem operasi memperpanjang pembangunan *image* awal lebih jauh lagi, meski penelitian ini tidak mengukur besarannya.
+
+Data ini tidak pernah masuk uji statistik Hipotesis 1, dan penelitian ini menegaskannya. Enam variabel membedakannya dari pengukuran utama: hypervisor VMware berbeda dari Proxmox VE, pembuatan tanpa template berbeda dari *golden image* RHEL, operatornya berbeda, perangkat kerasnya tidak diketahui, prosedurnya menuntut pengisian tangan yang cloud-init tiadakan, serta sistem operasi dan jaringannya tidak terkontrol. Hipotesis pada subbab 2.4 mengunci pembandingnya pada antarmuka Proxmox VE bawaan. Menukar pembanding yang sah dengan data yang lebih menguntungkan setelah hasil diketahui merupakan cacat metodologi, dan penelitian ini menolaknya.
+
+Perbandingan lapangan ini menempatkan angka penelitian pada perspektifnya. Rata-rata kelompok manual penelitian sebesar 136,90 detik berada jauh di bawah rata-rata kloning lapangan sebesar 282,56 detik, meski keduanya sama-sama prosedur manual. Penelitian ini tidak membebankan selisih tersebut pada satu penyebab tunggal, karena hypervisor dan operatornya berbeda. Yang dapat penelitian ini nyatakan hanya arahnya, bahwa standarisasi template memangkas pekerjaan tangan yang di lapangan masih dikerjakan berulang. Penyeragaman itu berlaku setara pada kedua kelompok penelitian, sehingga keunggulannya tidak muncul sebagai efisiensi portal, melainkan menaikkan garis dasar prosedur manual. Penurunan waktu sebesar 27,83 % pada subbab 4.8.6 karena itu terukur terhadap kondisi manual yang paling cepat, bukan terhadap kondisi manual lapangan yang jauh lebih lambat. Perbandingan ini memperjelas makna angka, dan tidak mengubah capaian indikator.
+
+Standarisasi template menyentuh pula konsistensi dan kesalahan manusia. Pembuatan dari *base image* membuka kembali setiap parameter terhadap pengisian tangan, yaitu ruang yang subbab 4.4.5 tutup pada rancangan penelitian ini. Hasil null pada Hipotesis 2 dan angka nol kesalahan pada subbab 4.5 karena itu juga terukur pada kondisi paling ringan bagi prosedur manual. Pada lingkungan yang membangun dari awal, permukaan kesalahan yang subbab 4.5.6 uraikan melebar alih-alih menyempit.
+
+### 4.8.6 Capaian Indikator Keberhasilan
 
 **Tabel 4.33 Capaian indikator keberhasilan**
 
@@ -979,7 +1088,7 @@ Penelitian ini tidak mengganti definisi `t1+t3` menjadi `t1` saja setelah menget
 
 Portal menukar puluhan detik orkestrasi dengan persetujuan, jejak audit, dan permukaan kesalahan yang lebih sempit. Perbandingannya bukan cepat melawan lambat, melainkan cepat melawan jaminan.
 
-### 4.8.6 Keterbatasan Penelitian
+### 4.8.7 Keterbatasan Penelitian
 
 Penelitian ini memiliki sejumlah keterbatasan yang perlu dinyatakan agar pembaca dapat menimbang hasilnya secara adil.
 

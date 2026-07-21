@@ -32,7 +32,7 @@ Bab ini memakai sejumlah notasi dan singkatan yang berulang pada seluruh penguji
 
 Subbab ini menjawab tahap Demonstrasi pada subbab 3.3.4, yaitu memperlihatkan bahwa seluruh komponen sistem bekerja terintegrasi pada lingkungan nyata.
 
-Sistem terbagi menjadi empat bagian yang menempati direktori terpisah. Backend Laravel pada `backend/` memuat pengontrol, layanan, pekerjaan antrean, dan model yang menjalankan seluruh logika bisnis. Frontend React pada `frontend/` menyediakan antarmuka wizard, inventaris, dan persetujuan. Direktori `terraform/` menyimpan definisi *Infrastructure as Code*, sedangkan `Harden-script/` menyimpan *playbook* Ansible untuk pengerasan keamanan. Pohon berikut memperlihatkan susunannya sampai ke berkas kunci.
+Sistem terbagi menjadi empat bagian yang menempati direktori terpisah. Backend Laravel pada `backend/` memuat pengontrol, layanan, pekerjaan antrean, dan model yang menjalankan seluruh logika bisnis. Frontend React pada `frontend/` menyediakan antarmuka wizard, inventaris, dan persetujuan. Direktori `terraform/` memuat contoh definisi *Infrastructure as Code*, sedangkan template yang benar-benar dijalankan portal tersimpan di `backend/storage/app/master-provisioning/`. Direktori `Harden-script/` menyimpan *playbook* Ansible untuk pengerasan keamanan. Pohon berikut memperlihatkan susunannya sampai ke berkas kunci.
 
 ```
 exovirt/
@@ -50,22 +50,25 @@ exovirt/
 │   │   └── Observers/                # pemicu audit dan siaran
 │   ├── routes/
 │   │   └── api.php                   # seluruh definisi endpoint
-│   └── database/
-│       ├── migrations/               # skema tabel
-│       └── seeders/                  # data awal (peran, tier)
+│   ├── database/
+│   │   ├── migrations/               # skema tabel
+│   │   └── seeders/                  # data awal (peran, tier)
+│   └── storage/app/master-provisioning/   # template Terraform master (dipakai runtime)
 ├── frontend/                        # React dan Vite: antarmuka SPA
 │   └── src/
 │       ├── pages/                    # Wizard, Inventory, Approvals, Catalog
 │       ├── components/               # komponen UI dan pengawal akses
 │       ├── contexts/                 # state global per sumber daya
 │       └── lib/                      # klien API, Echo real-time, utilitas
-├── terraform/                       # Infrastructure as Code
+├── terraform/                       # contoh definisi Terraform (referensi)
 │   ├── main.tf
 │   ├── variables.tf
 │   └── provider.tf
 └── Harden-script/                   # playbook Ansible hardening
     └── hardening.yml
 ```
+
+Subbab ini menampilkan beberapa potongan kode penting sebagai Kode 4.1 sampai Kode 4.4. Kode sumber selengkapnya, baik backend maupun frontend, tersedia pada repositori privat yang tercantum di Lampiran 6.
 
 ### 4.1.1 Lingkungan Operasional
 
@@ -122,43 +125,48 @@ public function dispatchProvisioning(ProvisionRequest $pr): void
 
 ### 4.1.3 Abstraksi Infrastructure as Code
 
-Portal menyembunyikan seluruh sintaks Terraform dari pengguna. Pengguna memilih tier, dan sistem menuliskan nilai tersebut ke berkas `terraform.tfvars`. Berkas `main.tf` tidak berubah antar permintaan.
+Portal menyembunyikan seluruh sintaks Terraform dari pengguna. Untuk setiap permintaan, sistem menyalin template tetap dari master, yaitu `main.tf` dan `variables.tf`, ke sebuah *workspace* tersendiri, lalu menuliskan dua berkas yang berbeda tiap permintaan, yaitu `provider.tf` dan `terraform.tfvars`. Template `main.tf` tidak pernah berubah antar permintaan.
 
-Kode 4.2 memperlihatkan seluruh nilai pada `main.tf` mengambil bentuk `var.*`, sehingga berkas ini tetap sama untuk setiap permintaan.
+Kode 4.2 memperlihatkan seluruh nilai pada `main.tf` mengambil bentuk `var.*`, sehingga berkas ini tetap sama untuk setiap mesin virtual.
 
-**Kode 4.2 Definisi mesin virtual pada `main.tf` yang tetap antar permintaan (dipersingkat)**
+**Kode 4.2 Cuplikan template `main.tf` yang tetap antar permintaan (dipersingkat)**
 
 ```hcl
 resource "proxmox_vm_qemu" "vm" {
   name        = var.vm_name
-  target_node = var.proxmox_node
-  vmid        = var.vmid
-  clone       = var.template_name
+  target_node = var.target_node
+  clone       = var.template
+  full_clone  = true
+  os_type     = "cloud-init"
+  cores       = var.cores
+  vcpus       = var.vcpus
+  memory      = var.memory
 
-  cpu {
-    cores   = var.cpu_cores
-    sockets = 1
-  }
-  memory = var.ram_mb
-
-  disk {
-    slot    = "scsi0"
-    size    = var.disk_size
-    type    = "disk"
-    storage = var.storage_id
+  disks {
+    scsi {
+      scsi0 {
+        disk {
+          size    = "${var.disk_size_gb}G"
+          storage = var.storage
+        }
+      }
+    }
   }
 
   network {
     id     = 0
     model  = "virtio"
-    bridge = var.network_bridge
+    bridge = var.network
   }
 
-  ipconfig0 = "ip=dhcp"
+  ciuser     = var.ci_user
+  cipassword = var.ci_password
+  sshkeys    = var.ssh_public_keys
+  ipconfig0  = "ip=dhcp"
 }
 ```
 
-Yang berubah hanya berkas `terraform.tfvars`. Sistem menuliskan nilai hasil pemilihan pengguna menjadi pasangan kunci dan nilai HCL, sebagaimana Kode 4.3.
+Yang berubah hanya `terraform.tfvars` dan `provider.tf`. Berkas `terraform.tfvars` memuat nilai hasil pemilihan pengguna, dan sistem menuliskannya menjadi pasangan kunci dan nilai HCL sebagaimana Kode 4.3. Kredensial provider tidak pernah ditulis ke disk, melainkan diserahkan ke Terraform sebagai variabel lingkungan.
 
 **Kode 4.3 Penulisan `terraform.tfvars` dari nilai hasil pemilihan (`TerraformRenderer.php`)**
 

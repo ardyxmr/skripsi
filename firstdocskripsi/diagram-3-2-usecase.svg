@@ -8,7 +8,7 @@
 
 <!-- System boundary -->
 <rect x="300" y="40" width="800" height="720" rx="14" fill="#FCFCFE" stroke="#8891A3" stroke-width="1.4"/>
-<text x="700" y="66" font-size="15" font-weight="700" text-anchor="middle" fill="#2B2B33">Sistem ProvIO</text>
+<text x="700" y="66" font-size="15" font-weight="700" text-anchor="middle" fill="#2B2B33">Sistem ExoVirt</text>
 
 <!-- ===================== ACTORS ===================== -->
 <!-- User -->

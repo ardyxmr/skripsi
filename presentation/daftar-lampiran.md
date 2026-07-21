@@ -15,6 +15,7 @@ Item di bawah diurutkan menurut kemunculan pertamanya di teks. Kamu tinggal isi 
 | Lampiran 3 | Notebook perhitungan statistik (Colab): kode dan output uji | ... |
 | Lampiran 4 | Kode sumber Terraform (`main.tf`, `variables.tf`, `provider.tf`) | ... |
 | Lampiran 5 | *Playbook* Ansible *hardening* | ... |
+| Lampiran 6 | Ketersediaan kode sumber aplikasi (repositori privat) | ... |
 
 **Ditahan dulu (belum diminta, tambahkan bila prodi meminta):** surat keterangan atau izin penelitian, dan hasil uji plagiarisme (Turnitin).
 
@@ -37,13 +38,41 @@ Item di bawah diurutkan menurut kemunculan pertamanya di teks. Kamu tinggal isi 
 | 3 | Notebook Colab penuh (kode + output), ekspor PDF. BUKAN capture ulang Tabel 4.11/4.12 yang sudah di badan | `bab4-statistik-colab.ipynb` |
 | 4 | Isi berkas Terraform, Courier New 10 | `lampiran-terraform.md` (siap tempel) |
 | 5 | Isi *playbook* hardening | `lampiran-ansible.md` (siap tempel) |
-| 6 | Pindaian surat dari kampus atau tempat penelitian | dokumen fisik |
-| 7 | Tangkapan hasil Turnitin atau sejenis | bila diminta |
+| 6 | URL repositori privat + cara meminta akses kontributor | teks siap tempel di bawah |
+| 7 | Pindaian surat dari kampus atau tempat penelitian | dokumen fisik |
+| 8 | Tangkapan hasil Turnitin atau sejenis | bila diminta |
 
 ## Yang sengaja TIDAK jadi lampiran
 - **Pengujian black box.** Seluruh 40 skenario sudah didokumentasikan di badan Bab IV dengan Gambar 4.4 sampai 4.43, jadi lampiran black box hanya akan mengulang
 - **Data pembanding VMware.** Tidak ada surat izin, dan sumbernya minta instansinya tidak disebut. Datanya tetap di badan subbab 4.8.5 sebagai pembanding deskriptif anonim, bukan lampiran tersendiri
-- **Kode sumber aplikasi penuh (frontend dan backend).** Sesuai keputusanmu, aplikasi diwakili cuplikan kunci di badan (Kode 4.1–4.4), bukan lampiran kode penuh. Hanya kode IaC yang dicetak penuh di Lampiran 4 dan 5
+- **Kode sumber aplikasi tidak dicetak penuh.** Backend Laravel dan frontend React terlalu besar untuk dicetak. Aplikasi diwakili tiga lapis: cuplikan kunci di badan (Kode 4.1 sampai 4.4), dan sumber lengkapnya pada repositori privat (Lampiran 6). Hanya kode IaC yang dicetak penuh, yaitu Lampiran 4 dan 5
 
 ## Perlu kamu putuskan
 - **Lampiran 3 (data waktu + uji statistik) berpeluang ikut mengulang.** Data mentah waktu sudah ada di badan (Tabel 4.11 dan 4.12), dan hasil ujinya sudah tampil sebagai Gambar 4.52, 4.53, dan 4.60. Pertahankan Lampiran 3 hanya kalau kamu ingin melampirkan notebook Colab penuh sebagai bukti hitung ulang. Kalau tidak, boleh dihapus seperti black box
+
+---
+
+# Teks Lampiran 6 — siap tempel
+
+## LAMPIRAN 6. KETERSEDIAAN KODE SUMBER APLIKASI
+
+Kode sumber lengkap aplikasi ExoVirt, meliputi backend Laravel dan frontend React beserta berkas konfigurasi deployment, disimpan pada repositori privat di alamat berikut.
+
+**`https://github.com/ardyxmr/exovirt`**
+
+Repositori bersifat privat karena aplikasi berjalan pada lingkungan produksi. Akses baca diberikan kepada dosen pembimbing dan penguji atas permintaan. Pemohon menghubungi peneliti secara langsung, lalu peneliti memberikan akses baca yang terbatas waktu. Rincian akses, seperti token atau undangan, tidak dicantumkan pada naskah demi menjaga keamanan repositori.
+
+Struktur direktori utama repositori:
+
+| Direktori | Isi |
+|---|---|
+| `backend/` | Laravel: API, layanan, pekerjaan antrean, model, dan template Terraform master pada `storage/app/master-provisioning/` |
+| `frontend/` | React dan Vite: antarmuka pengguna |
+| `deploy/` | Konfigurasi Nginx, systemd, dan Redis |
+| `docs/` | Panduan deployment |
+| `terraform/` | Contoh definisi Terraform |
+| `Harden-script/` | Playbook Ansible hardening |
+
+Potongan kode terpenting ada langsung di badan sebagai Kode 4.1 sampai Kode 4.4. Kode Terraform dan playbook Ansible dicetak penuh pada Lampiran 4 dan Lampiran 5.
+
+*(Catatan: beri penguji akses baca lebih awal sebelum sidang supaya mereka sempat menelusuri kode. Jangan menjadikan repositori publik karena aplikasi berjalan di produksi, dan jangan mencantumkan token atau tautan berkredensial di naskah.)*

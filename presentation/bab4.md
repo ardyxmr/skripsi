@@ -32,6 +32,41 @@ Bab ini memakai sejumlah notasi dan singkatan yang berulang pada seluruh penguji
 
 Subbab ini menjawab tahap Demonstrasi pada subbab 3.3.4, yaitu memperlihatkan bahwa seluruh komponen sistem bekerja terintegrasi pada lingkungan nyata.
 
+Sistem terbagi menjadi empat bagian yang menempati direktori terpisah. Backend Laravel pada `backend/` memuat pengontrol, layanan, pekerjaan antrean, dan model yang menjalankan seluruh logika bisnis. Frontend React pada `frontend/` menyediakan antarmuka wizard, inventaris, dan persetujuan. Direktori `terraform/` menyimpan definisi *Infrastructure as Code*, sedangkan `Harden-script/` menyimpan *playbook* Ansible untuk pengerasan keamanan. Pohon berikut memperlihatkan susunannya sampai ke berkas kunci.
+
+```
+exovirt/
+├── backend/                         # Laravel: API dan logika bisnis
+│   ├── app/
+│   │   ├── Http/
+│   │   │   ├── Controllers/Api/      # endpoint: validasi lalu panggil Service
+│   │   │   └── Middleware/           # autentikasi Sanctum dan pembatasan peran
+│   │   ├── Services/                 # logika bisnis
+│   │   │   ├── Provisioning/         # penggerak Terraform dan Ansible
+│   │   │   └── Discovery/            # lapisan abstraksi provider Proxmox
+│   │   ├── Jobs/                     # pekerjaan asinkron pada antrean
+│   │   ├── Models/                   # entitas Eloquent
+│   │   ├── Events/                   # siaran real-time (Reverb)
+│   │   └── Observers/                # pemicu audit dan siaran
+│   ├── routes/
+│   │   └── api.php                   # seluruh definisi endpoint
+│   └── database/
+│       ├── migrations/               # skema tabel
+│       └── seeders/                  # data awal (peran, tier)
+├── frontend/                        # React dan Vite: antarmuka SPA
+│   └── src/
+│       ├── pages/                    # Wizard, Inventory, Approvals, Catalog
+│       ├── components/               # komponen UI dan pengawal akses
+│       ├── contexts/                 # state global per sumber daya
+│       └── lib/                      # klien API, Echo real-time, utilitas
+├── terraform/                       # Infrastructure as Code
+│   ├── main.tf
+│   ├── variables.tf
+│   └── provider.tf
+└── Harden-script/                   # playbook Ansible hardening
+    └── hardening.yml
+```
+
 ### 4.1.1 Lingkungan Operasional
 
 Aplikasi ExoVirt berjalan pada lingkungan produksi dan melayani dua pusat data Proxmox VE. Pengguna mengakses portal melalui peramban, mengajukan permintaan mesin virtual, dan menerima mesin virtual yang siap dipakai tanpa menyentuh Terraform, Ansible, maupun antarmuka Proxmox VE.
@@ -579,9 +614,9 @@ Kedua kelompok menghasilkan p di bawah 0,05 sehingga sebarannya menyimpang dari 
 
 Uji non-parametrik yang berlaku di sini adalah **uji Mann-Whitney U**, yang juga dikenal sebagai *Wilcoxon rank-sum test*. Kelompok portal dan kelompok manual merupakan dua kelompok yang saling bebas, sehingga uji *Wilcoxon signed-rank* yang diperuntukkan bagi data berpasangan tidak berlaku.
 
-> **[TEMPEL GAMBAR]** Output SPSS atau Jamovi uji Shapiro-Wilk kedua kelompok.
+> **[TEMPEL GAMBAR]** Output Google Colab (Python) uji Shapiro-Wilk kedua kelompok.
 > Caption: **Gambar 4.19** Hasil uji normalitas Shapiro-Wilk
-> *(Angka W dan p di atas berasal dari perhitungan pendahuluan. Jalankan ulang di SPSS atau Jamovi dan pakai angka dari sana.)*
+> *(Angka W dan p di atas berasal dari perhitungan Google Colab yang menjadi bukti pada lampiran statistik.)*
 
 ### 4.3.9 Uji Beda Mann-Whitney U
 
@@ -599,7 +634,7 @@ Nilai p berada jauh di bawah 0,05 sehingga **H0 ditolak dan H1 diterima**. Terda
 
 Nilai U sebesar 0 muncul karena kedua kelompok tidak memiliki satu pun nilai yang beririsan. Seluruh pengukuran portal menempati peringkat lebih rendah daripada seluruh pengukuran manual.
 
-> **[TEMPEL GAMBAR]** Output SPSS atau Jamovi uji Mann-Whitney U.
+> **[TEMPEL GAMBAR]** Output Google Colab (Python) uji Mann-Whitney U.
 > Caption: **Gambar 4.20** Hasil uji beda Mann-Whitney U pada variabel waktu *provisioning*
 
 ### 4.3.10 Perbandingan Jumlah Langkah
@@ -893,7 +928,7 @@ Kedua uji menghasilkan p di bawah 0,01 sehingga **H0 ditolak dan H1 diterima**. 
 
 Penelitian ini melaporkan kedua uji karena sebaran selisih bersifat bimodal, mengikuti dua kelompok peran responden. Uji Shapiro-Wilk pada n = 8 memiliki daya yang rendah, sehingga hasil yang tidak menolak normalitas lebih tepat dibaca sebagai kegagalan menolak akibat data yang sedikit, bukan sebagai bukti bahwa datanya normal. Uji *Wilcoxon signed-rank* menutup celah tersebut, dan kesimpulannya tidak berubah.
 
-> **[TEMPEL GAMBAR]** Output SPSS atau Jamovi uji Shapiro-Wilk dan uji beda SUS.
+> **[TEMPEL GAMBAR]** Output Google Colab (Python) uji Shapiro-Wilk dan uji beda SUS.
 > Caption: **Gambar 4.27** Hasil uji statistik skor SUS
 
 ### 4.6.5 Temuan Antar-Peran
@@ -1119,6 +1154,6 @@ Data pembanding dari lingkungan VMware pada sebuah institusi perbankan dan dari 
 | 4.6.2 | Skor SUS per responden untuk kedua sistem |
 | 4.7.1, 4.7.4 | Narasi RBAC dan siklus hidup |
 | 4.8.1–4.8.4 | Narasi jawaban RM |
-| Semua | Tangkapan layar SPSS atau Jamovi menggantikan angka pratinjau Python |
+| Semua | Tangkapan layar Google Colab (Python) sebagai bukti uji statistik |
 
 **Penomoran:** gambar 4.1 sampai 4.23 dan tabel 4.1 sampai 4.29 mengikuti urutan kemunculan. Sesuaikan kembali di Word setelah bagian yang kosong terisi.

@@ -1,6 +1,6 @@
 <svg viewBox="0 0 1120 800" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
 <title id="t">Gambar 3.2 - Use Case Diagram</title>
-<desc id="d">Use case diagram aplikasi ProvIO dengan tiga aktor (User, Approver, Administrator) berelasi generalisasi, serta relasi include dan extend antar use case.</desc>
+<desc id="d">Use case diagram aplikasi Exovirt dengan tiga aktor (User, Approver, Administrator) berelasi generalisasi, serta relasi include dan extend antar use case.</desc>
 <defs>
 <marker id="oa" markerWidth="12" markerHeight="12" refX="9" refY="4" orient="auto"><path d="M1,1 L9,4 L1,7" fill="none" stroke="#7A5AA6" stroke-width="1.4"/></marker>
 </defs>

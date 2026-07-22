@@ -106,7 +106,6 @@ export default function Login() {
                   autoComplete="email"
                   {...register('email')}
                   className="focus:ring-brand-500 focus:border-brand-500 block w-full pl-10 sm:text-sm border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-surface dark:text-white rounded-lg p-2.5 transition-colors"
-                  placeholder="admin@exovirt.local"
                 />
               </div>
               {errors.email && (
@@ -128,7 +127,6 @@ export default function Login() {
                   autoComplete="current-password"
                   {...register('password')}
                   className="focus:ring-brand-500 focus:border-brand-500 block w-full pl-10 sm:text-sm border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-surface dark:text-white rounded-lg p-2.5 transition-colors"
-                  placeholder="••••••••"
                 />
               </div>
               {errors.password && (
